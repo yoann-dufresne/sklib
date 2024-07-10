@@ -67,11 +67,19 @@ namespace km
      * @param right_column second column (contigous)
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
-    // template<class It, typename kuint>
-    // std::vector<std::pair<uint64_t, uint64_t> >  get_candidate_overlaps(std::vector<uint64_t> left_column, std::vector<uint64_t> right_column)
-    // {
-        
-    // }
+    template<class It, typename kuint>
+    std::vector<std::pair<uint64_t, uint64_t> >  get_candidate_overlaps(std::vector<uint64_t> left_column, std::vector<uint64_t> right_column)
+    {
+        // First, there should be a function that extracts the k-1 suffix of the left column
+
+        // Second, there should be a function that extracts the k-1 prefix of the right column (same funct as before, just give param the place)
+
+        // I should populate a std::unordered_map with the prefix of the right column
+
+        // Then query the suffix of the left one
+
+        // report the overlaps
+    }
 
 
     template <class It, typename kuint>

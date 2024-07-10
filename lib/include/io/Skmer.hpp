@@ -545,6 +545,7 @@ public:
             skmer.m_pair |= kpair(0b11U) << (4 * i + 2);
     }
 
+
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer
      * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
@@ -570,24 +571,65 @@ public:
     
     }
 
-    /** Compare 2 kmers included in 2 skmers.
+    /** Check if a skmer has a skmer starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
     bool has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos){ 
+        assert(kmer_pos <= this->k - this->m);
         // case position < start of skmer prefix
         if (kmer_pos < (this->k - (this->m + skmer.m_pref_size))){
             // std::cout << "Case < " << kmer_pos << " " << (this->m_pref_size - skmer.m_pref_size) << " " << (this->m_pref_size) << " " << skmer.m_pref_size << std::endl;  
             return false;
         }
-        // case position > end of skmer suffix
-        else if (kmer_pos > this->k - 1 + skmer.m_suff_size){
+        // // case position > end of skmer suffix
+        if (kmer_pos > skmer.m_suff_size){ // semplification of ((kmer_pos + this->k - 1) > this->k - 1 + skmer.m_suff_size)
             // std::cout << "Case > " << kmer_pos << " " << (this->k - 1 + skmer.m_suff_size) << std::endl;  
             return false;
         }
         // in any other case the position is between the skmer positions 
         return true;
+    }
+
+    std::vector<kpair > generate_masks()
+    {
+        // generate first empty SKmer
+        const kuint keep_nucl = 0b11U;
+        const kuint discard_nucl = 0b00U;
+
+        for (uint64_t position {0}; position < (k - 1); position+=1){
+            add_nucleotide(keep_nucl);
+        }
+
+        std::vector<kpair > masks(k - m + 2);
+        
+        for (int64_t position {k - m + 1}; position >= 0; position -= 1){
+            //filling the array
+            masks[position] = m_fwd.m_pair;
+            //then start adding 00s while returning each time
+            add_nucleotide(discard_nucl);
+        }
+        // return the vector
+        return masks;
+    }
+
+    /** Returns the (k-1)-mer (prefix/suffix)starting at the given position.
+     * @param skmer The skmer you want to evaluate having a kmer at the given position
+     * @param start_pos Position of the start of the kmer
+     * @return the k_pair associated to the k-1 mer
+     **/
+    kpair extract_fix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
+        // using kpair = km::Skmer<kuint>::pair;
+        // assert(start_pos <= this->k - this->m + 1);
+        // // get the minimum shift
+        // uint64_t prefix_shift_size {4 * start_pos};
+        // uint64_t suffix_shift_size {4 * (this->k - this->m - start_pos) + 2};
+        // uint64_t shift_size {std::min(prefix_shift_size, suffix_shift_size)};
+       
+        // kpair kmer {skmer.m_pair >> (shift_size)};
+        
+        
     }
 
     template<typename T>
