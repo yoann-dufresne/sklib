@@ -334,6 +334,8 @@ protected:
     kpair* m_pref_masks;
     kpair* m_suff_masks;
 
+    std::vector<kpair > kmer_masks;
+
     // // The amount of bit shifts needed to reach the 4 most significant bits of a kuint
     // static constexpr uint64_t uints_middle_shift {sizeof(kuint) * 8 - 4};
 
@@ -342,7 +344,7 @@ public:
         : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
         , max_pair_value(static_cast<kuint>(~static_cast<kuint>(0)), static_cast<kuint>(~static_cast<kuint>(0)))
-        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - 2 * sk_size) )
+        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - 2 * sk_size) ), kmer_masks(generate_masks())
     {
         assert((k*2-m+3) / 4 <= 2*sizeof(kuint));
 
@@ -613,23 +615,14 @@ public:
         // return the vector
         return masks;
     }
-
-    /** Returns the (k-1)-mer (prefix/suffix)starting at the given position.
+    
+    /** Returns the (k-1)-mer (prefix/suffix) starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param start_pos Position of the start of the kmer
      * @return the k_pair associated to the k-1 mer
      **/
-    kpair extract_fix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
-        // using kpair = km::Skmer<kuint>::pair;
-        // assert(start_pos <= this->k - this->m + 1);
-        // // get the minimum shift
-        // uint64_t prefix_shift_size {4 * start_pos};
-        // uint64_t suffix_shift_size {4 * (this->k - this->m - start_pos) + 2};
-        // uint64_t shift_size {std::min(prefix_shift_size, suffix_shift_size)};
-       
-        // kpair kmer {skmer.m_pair >> (shift_size)};
-        
-        
+    kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
+        return skmer.m_pair & kmer_masks[start_pos];
     }
 
     template<typename T>

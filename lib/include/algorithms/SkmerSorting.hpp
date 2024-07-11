@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <numeric>
+#include <unordered_map>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -68,17 +69,30 @@ namespace km
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
     template<class It, typename kuint>
-    std::vector<std::pair<uint64_t, uint64_t> >  get_candidate_overlaps(std::vector<uint64_t> left_column, std::vector<uint64_t> right_column)
+    std::vector<std::pair<uint64_t, uint64_t> > get_candidate_overlaps(std::vector<Skmer<kuint> > & skmer_enumeration, SkmerManipulator<kuint>& manipulator, uint64_t left_position, std::vector<uint64_t> left_column, std::vector<uint64_t> right_column)
     {
+        std::unordered_map< template Skmer<kuint>::pair, std::vector<uint64_t> > prefixes;
+
+        Skmer<kuint>::pair suffix, prefix;
+        std::vector<std::pair<uint64_t,uint64_t> > candidare_overlaps;
+        std::unordered_map<Skmer<kuint>::pair, std::vector<uint64_t> >::const_iterator matching_prefix;
         // First, there should be a function that extracts the k-1 suffix of the left column
+        for (auto& skmer_id : right_column) {
+            prefix = manip.extract_fix(skmer_enumeration[skmer_id], left_position);
+            prefixes[prefix].push_back(skmer_id);
+        }
 
         // Second, there should be a function that extracts the k-1 prefix of the right column (same funct as before, just give param the place)
-
-        // I should populate a std::unordered_map with the prefix of the right column
-
-        // Then query the suffix of the left one
-
-        // report the overlaps
+        for (auto& skmer_id : left_column) {
+            suffix = manip.extract_fix(skmer_enumeration[skmer_id], left_position+1);
+            matching_prefix = prefixes.find (suffix);
+            if (matching_prefix != prefixes.end()){
+                for (auto& pref_sk_id: matching_prefix->second){
+                    candidare_overlaps.emplace_back(skmer_id,pref_sk_id);
+                }
+            }
+        }
+        return candidare_overlaps;
     }
 
 
