@@ -606,7 +606,7 @@ public:
 
         std::vector<kpair > masks(k - m + 2);
         
-        for (int64_t position {k - m + 1}; position >= 0; position -= 1){
+        for (int64_t position {static_cast<int64_t>(k - m + 1)}; position >= 0; position -= 1){
             //filling the array
             masks[position] = m_fwd.m_pair;
             //then start adding 00s while returning each time

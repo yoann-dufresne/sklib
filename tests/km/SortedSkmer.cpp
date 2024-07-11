@@ -115,9 +115,74 @@ TEST(SkmerSorting, Three_kmer_sorting)
             loop_idx+=1;
         }
     }
-
-
 }
+
+TEST(SkmerSorting, get_canidate_overlaps_0)
+{   
+    //                         Prefix:         A   C   C   _             A   G   C   _   
+    //                         Suffix:       A   C   _   _             A   C   _   _     
+    const kpair input_skmers[2] { {0, 0b0000010111011111U}, {0, 0b0000011111011111U}} ;
+    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+    const uint64_t left_column_position {1};
+    std::vector<uint64_t> left_column_order {0};
+    std::vector<uint64_t> right_column_order {1};
+    auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
+    std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {};
+    ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
+    for (uint64_t i; i < computed_overlaps.size(); i+=1 ){
+        ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
+    }
+}
+
+// TEST(SkmerSorting, get_canidate_overlaps_1)
+// {   
+//     //                         Prefix:         A   C   C   _           
+//     //                         Suffix:       A   C   C   _   
+//     const kpair input_skmers[2] { {0, 0b0000010101011111U}} ;
+//     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4)};
+//     const uint64_t position {1};
+
+// }
+
+// TEST(SkmerSorting, get_canidate_overlaps_2)
+// {   
+//     //                         Prefix:         A   C   C   _             A   C   _   _   
+//     //                         Suffix:       A   C   C   _             A   C   G   _     
+//     const kpair input_skmers[2] { {0, 0b0000010101011111U}, {0, 0b0000010111111111U}} ;
+//     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+//     const uint64_t position {1};
+
+// }
+
+// TEST(SkmerSorting, get_canidate_overlaps_3)
+// {   
+//     //                         Prefix:         A   C   C   _             A   C   G   _   
+//     //                         Suffix:       A   C   C   _             A   C   _   _     
+//     const kpair input_skmers[2] { {0, 0b0000010101011111U}, {0, 0b0000010111111111U}} ;
+//     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+//     const uint64_t position {1};
+
+// }
+
+// TEST(SkmerSorting, get_canidate_overlaps_4)
+// {   
+//     //                         Prefix:         A   G   C   _             A   G   C   _   
+//     //                         Suffix:       A   C   G   _             A   G   C   _     
+//     const kpair input_skmers[2] { {0, 0b0000011111011111U}, {0, 0b0000010111111111U}} ;
+//     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+//     const uint64_t position {1};
+
+// }
+
+// TEST(SkmerSorting, get_canidate_overlaps_5)
+// {   
+//     //                         Prefix:    A   C   T   _             A   C   A   _   
+//     //                         Suffix:  A   C   C   _             A   C   A   _     
+//     const kpair input_skmers[2] { {0, 0b0000010101101111U}, {0, 0b0000010100001111U}} ;
+//     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+//     const uint64_t position {1};
+
+// }
 
 // TEST(SkmerSorting, Full_span_three_kmer_sorting)
 // {
