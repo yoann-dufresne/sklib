@@ -64,6 +64,9 @@ namespace km
     }
 
     /** Returns candidate overlaps between two columns of sorted skmer ids
+     * @param skmer_enumeration
+     * @param manipulator
+     * @param left_position
      * @param left_column first column
      * @param right_column second column (contigous)
      * @return a vector of pairs of candidate overlaps between the two columns
