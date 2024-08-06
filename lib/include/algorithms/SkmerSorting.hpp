@@ -75,20 +75,21 @@ namespace km
     std::vector<std::pair<uint64_t, uint64_t> > get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& manipulator, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column)
     {
         using kpair = typename Skmer<kuint>::pair;
-        std::unordered_map< kpair, std::vector<uint64_t> > prefixes {};
+        using kpairhash = typename Skmer<kuint>::pair_hasher;
+        std::unordered_map< kpair, std::vector<uint64_t>, kpairhash > prefixes {};
 
         kpair suffix, prefix;
         std::vector<std::pair<uint64_t,uint64_t> > candidare_overlaps;
-        typename std::unordered_map< kpair, std::vector<uint64_t> >::const_iterator matching_prefix;
+        typename std::unordered_map< kpair, std::vector<uint64_t>, kpairhash >::const_iterator matching_prefix;
         // First, there should be a function that extracts the k-1 suffix of the left column
         for (auto& skmer_id : right_column) {
-            prefix = manipulator.extract_fix(skmer_enumeration[skmer_id], left_position);
+            prefix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position);
             prefixes[prefix].push_back(skmer_id);
         }
 
         // Second, there should be a function that extracts the k-1 prefix of the right column (same funct as before, just give param the place)
         for (auto& skmer_id : left_column) {
-            suffix = manipulator.extract_fix(skmer_enumeration[skmer_id], left_position+1);
+            suffix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             matching_prefix = prefixes.find (suffix);
             if (matching_prefix != prefixes.end()){
                 for (auto& pref_sk_id: matching_prefix->second){

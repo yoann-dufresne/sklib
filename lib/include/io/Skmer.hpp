@@ -219,8 +219,7 @@ public:
             m_value[0] |= value;
             return *this;
         }
-
-
+        
         operator uint64_t()
         {
             return m_value[0];
@@ -243,6 +242,14 @@ public:
         }
 
     };
+
+    struct pair_hasher
+    {
+        std::size_t operator()(const pair& p) {
+            return std::hash<kuint>{}(p.m_value[0]) ^ std::hash<kuint>{}(p.m_value[1]); // XOR of the two hashes
+        }
+    };
+
 };
 
 
