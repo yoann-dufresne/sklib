@@ -245,7 +245,7 @@ public:
 
     struct pair_hasher
     {
-        std::size_t operator()(const pair& p) {
+        std::size_t operator()(pair const & p) const {
             return std::hash<kuint>{}(p.m_value[0]) ^ std::hash<kuint>{}(p.m_value[1]); // XOR of the two hashes
         }
     };
@@ -629,6 +629,10 @@ public:
      * @return the k_pair associated to the k-1 mer
      **/
     kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
+        std::cout << skmer.m_pair << std::endl;
+        std::cout << kmer_masks[start_pos] << std::endl;
+        std::cout << (skmer.m_pair & kmer_masks[start_pos]) << std::endl;
+        
         return skmer.m_pair & kmer_masks[start_pos];
     }
 

@@ -66,7 +66,7 @@ namespace km
     /** Returns candidate overlaps between two columns of sorted skmer ids
      * @param skmer_enumeration
      * @param manipulator
-     * @param left_position
+     * @param left_position 
      * @param left_column first column
      * @param right_column second column (contigous)
      * @return a vector of pairs of candidate overlaps between the two columns
@@ -81,15 +81,19 @@ namespace km
         kpair suffix, prefix;
         std::vector<std::pair<uint64_t,uint64_t> > candidare_overlaps;
         typename std::unordered_map< kpair, std::vector<uint64_t>, kpairhash >::const_iterator matching_prefix;
-        // First, there should be a function that extracts the k-1 suffix of the left column
+        // First, there should be a function that extracts the k-1 prefix of the right column
         for (auto& skmer_id : right_column) {
-            prefix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position);
+            std::cout << "pref" << std::endl;
+            prefix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             prefixes[prefix].push_back(skmer_id);
         }
 
-        // Second, there should be a function that extracts the k-1 prefix of the right column (same funct as before, just give param the place)
+        // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
         for (auto& skmer_id : left_column) {
+            std::cout << "suff" << std::endl;
             suffix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
+            
+
             matching_prefix = prefixes.find (suffix);
             if (matching_prefix != prefixes.end()){
                 for (auto& pref_sk_id: matching_prefix->second){
