@@ -64,11 +64,11 @@ namespace km
     }
 
     /** Returns candidate overlaps between two columns of sorted skmer ids
-     * @param skmer_enumeration
-     * @param manipulator
-     * @param left_position 
-     * @param left_column first column
-     * @param right_column second column (contigous)
+     * @param skmer_enumeration the enumeration of skmer from the iterator
+     * @param manipulator the skmer manipulator inizialized for the iterator
+     * @param left_position the "column" position: i.e. the starting point of leftmost kmer considered for the overlap
+     * @param left_column the list of skmers that have a valid kmer at the left position
+     * @param right_column the list of skmers that have a valid kmer at the left position + 1 (contigous one)
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
     template<typename kuint>
@@ -95,7 +95,6 @@ namespace km
             // std::cout << "suff" << std::endl;
             suffix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             
-
             matching_prefix = prefixes.find (suffix);
             if (matching_prefix != prefixes.end()){
                 for (auto& pref_sk_id: matching_prefix->second){
