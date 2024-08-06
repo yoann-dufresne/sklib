@@ -83,14 +83,16 @@ namespace km
         typename std::unordered_map< kpair, std::vector<uint64_t>, kpairhash >::const_iterator matching_prefix;
         // First, there should be a function that extracts the k-1 prefix of the right column
         for (auto& skmer_id : right_column) {
-            std::cout << "pref" << std::endl;
+            // std::cout << "pref" << std::endl;
+            assert(skmer_id < skmer_enumeration.size());
+            assert(skmer_id > 0);
             prefix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             prefixes[prefix].push_back(skmer_id);
         }
 
         // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
         for (auto& skmer_id : left_column) {
-            std::cout << "suff" << std::endl;
+            // std::cout << "suff" << std::endl;
             suffix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             
 

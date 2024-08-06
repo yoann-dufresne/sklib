@@ -629,9 +629,9 @@ public:
      * @return the k_pair associated to the k-1 mer
      **/
     kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
-        std::cout << skmer.m_pair << std::endl;
-        std::cout << kmer_masks[start_pos] << std::endl;
-        std::cout << (skmer.m_pair & kmer_masks[start_pos]) << std::endl;
+        // std::cout << skmer.m_pair << std::endl;
+        // std::cout << kmer_masks[start_pos] << std::endl;
+        // std::cout << (skmer.m_pair & kmer_masks[start_pos]) << std::endl;
         
         return skmer.m_pair & kmer_masks[start_pos];
     }
