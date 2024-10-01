@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+Standard: LS_Cpp11
+IndentWidth: 4
+UseTab: Never
+NamespaceIndentation: NI_None
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: true
+IndentCaseLabels: true
+SpaceBeforeParens: SBPO_ControlStatements

@@ -532,7 +532,7 @@ public:
         klibpp::KSeq m_record;
         // skmer sequence enumerator
         SeqSkmerator<kuint> m_seq_rator;
-        SeqSkmerator<kuint>::Iterator m_skmer_iterator;
+        typename SeqSkmerator<kuint>::Iterator m_skmer_iterator;
 
     protected:
         // Construct an iterator without control on the file stream

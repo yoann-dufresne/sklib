@@ -2,15 +2,12 @@
 set(DBGLIB_TEST_DATA "${CMAKE_SOURCE_DIR}/tests/data")
 
 file(GLOB_RECURSE TEST_SOURCES "*.cpp")
-# add_library(${DBGLIB_LIB} ${DBGLIB_SOURCES})
 add_executable(dbglib-tests ${TEST_SOURCES})
-
-target_link_libraries(dbglib-tests PUBLIC gtest zlib kseqpp pthread dbglib)
+target_link_libraries(dbglib-tests PRIVATE build_flags dbglib gtest zlib kseqpp pthread)
 
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0.0)
     target_link_libraries(dbglib-tests PUBLIC stdc++fs)
 endif()
-
 
 add_test(
     NAME dbglib:all

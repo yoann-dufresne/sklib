@@ -1,32 +1,35 @@
+#ifndef RSQF_H
+#define RSQF_H
+
 #include <array>
 #include <cstdint>
 #include <bit>
 
 #include <dbg/datastruct/PackedArray.hpp>
-#include <dbg/datastruct/bitvector.hpp>
+#include <dbg/datastruct/BitArray.hpp>
 #include <dbg/datastruct/quotienting.hpp>
 
-#ifndef QUOTIENT_FILTER_H
-#define QUOTIENT_FILTER_H
+namespace dbglib {
 
 template<uint64_t q, uint64_t r, class Quotienting = LeftQuotienting>
 class QuotientFilter
 {
+    public: // TODO switch to private
+        // Number of blocks. Defined at compile time
+        static constexpr uint64_t num_blocks {1UL << (q - 6)};
+        static constexpr uint64_t num_slots {num_blocks * 64UL};
+        // Storage area of rests
+        std::array<PackedBlock<r>, QuotientFilter::num_blocks> m_rests {};
+        // Occupied bitvector
+        BitArray<1UL << q> m_occupied {};
+        // Run ends bitvector
+        BitArray<1UL << q> m_runend {};
+        // Offset vector : An offset value corresponds to the offset to the next slot that can corresponds to the current block.
+        std::array<uint64_t, QuotientFilter::num_blocks> m_offsets {};
+
+        uint64_t m_num_elements;
+
 public:
-    // Number of blocks. Defined at compile time
-    static constexpr uint64_t num_blocks {1UL << (q - 6)};
-    static constexpr uint64_t num_slots {num_blocks * 64UL};
-    // Storage area of rests
-    std::array<PackedBlock<r>, QuotientFilter::num_blocks> m_rests {};
-    // Occupied bitvector
-    Bitvector<1UL << q> m_occupied {};
-    // Run ends bitvector
-    Bitvector<1UL << q> m_runend {};
-    // Offset vector : An offset value corresponds to the offset to the next slot that can corresponds to the current block.
-    std::array<uint64_t, QuotientFilter::num_blocks> m_offsets {};
-
-    uint64_t m_num_elements;
-
     QuotientFilter() : m_num_elements(0)
     {
         static_assert(64 >= q + r);
@@ -98,20 +101,19 @@ public:
         return static_cast<double>(m_num_elements) / static_cast<double>(num_slots) > .95;
     }
 
+    // uint64_t * insert(const uint64_t * begin, const uint64_t * end)
+    // {
+    //     for (uint64_t* element = begin; element != end; ++element)
+    //     {
+    //         // If max capacity reached stop the insertion here and return the next pointer
+    //         if (max_capacity())
+    //             return element;
+    //         // Insert the element
+    //         this->insert(*element);
+    //     }
 
-    uint64_t * insert(const uint64_t * begin, const uint64_t * end)
-    {
-        for (uint64_t * element = begin ; element != end ; element++)
-        {
-            // If max capacity reached stop the insertion here and return the next pointer
-            if (max_capacity())
-                return element;
-            // Insert the element
-            this->insert(*element);
-        }
-
-        return end;
-    }
+    //     return end;
+    // }
 
 
     /** Insert an element in the RSQF.
@@ -366,4 +368,6 @@ public:
     }
 };
 
-#endif
+} // namespace dbglib
+
+#endif // RSQF_HPP

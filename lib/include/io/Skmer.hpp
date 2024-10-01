@@ -281,13 +281,13 @@ std::ostream& operator<<(std::ostream& os, const SkmerPrettyPrinter<kuint> pp)
     // Forward prefix
     for (uint64_t pref_idx{k-m-pp.m_skmer.m_pref_size} ; pref_idx<pp.m_pref_size ; pref_idx++)
     {
-        os << nucleotides[((pp.m_skmer).m_pair >> (4 * pref_idx)) & 0b11UL];
+        os << nucleotides[((pp.m_skmer).m_pair >> (4 * pref_idx)) & static_cast<uint64_t>(0b11UL)];
     }
     os << " ";
     // Forward suffix
     for (uint64_t suf_idx{pp.m_suff_size} ; suf_idx>(k-m-pp.m_skmer.m_suff_size) ; suf_idx--)
     {
-        os << nucleotides[((pp.m_skmer).m_pair >> (4 * suf_idx - 2)) & 0b11UL];
+        os << nucleotides[((pp.m_skmer).m_pair >> (4 * suf_idx - 2)) & static_cast<uint64_t>(0b11UL)];
     }
 
     os << "]";
@@ -317,12 +317,12 @@ protected:
     uint64_t m_pref_size;
     bool m_current_orientation;
 
-    Skmer<kuint>::pair m_fwd_suffix_buff;
-    Skmer<kuint>::pair m_fwd_prefix_buff;
-    Skmer<kuint>::pair m_rev_suffix_buff;
-    Skmer<kuint>::pair m_rev_prefix_buff;
+    typename Skmer<kuint>::pair m_fwd_suffix_buff;
+    typename Skmer<kuint>::pair m_fwd_prefix_buff;
+    typename Skmer<kuint>::pair m_rev_suffix_buff;
+    typename Skmer<kuint>::pair m_rev_prefix_buff;
 
-    const Skmer<kuint>::pair max_pair_value;
+    const typename Skmer<kuint>::pair max_pair_value;
     const kpair m_mask;
 
     kpair m_minimizer_mask;
@@ -530,7 +530,7 @@ public:
      **/
     void mask_absent_nucleotides(Skmer<kuint>& skmer) const
     {
-        using kpair = km::Skmer<kuint>::pair;
+        using kpair = typename km::Skmer<kuint>::pair;
         // Mask prefix
         for (uint64_t i{0} ; i<(k-m-skmer.m_pref_size) ; i++)
             skmer.m_pair |= kpair(0b11U) << (4 * i);
@@ -583,13 +583,13 @@ std::ostream& operator<<(std::ostream& os, SkmerManipulator<T>& manip)
     // Forward prefix
     for (uint64_t pref_idx{0} ; pref_idx<manip.m_pref_size ; pref_idx++)
     {
-        os << (nucleotides[(manip.m_fwd_prefix_buff >> (4 * pref_idx)) & 0b11UL]);
+        os << (nucleotides[(manip.m_fwd_prefix_buff >> (4 * pref_idx)) & static_cast<uint64_t>(0b11UL)]);
     }
     os << " ";
     // Forward suffix
     for (uint64_t suf_idx{manip.m_suff_size} ; suf_idx>0 ; suf_idx--)
     {
-        os << (nucleotides[(manip.m_fwd_suffix_buff >> (4 * suf_idx - 2)) & 0b11UL]);
+        os << (nucleotides[(manip.m_fwd_suffix_buff >> (4 * suf_idx - 2)) & static_cast<uint64_t>(0b11UL)]);
     }
 
     os << " / ";
@@ -597,13 +597,13 @@ std::ostream& operator<<(std::ostream& os, SkmerManipulator<T>& manip)
     // Reverse prefix
     for (uint64_t pref_idx{0} ; pref_idx<manip.m_pref_size ; pref_idx++)
     {
-        os << nucleotides[(manip.m_rev_prefix_buff >> (4 * pref_idx)) & 0b11UL];
+        os << nucleotides[(manip.m_rev_prefix_buff >> (4 * pref_idx)) & static_cast<uint64_t>(0b11UL)];
     }
     os << " ";
     // Reverse suffix
     for (uint64_t suf_idx{manip.m_suff_size} ; suf_idx>0 ; suf_idx--)
     {
-        os << nucleotides[(manip.m_rev_suffix_buff >> (4 * suf_idx - 2)) & 0b11UL];
+        os << nucleotides[(manip.m_rev_suffix_buff >> (4 * suf_idx - 2)) & static_cast<uint64_t>(0b11UL)];
     }
 
     os << "]";

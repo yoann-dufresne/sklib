@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
+#include <iostream>
 
 #include <dbg/datastruct/RSQF.hpp>
 #include <dbg/datastruct/quotienting.hpp>
 
-#include <iostream>
 using namespace std;
+using namespace dbglib;
 
 static constexpr uint64_t q1 {6};
 static constexpr uint64_t r1 {6};

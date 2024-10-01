@@ -1,14 +1,10 @@
-#include <array>
-#include <algorithm>
-#include <cstdint>
-
-
-#include <iostream>
-using namespace std;
-
 #ifndef PACKED_ARRAY_H
 #define PACKED_ARRAY_H
 
+#include <array>
+#include <algorithm>
+#include <cstdint>
+#include <iostream>
 
 /** Contains a packed array of 64 values of size slot_size. This is a building block for packed hash tables, counting bloom filters and quotient filter.
  **/
@@ -17,7 +13,7 @@ struct PackedBlock
 {
 	std::array<uint64_t, slot_size> m_array{};
 	
-	PackedBlock(){};
+	PackedBlock() {};
 
 	/** Get the value at index (converted in uint64_t).
 	 **/

@@ -5,7 +5,7 @@ add_executable(${EXEC_NAME} ${DBG_SOURCES})
 
 target_compile_features(${EXEC_NAME} PUBLIC cxx_std_17)
 target_link_libraries(${EXEC_NAME} PUBLIC
-  $<BUILD_INTERFACE:build_type_flags>
+  $<BUILD_INTERFACE:build_flags>
   $<BUILD_INTERFACE:warning_flags>
   $<BUILD_INTERFACE:asan_flags>
   dbglib
