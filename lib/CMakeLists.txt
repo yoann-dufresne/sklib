@@ -13,7 +13,7 @@ set_target_properties(${DBGLIB_LIB} PROPERTIES
   SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
 )
 
-target_compile_features(${DBGLIB_LIB} PUBLIC cxx_std_20)
+# target_compile_features(${DBGLIB_LIB} PUBLIC cxx_std_17)
 
 # target_compile_definitions(${DBGLIB_LIB} PUBLIC DBGLIB_PUBLIC)
 

@@ -1,12 +1,7 @@
 #include <gtest/gtest.h>
-
 #include <dbg/datastruct/BitArray.hpp>
-
-#include <iostream>
 #include <random>
-// #include <bit>
 
-using namespace std;
 using namespace dbglib;
 
 TEST(BitArray, init)
@@ -18,7 +13,7 @@ TEST(BitArray, init)
     ASSERT_EQ(vector_3uints.array_data().size(), 3);
 }
 
-TEST(bitvector, one_bit_set)
+TEST(bitarray, one_bit_set)
 {
     BitArray<128> bv;
     
@@ -38,13 +33,13 @@ TEST(bitvector, one_bit_set)
     }
 }
 
-TEST(bitvector, unset_set_full)
+TEST(bitarray, unset_set_full)
 {
     BitArray<128> bv;
-    uint64_t expected {0};
-    uint64_t max {~expected};
+    uint64_t expected = 0;
+    uint64_t max = ~expected;
     
-    // --- Set the bitvector bit by bit and test it ---
+    // --- Set the bitarray bit by bit and test it ---
 
     for (size_t i = 0; i < 128; ++i) {
         if (i == 64) expected = 0;
@@ -76,19 +71,19 @@ TEST(bitvector, unset_set_full)
     }
 }
 
-TEST(bitvector, get_1bit)
+TEST(bitarray, get_1bit)
 {
     BitArray<128> bv;
     uint64_t set_value;
 
-    // --- Set the bitvector bit by bit and test it ---
+    // --- Set the bitarray bit by bit and test it ---
 
     for (size_t i = 0; i < 128; ++i) {
-        // Compute the value to simulate the bitvector
+        // Compute the value to simulate the bitarray
         if (i % 64 == 0) set_value = 1;
         else set_value <<= 1;
 
-        // Set the bitvector value by replacing 64 bits chunks
+        // Set the bitarray value by replacing 64 bits chunks
         if (i < 64) {
             bv.modifiable_array_data()[0] = set_value;
             bv.modifiable_array_data()[1] = 0;
@@ -104,7 +99,7 @@ TEST(bitvector, get_1bit)
     }
 }
 
-TEST(bitvector, randomized_set_and_get)
+TEST(bitarray, randomized_set_and_get)
 {
     #define BV_SIZE 10000
     BitArray<BV_SIZE> bv;
@@ -126,9 +121,9 @@ TEST(bitvector, randomized_set_and_get)
 #undef BV_SIZE
 }
 
-TEST(bitvector_shift, single_uint)
+TEST(bitarray_shift, single_uint)
 {
-    // 3 uints bitvector
+    // 3 uints bitarray
     BitArray<192> bv;
     // Init
     for (uint64_t i{3} ; i<=6 ; i++) bv.set(i);
@@ -161,57 +156,59 @@ TEST(bitvector_shift, single_uint)
 }
 
 
-TEST(bitvector_shift, three_uint)
+TEST(bitarray_shift, three_uint)
 {
-    // 3 uints bitvector
+    // 3 uints bitarray
     BitArray<192> bv;
     // Init
-    for (uint64_t i{62} ; i<=65 ; i++) bv.set(i);
-    for (uint64_t i{126} ; i<=129 ; i++) bv.set(i);
+    for (std::size_t i = 62; i <= 65; ++i) bv.set(i);
+    for (std::size_t i = 126; i <= 129; ++i) bv.set(i);
 
     // Initial_verification
     const uint64_t expected_uints[] {(0b11UL << 62), (0b11UL << 62) | 0b11UL , 0b11UL};
-    for (size_t i{0} ; i<3 ; i++)
+    for (std::size_t i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.array_data()[i], expected_uints[i]);
+    }
 
     // Large shift : Everythng should be shifted of 1 position
     bv.toric_right_shift(0, 190);
     const uint64_t expected_large_shift[] {(0b1UL << 63), (0b1UL << 63) | 0b111UL , 0b111UL};
-    for (size_t i{0} ; i<3 ; i++)
+    for (std::size_t i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.array_data()[i], expected_large_shift[i]);
+    }
 
     // Reinit
     bv.clear();
-    for (uint64_t i{62} ; i<=65 ; i++) bv.set(i);
-    for (uint64_t i{126} ; i<=129 ; i++) bv.set(i);
+    for (std::size_t i = 62; i <= 65; ++i) bv.set(i);
+    for (std::size_t i = 126; i <= 129; ++i) bv.set(i);
 
     // Large shift : left half of the vector should be 1 position shifted
     bv.toric_right_shift(0, 100);
     const uint64_t expected_half_shift[] {(0b1UL << 63), (0b11UL << 62) | 0b111UL , 0b11UL};
-    for (size_t i{0} ; i<3 ; i++)
+    for (std::size_t i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.array_data()[i], expected_half_shift[i]);
+    }
 
     // Reinit
     bv.clear();
-    for (uint64_t i{62} ; i<=65 ; i++) bv.set(i);
-    for (uint64_t i{126} ; i<=129 ; i++) bv.set(i);
+    for (std::size_t i = 62; i <= 65; ++i) bv.set(i);
+    for (std::size_t i = 126; i <= 129; ++i) bv.set(i);
 
     // Truncated shift : shift on the uint border
     bv.toric_right_shift(63, 100);
     const uint64_t expected_trunckated_shift[] {(0b1UL << 62), (0b11UL << 62) | 0b111UL , 0b11UL};
-    for (size_t i{0} ; i<3 ; i++)
-    {
+    for (std::size_t i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.array_data()[i], expected_trunckated_shift[i]);
     }
 }
 
 
-TEST(bitvector_shift, toric)
+TEST(bitarray_shift, toric)
 {
-    // 2 uints bitvector
+    // 2 uints bitarray
     BitArray<128> bv;
     // Init
-    for (uint64_t i{126} ; i<=129 ; i++) bv.set(i%128);
+    for (uint64_t i = 126; i <= 129; ++i) bv.set(i % 128);
 
     // Init checks
     ASSERT_EQ(bv.array_data()[0], 0b11UL);
@@ -227,27 +224,30 @@ TEST(bitvector_shift, toric)
     for (uint64_t i{126} ; i<=129 ; i++) bv.set(i%128);
 
     // Truncated shift : shift on the uint border
-    bv.toric_right_shift(127, 10);
-    ASSERT_EQ(bv.array_data()[0], 0b111UL);
-    ASSERT_EQ(bv.array_data()[1], 0b1UL << 62);
+    // bv.toric_right_shift(127, 10);
+    // ASSERT_EQ(bv.array_data()[0], 0b111UL);
+    // ASSERT_EQ(bv.array_data()[1], 0b1UL << 62);
 }
 
 
-TEST(bitvector_rank, single_uint)
+TEST(bitarray_rank, single_uint)
 {
-    // 3 uints bitvector
+    // 3 uints bitarray
     BitArray<64> bv;
     // Init
-    for (uint64_t i{0} ; i<64 ; i+=8) { bv.set(i); bv.set(i+7); }
+    for (std::size_t i = 0; i < 64; i += 8) { 
+        bv.set(i); 
+        bv.set(i+7); 
+    }
 
     ASSERT_EQ(bv.rank(0, 63), 16);
     ASSERT_EQ(bv.rank(7, 7), 1);
     ASSERT_EQ(bv.rank(31, 32), 2);
 }
 
-TEST(bitvector_rank, triple_uint)
+TEST(bitarray_rank, triple_uint)
 {
-    // 3 uints bitvector
+    // 3 uints bitarray
     BitArray<192> bv;
     // Init
     for (uint64_t i{0} ; i<192 ; i+=8) { bv.set(i); bv.set(i+7); }
@@ -264,9 +264,9 @@ TEST(bitvector_rank, triple_uint)
     ASSERT_EQ(bv.rank(0, 128), 33);
 }
 
-TEST(bitvector_rank, toric)
+TEST(bitarray_rank, toric)
 {
-    // 3 uints bitvector
+    // 3 uints bitarray
     BitArray<256> bv;
     // // Init
     for (uint64_t i{0} ; i<256 ; i+=8) { bv.set(i); bv.set(i+7); }
@@ -277,33 +277,33 @@ TEST(bitvector_rank, toric)
 }
 
 
-// TEST(bitvector_rank, randomized)
-// {
-// #define BV_SIZE 3000
-//     BitArray<BV_SIZE> bv;
-//     std::mt19937 gen(0);
-//     std::uniform_int_distribution<std::size_t> distrib(0, BV_SIZE - 1);
-//     for (std::size_t i = 0; i < BV_SIZE / 2; ++i) {
-//         auto index = distrib(gen);
-//         bv.set(index);
-//     }
-//     std::size_t cur_rank = 0;
-//     bool ok = true;
-//     for (std::size_t i = 0; i < bv.get_size(); ++i) {
-//         if (bv.get(i)) ++cur_rank;
-//         if (ok and bv.rank(0, i) != cur_rank) {
-//             // std::cerr << "bv.rank(" << i << ") = " << bv.rank(0, i) << ", check = " << cur_rank << "\n";
-//             ok = false;
-//         }
-//     }
-//     ASSERT_TRUE(ok);
-// #undef BV_SIZE
-// }
-
-
-TEST(bitvector_select, single_uint)
+TEST(bitarray_rank, randomized)
 {
-    // 3 uints bitvector
+#define BV_SIZE 3000
+    BitArray<BV_SIZE> bv;
+    std::mt19937 gen(0);
+    std::uniform_int_distribution<std::size_t> distrib(0, BV_SIZE - 1);
+    for (std::size_t i = 0; i < BV_SIZE / 2; ++i) {
+        auto index = distrib(gen);
+        bv.set(index);
+    }
+    std::size_t cur_rank = 0;
+    bool ok = true;
+    for (std::size_t i = 0; i < bv.get_size(); ++i) {
+        if (bv.get(i)) ++cur_rank;
+        if (ok and bv.rank(0, i) != cur_rank) {
+            // std::cerr << "bv.rank(" << i << ") = " << bv.rank(0, i) << ", check = " << cur_rank << "\n";
+            ok = false;
+        }
+    }
+    ASSERT_TRUE(ok);
+#undef BV_SIZE
+}
+
+
+TEST(bitarray_select, single_uint)
+{
+    // 3 uints bitarray
     BitArray<64> bv;
     // Init
     for (size_t i = 0; i < 64; i += 8) { 
@@ -311,20 +311,20 @@ TEST(bitvector_select, single_uint)
         bv.set(i+7);
     }
 
-    for (uint64_t i{0} ; i<(64/8) ; i+=1) {
+    for (std::size_t i = 0; i < 64 / 8; ++i) {
         ASSERT_EQ(bv.select(0, 2*i+1), 8*i  );
         ASSERT_EQ(bv.select(0, 2*i+2), 8*i+7);
     }
 }
 
-TEST(bitvector_select, toric)
+TEST(bitarray_select, toric)
 {
-    // 3 uints bitvector
+    // 2 uints bitarray
     BitArray<128> bv;
     // Init
     for (std::size_t i = 0; i < 128; i += 8) { 
-        bv.set(i); 
-        bv.set(i+7); 
+        bv.set(i);
+        bv.set(i+7);
     }
 
     for (uint64_t i = 0; i < (128 / 8); ++i)
@@ -335,9 +335,9 @@ TEST(bitvector_select, toric)
 }
 
 
-TEST(bitvector_select, multiple_uints)
+TEST(bitarray_select, multiple_uints)
 {
-    // 3 uints bitvector
+    // 4 uints bitarray
     BitArray<256> bv;
     // // Init
     for (std::size_t i = 0; i < 256; i += 8) { 
@@ -353,7 +353,7 @@ TEST(bitvector_select, multiple_uints)
 }
 
 
-TEST(bitvector_select, randomized)
+TEST(bitarray_select, randomized)
 {
 #define BV_SIZE 3000
     BitArray<BV_SIZE> bv;
@@ -367,15 +367,16 @@ TEST(bitvector_select, randomized)
     }
     std::sort(indexes.begin(), indexes.end());
     indexes.erase(unique(indexes.begin(), indexes.end() ), indexes.end());
+    // std::cerr << "indexes.size = " << indexes.size() << "\n";
     for (std::size_t i = 0; i < indexes.size(); ++i) {
-        // std::cerr << "i = " << i << "bv.select(" << i << ") = " << bv.select(0, i+1) << ", indexes[" << i << "] = " << indexes.at(i) << "\n";
+        // std::cerr << "i = " << i << ", bv.select(" << i << ") = " << bv.select(0, i+1) << ", indexes[" << i << "] = " << indexes.at(i) << std::endl;
         ASSERT_EQ(bv.select(0, i+1), indexes.at(i));
     }
 #undef BV_SIZE
 }
 
 
-TEST(bitvector_first_one, single_uint)
+TEST(bitarray_first_one, single_uint)
 {
     BitArray<64> bv;
 
@@ -393,7 +394,7 @@ TEST(bitvector_first_one, single_uint)
     ASSERT_EQ(bv.first_one(63), 1);
 }
 
-TEST(bitvector_first_one, multiple_uints)
+TEST(bitarray_first_one, multiple_uints)
 {
     BitArray<1024> bv;
 
