@@ -47,24 +47,19 @@ std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::ar
 }
 
 
-
+/** Testing the result of "has_valid_kmer" on 2 skmers.
+ * TODO: move to the manipulator test file.
+ */
 TEST(SkmerSorting, kmer_validation)
 {
-    //                         Prefix:         A   T   _   _             A   _   _   _   
-    //                         Suffix:       A   C   C   C             C   C   C   C     
+    //                  Prefix:         A   T   _   _             A   _   _   _   
+    //                  Suffix:       A   C   C   C             C   C   C   C     
     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
-    // km::Skmer<kuint> sk2(input_skmers[1],1,4);
-    //const km::Skmer<kuint> skmers_array[2] = {sk1,sk2} ;
     std::vector<km::Skmer<kuint>> m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
-    // std::cout << "Before change: " <<  m_skmer_vector[0].m_pref_size << std::endl;
-    // m_skmer_vector[0].m_pref_size = 5;
-    // std::cout << "After change: " << m_skmer_vector[0].m_pref_size << std::endl;
-    // m_skmer_vector.push_back(sk1);
 
+    const uint64_t kmer_positions {k - m + 1};
 
-    const uint64_t kmer_positions {(2*k - m)};
-
-    const uint64_t expected_valid_kmers[kmer_positions][2]{{0,0},{0,0},{1,0},{1,1},{1,1},{1,1},{1,1},{1,1}};
+    const uint64_t expected_valid_kmers[kmer_positions][2]{{0,0},{0,0},{1,0},{1,1}};
     // 0 values map to false, else to true
     bool kmer_validity;
     for (uint64_t skmer_id {0}; skmer_id < 2; skmer_id++ ){
