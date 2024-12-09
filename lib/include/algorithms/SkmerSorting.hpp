@@ -41,10 +41,10 @@ namespace km
         for(It skmer = start; skmer != end; ++skmer)
         {
             pp << *skmer;
-            std::cout << "checking kmer validity" << pp << std::endl;
+            // std::cout << "checking kmer validity" << pp << std::endl;
             if (m_manip.has_valid_kmer(*skmer, kmer_pos)){
                 valid_skmer.push_back(sk_id);
-                std::cout << "valid" << std::endl;
+                // std::cout << "valid" << std::endl;
             }
             sk_id++;
         }
@@ -55,10 +55,10 @@ namespace km
         std::sort(valid_skmer.begin(), valid_skmer.end(),
                 compare_kmer_skmer_pos<It, kuint>(kmer_pos, m_manip, start, end));
 
-        std::cout << "SORTED SKMER LIST - ( size: " << valid_skmer.size() << ") " << std::endl;
-        for (uint64_t i: valid_skmer) 
-            std::cout << i << ' ';
-        std::cout << std::endl;
+        // std::cout << "SORTED SKMER LIST - ( size: " << valid_skmer.size() << ") " << std::endl;
+        // for (uint64_t i: valid_skmer) 
+        //     std::cout << i << ' ';
+        // std::cout << std::endl;
         
         return valid_skmer;
     }

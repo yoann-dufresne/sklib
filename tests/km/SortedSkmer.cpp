@@ -18,10 +18,12 @@ constexpr uint64_t m{2};
 km::SkmerManipulator<kuint> manip {k, m};
 km::SkmerPrettyPrinter<kuint> pp {k, m};
 
-    //                      Prefix:      A   _   _   _            A   _   _   _            C   _   _   _
-    //                      Suffix:    A   A   A   A            A   C   C   C            C   C   C   C 
-const std::array< kpair, 3 > kmer_triplet { kpair(0b0000001100110011U,0), kpair(0b0000011101110111U,0), kpair(0b0101011101110111U,0) };
-
+//                      Prefix:                        A   _   _   _                 A   _   _   _  
+//                      Suffix:                      A   A   A   A                 A   C   C   C 
+std::array< kpair, 3 > const kmer_triplet { kpair(0b0000001100110011U,0), kpair(0b0000011101110111U,0),
+//                      Prefix:                        C   _   _   _
+//                      Suffix:                      C   C   C   C 
+                                            kpair(0b0101011101110111U,0) };
 const std::array< std::string, 3 > skmer_strings {"AAAAA", "AACCC", "CCCCC"};
 
 
@@ -33,10 +35,10 @@ std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::ar
     permutation_array[0] = {km::Skmer<kuint>(kmer_triplet[0],0,3),
                             km::Skmer<kuint>(kmer_triplet[1],0,3),
                             km::Skmer<kuint>(kmer_triplet[2],0,3)};
-    for(auto el: permutation_array[0]){
-        pp << el;
-        std::cout << el << std::endl;
-    }
+    // for(auto el: permutation_array[0]){
+    //     pp << el;
+    //     std::cout << el << std::endl;
+    // }
 
     for(int64_t i {1}; i < 6; i++){
         permutation_array[i] = permutation_array[i-1];
@@ -91,20 +93,15 @@ TEST(SkmerSorting, Single_kmer_sorting)
     ASSERT_EQ(ordered_kmers_rev, expected_order_rev);
 }
 
+/** Test sorting on all possible permutations of 3 elements */
 TEST(SkmerSorting, Three_kmer_sorting)
 {
     std::vector<uint64_t> ordered_kmers {};
 
     uint64_t position {3};
     for(auto const & permuted: get_skmer_permutations(kmer_triplet)){
-
         ordered_kmers = km::sorting::sort_column(permuted.begin(), permuted.end(), position, manip);
         uint64_t loop_idx {0};
-
-        for (auto & el: permuted){
-            pp << el;
-            std:: cout << pp;
-        }
         
         for(auto & skmer_position: ordered_kmers){
             km::Skmer<kuint> const & curr_skmer { permuted[skmer_position] };
