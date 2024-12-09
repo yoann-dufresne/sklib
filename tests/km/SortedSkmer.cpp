@@ -55,7 +55,7 @@ TEST(SkmerSorting, kmer_validation)
     //                  Prefix:         A   T   _   _             A   _   _   _   
     //                  Suffix:       A   C   C   C             C   C   C   C     
     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
-    std::vector<km::Skmer<kuint>> m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
+    std::vector<km::Skmer<kuint>> skmer_vector{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
 
     const uint64_t kmer_positions {k - m + 1};
 
@@ -64,27 +64,31 @@ TEST(SkmerSorting, kmer_validation)
     bool kmer_validity;
     for (uint64_t skmer_id {0}; skmer_id < 2; skmer_id++ ){
         for(uint64_t position; position < kmer_positions; position++ ){
-            kmer_validity = manip.has_valid_kmer(m_skmer_vector[skmer_id], position);
+            kmer_validity = manip.has_valid_kmer(skmer_vector[skmer_id], position);
             ASSERT_EQ(kmer_validity, expected_valid_kmers[position][skmer_id]);
         }
     }
 }
 
+/** Test the order of 2 kmers after a sort on one column */
 TEST(SkmerSorting, Single_kmer_sorting)
 {
     
-    //                 Prefix:         A   T   _   _             A   _   _   _   
-    //                 Suffix:       A   C   C   C             C   C   C   C     
+    //                 Prefix:          A   T   _   _             A   _   _   _   
+    //                 Suffix:        A   C   C   C             C   C   C   C     
     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
-    
-    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
-
-    //const uint64_t kmer_positions {(2*k - m)};
     const uint64_t position {3};
-    std::vector<uint64_t> ordered_kmers = km::sorting::sort_column(m_skmer_vector.begin(), m_skmer_vector.end(), position, manip);
-    std::vector<uint64_t> expected_order {1, 0};
+    
 
+    std::vector<km::Skmer<kuint> > skmer_vector{km::Skmer<kuint>(input_skmers[0],1,4), km::Skmer<kuint>(input_skmers[1],2,4)};
+    std::vector<uint64_t> expected_order {0, 1};
+    std::vector<uint64_t> ordered_kmers = km::sorting::sort_column(skmer_vector.begin(), skmer_vector.end(), position, manip);
     ASSERT_EQ(ordered_kmers,expected_order);
+
+    std::vector<km::Skmer<kuint> > skmer_vector_rev{km::Skmer<kuint>(input_skmers[1],1,4), km::Skmer<kuint>(input_skmers[0],2,4)};
+    std::vector<uint64_t> expected_order_rev {1, 0};
+    std::vector<uint64_t> ordered_kmers_rev = km::sorting::sort_column(skmer_vector_rev.begin(), skmer_vector_rev.end(), position, manip);
+    ASSERT_EQ(ordered_kmers_rev, expected_order_rev);
 }
 
 TEST(SkmerSorting, Three_kmer_sorting)
