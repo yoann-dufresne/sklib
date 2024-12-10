@@ -93,7 +93,7 @@ TEST(SkmerSorting, Single_kmer_sorting)
     ASSERT_EQ(ordered_kmers_rev, expected_order_rev);
 }
 
-/** Test sorting on all possible permutations of 3 elements */
+/** Test sorting on a column for all possible permutations of 3 skmers */
 TEST(SkmerSorting, Three_kmer_sorting)
 {
     std::vector<uint64_t> ordered_kmers {};
@@ -113,10 +113,14 @@ TEST(SkmerSorting, Three_kmer_sorting)
     }
 }
 
-TEST(SkmerSorting, get_candidate_overlaps_0)
+
+/** Compare 2 kmers from to adjacent columns and try to overlap them.
+ * No overlap is expected in this example.
+ */
+TEST(SkmerSorting, get_candidate_overlaps__no_overlap)
 {   
-    //                    Prefix:      A   C   _   _             A   _   _   _   
-    //                    Suffix:    A   C   C   _             A   G   C   C     
+    //                    Prefix:       A   C   _   _             A   _   _   _   
+    //                    Suffix:     A   C   C   _             A   G   C   C     
     const kpair input_skmers[2] { {0b0000010101111111U, 0}, {0b0000111101110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],1,4)};
     const uint64_t left_column_position {2};
@@ -126,40 +130,39 @@ TEST(SkmerSorting, get_candidate_overlaps_0)
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {};
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
+        std::cerr << "Unexpected overlap: " << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
     }
-    ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
+    
     ASSERT_EQ(computed_overlaps.size(),0);
 
 }
 
 
-TEST(SkmerSorting, get_candidate_overlaps_1)
+/** Compare 2 kmers from to adjacent columns and try to overlap them.
+ * 1 overlap is expected in this example.
+ */
+TEST(SkmerSorting, get_candidate_overlaps__1_overlap)
 {   
-    //                    Prefix:      A   C   _   _            A   _   _   _   
-    //                    Suffix:    A   C   C   _            A   C   C   C     
+    //                    Prefix:       A   C   _   _             A   _   _   _   
+    //                    Suffix:     A   C   C   _             A   C   C   C     
     const kpair input_skmers[2] { {0b0000010101111111U, 0}, {0b0000011101110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],1,4)};
-    std::cout << m_skmer_vector[0] << std::endl;
     const uint64_t left_column_position {2};
     std::vector<uint64_t> left_column_order {0};
     std::vector<uint64_t> right_column_order {1};
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,1) };
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),1);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 1 kmer in the left column and 2 in the right column.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_1_2)
 {   
     //                    Prefix:      A   C   _   _             A   _   _   _             A   _   _   _   
@@ -172,18 +175,16 @@ TEST(SkmerSorting, get_candidate_overlaps_1_2)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,1),std::pair<uint64_t,uint64_t>(0,2)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 1 in the right column.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_1)
 {   
     //                    Prefix:      A   C   _   _             A   T   _   _             A   _   _   _   
@@ -196,23 +197,25 @@ TEST(SkmerSorting, get_candidate_overlaps_2_1)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,2),std::pair<uint64_t,uint64_t>(1,2)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 2 in the right column.
+ * Expecting 2 parallel overlaps.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_parallel)
 {   
-    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             _____A   _   _   _   
-    //                    Suffix:    A   C   C   _             A   C   T   _             A   C   C   C                 ___A   C   T   C
-    const kpair input_skmers[4] { {0b0000010101111111U, 0}, {0b0000011010111111U, 0}, {0b0000011101110111U, 0}, {0b0000011110110111U, 0}} ;
+    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _
+    //                    Suffix:    A   C   C   _             A   C   T   _             A   C   C   C
+    const kpair input_skmers[4] { {0b0000010101111111U, 0}, {0b0000011010111111U, 0}, {0b0000011101110111U, 0},
+    //                                 A   _   _   _   
+    //                               A   C   T   C
+                                  {0b0000011110110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3), km::Skmer<kuint>(input_skmers[2],1,4), km::Skmer<kuint>(input_skmers[3],1,4)};
     const uint64_t left_column_position {2};
     std::vector<uint64_t> left_column_order {0,1};
@@ -220,23 +223,25 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_parallel)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,2),std::pair<uint64_t,uint64_t>(1,3)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 2 in the right column.
+ * Expecting 2 crossing overlaps.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed)
 {   
-    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             _____A   _   _   _   
-    //                    Suffix:    A   C   T   _             A   C   C   _             A   C   C   C                 ___A   C   T   C
-    const kpair input_skmers[4] { {0b0000010110111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, {0b0000011110110111U, 0}} ;
+    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
+    //                    Suffix:    A   C   T   _             A   C   C   _             A   C   C   C                 
+    const kpair input_skmers[4] { {0b0000010110111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, 
+    //                                 A   _   _   _   
+    //                               A   C   T   C
+                                  {0b0000011110110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3), km::Skmer<kuint>(input_skmers[2],1,4), km::Skmer<kuint>(input_skmers[3],1,4)};
     const uint64_t left_column_position {2};
     std::vector<uint64_t> left_column_order {0,1};
@@ -244,23 +249,25 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,3),std::pair<uint64_t,uint64_t>(1,2)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 2 in the right column.
+ * Expecting 1 crossing overlaps.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_1)
 {   
-    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             _____A   _   _   _   
-    //                    Suffix:    A   C   A   _             A   C   C   _             A   C   C   C                 ___A   C   T   C
-    const kpair input_skmers[4] { {0b0000010100111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, {0b0000011110110111U, 0}} ;
+    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
+    //                    Suffix:    A   C   A   _             A   C   C   _             A   C   C   C                 
+    const kpair input_skmers[4] { {0b0000010100111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, 
+    //                                 A   _   _   _   
+    //                               A   C   T   C
+                                  {0b0000011110110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3), km::Skmer<kuint>(input_skmers[2],1,4), km::Skmer<kuint>(input_skmers[3],1,4)};
     const uint64_t left_column_position {2};
     std::vector<uint64_t> left_column_order {0,1};
@@ -268,23 +275,25 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_1)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(1,2)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),1);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 2 in the right column.
+ * Expecting 2 crossing overlaps.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_beginning)
 {   
-    //                    Prefix:      A   C   C   C             A   T   T   T             A   T   T   _             _____A   C   C   _   
-    //                    Suffix:    A   _   _   _             A   _   _   _             A   C   _   _                 ___A   T   _   _
-    const kpair input_skmers[4] { {0b0000110111011101U, 0}, {0b0000111011101110U, 0}, {0b0000011011101111U, 0}, {0b0000100111011111U, 0}} ;
+    //                    Prefix:      A   C   C   C             A   T   T   T             A   T   T   _
+    //                    Suffix:    A   _   _   _             A   _   _   _             A   C   _   _
+    const kpair input_skmers[4] { {0b0000110111011101U, 0}, {0b0000111011101110U, 0}, {0b0000011011101111U, 0}, 
+    //                                 A   C   C   _   
+    //                               A   T   _   _
+                                  {0b0000100111011111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3), km::Skmer<kuint>(input_skmers[2],1,4), km::Skmer<kuint>(input_skmers[3],1,4)};
     const uint64_t left_column_position {0};
     std::vector<uint64_t> left_column_order {0,1};
@@ -292,36 +301,34 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_beginning)
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,3),std::pair<uint64_t,uint64_t>(1,2)};
 
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
 
+
+/** Overlap test with 2 columns.
+ * 2 kmers in the left column and 2 in the right column.
+ * Expecting 2 crossing overlaps.
+ */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_end)
 {   
-    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             _____A   _   _   _   
-    //                    Suffix:    A   C   T   C             A   C   C   C             A   C   C   C                 ___A   C   T   C
-    const kpair input_skmers[4] { {0b0000010110110111U, 0}, {0b0000011001110111U, 0}, {0b0000011101110111U, 0}, {0b0000011110110111U, 0}} ;
+    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
+    //                    Suffix:    A   C   T   C             A   C   C   C             A   C   C   C                 
+    const kpair input_skmers[4] { {0b0000010110110111U, 0}, {0b0000011001110111U, 0}, {0b0000011101110111U, 0}, 
+    //                                 A   _   _   _   
+    //                               A   C   T   C
+                                  {0b0000011110110111U, 0}} ;
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3), km::Skmer<kuint>(input_skmers[2],1,4), km::Skmer<kuint>(input_skmers[3],1,4)};
     const uint64_t left_column_position {3};
     std::vector<uint64_t> left_column_order {0,1};
     std::vector<uint64_t> right_column_order {2,3};
     auto computed_overlaps { km::sorting::get_candidate_overlaps(m_skmer_vector, manip, left_column_position, left_column_order, right_column_order) };
     std::vector<std::pair<uint64_t, uint64_t> > expected_overlaps {std::pair<uint64_t,uint64_t>(0,3),std::pair<uint64_t,uint64_t>(1,2)};
-
-    for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
-        // ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
-        std::cout << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
-    }
+    
     ASSERT_EQ(computed_overlaps.size(),expected_overlaps.size());
-    ASSERT_EQ(computed_overlaps.size(),2);
 
     for (uint64_t i {0}; i < computed_overlaps.size(); i+=1 ){
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
