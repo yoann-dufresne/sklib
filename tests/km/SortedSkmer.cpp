@@ -65,9 +65,9 @@ TEST(SkmerSorting, kmer_validation)
     // 0 values map to false, else to true
     bool kmer_validity;
     for (uint64_t skmer_id {0}; skmer_id < 2; skmer_id++ ){
-        for(uint64_t position; position < kmer_positions; position++ ){
+        for(uint64_t position{0}; position < kmer_positions; position++ ){
             kmer_validity = manip.has_valid_kmer(skmer_vector[skmer_id], position);
-            ASSERT_EQ(kmer_validity, expected_valid_kmers[position][skmer_id]);
+            ASSERT_EQ(kmer_validity, expected_valid_kmers[position][skmer_id]) << (string("has_valid_kmer returned an unexpected value for skmer ") + std::to_string(skmer_id) + " at position " + std::to_string(position));
         }
     }
 }

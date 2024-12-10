@@ -48,6 +48,7 @@ target_link_libraries(asan_flags INTERFACE
 # add_subdirectory(thirdparty)
 add_subdirectory(lib)
 add_subdirectory(app)
+# add_subdirectory(benchmark)
 add_subdirectory(thirdparty)
 
 if (WITH_TESTS)

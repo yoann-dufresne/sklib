@@ -587,8 +587,11 @@ public:
      **/
     bool has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos){ 
         assert(kmer_pos <= this->k - this->m);
+        // Half size of the skmer
+        uint64_t const half_size {(2 * this->k - this->m + 1) / 2};
+
         // case position < start of skmer prefix
-        if (kmer_pos < (this->k - (this->m + skmer.m_pref_size))){
+        if (kmer_pos < (half_size - skmer.m_pref_size)){
             // std::cout << "Case < " << kmer_pos << " " << (this->m_pref_size - skmer.m_pref_size) << " " << (this->m_pref_size) << " " << skmer.m_pref_size << std::endl;  
             return false;
         }
