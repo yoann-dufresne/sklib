@@ -128,6 +128,93 @@ public:
 };
 
 
+
+// --- Colienar chaining algorithm and data structures---
+
+using overlap = std::pair<uint64_t, uint64_t>;
+
+struct RMQnode
+{
+    overlap key;
+    uint64_t score;
+
+    RMQnode() : key({0, 0}), score(0) {};
+};
+
+class RMQtree
+{
+private:
+    std::vector<RMQnode> m_tree;
+
+public:
+
+    RMQtree(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
+    {
+        // Get the size of the list from the iterators
+        uint64_t size = std::distance(begin, end);
+
+        // Get the number of leaves needed to have a complete binary tree
+        uint64_t leaves = 1;
+        while (leaves < size)
+            leaves *= 2;
+
+        // Initialize the tree
+        m_tree.resize(2 * leaves - 1);
+        
+        auto& current_overlap = begin;
+        for (uint64_t i = 0; i <  leaves; i++)
+        {
+            
+        }
+    }
+
+    void update()
+    {
+        // TODO
+    }
+
+    void rmq()
+    {
+        // TODO
+    }
+};
+
+/** Colinear chaining algorithm to select a compatible set of overlaps. The overlaps are compatible if their 
+ * coordinates are not crossing and if they do not have common coordinates.
+ * WARNING: The algorithme will change the order of the input vector.
+ * 
+ * @param begin iterator to the first element of the vector
+ * @param end iterator to the last element of the vector
+ * 
+ * @return a vector of overlaps containing compatible overlaps
+ **/
+std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
+{
+    std::vector<overlap> overlaps;
+
+    // 1 - Sort the overlaps by the first coordinate.
+    std::sort(begin, end, [](const overlap& a, const overlap& b) {
+        if (a.first == b.first)
+            return a.second < b.second;
+        return a.first < b.first;
+    });
+
+    // 2 - Create a tree according to the order from 1 and initialize the scores with 0.
+    
+    
+    // 3 - Sort the overlaps by the second coordinate for the iteration.
+    std::sort(begin, end, [](const overlap& a, const overlap& b) {
+        if (a.second == b.second)
+            return a.first < b.first;
+        return a.second < b.second;
+    });
+
+    // 4 - For each overlap, update the score according to the best chaining.
+
+    return overlaps;
+}
+
+
 } // namespace sorting
 } // namespace km
 
