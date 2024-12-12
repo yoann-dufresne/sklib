@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <numeric>
 #include <unordered_map>
+#include <utility>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -131,52 +132,149 @@ public:
 
 // --- Colienar chaining algorithm and data structures---
 
-using overlap = std::pair<uint64_t, uint64_t>;
 
 struct RMQnode
 {
-    overlap key;
+    // This pair is used to store an overlap in the leaves and a segment in the internal nodes
+    std::pair<uint64_t, uint64_t> key;
+    // Max score in the subtree (including the node)
     uint64_t score;
 
     RMQnode() : key({0, 0}), score(0) {};
 };
 
+}// namespace sorting
+}// namespace km
+
+namespace std {
+    template <>
+    struct hash<std::pair<unsigned long, unsigned long>> {
+        std::size_t operator()(const std::pair<unsigned long, unsigned long>& p) const noexcept {
+            return std::hash<unsigned long>{}(p.first) ^ (std::hash<unsigned long>{}(p.second) << 1);
+        }
+    };
+}
+
+namespace km
+{
+namespace sorting
+{
+
+using overlap = std::pair<uint64_t, uint64_t>;
+
 class RMQtree
 {
 private:
     std::vector<RMQnode> m_tree;
+    uint64_t m_num_overlaps;
+    uint64_t m_num_leaves;
+    uint64_t m_depth;
+
+    std::unordered_map<overlap, uint64_t> m_indexes;
 
 public:
 
-    RMQtree(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
-    {
-        // Get the size of the list from the iterators
-        uint64_t size = std::distance(begin, end);
+    /** Constructor of the RMQtree
+     * 
+     * @param begin iterator to the first element of the list
+     * @param end iterator to the last element of the list
+     */
+    RMQtree(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end);
 
-        // Get the number of leaves needed to have a complete binary tree
-        uint64_t leaves = 1;
-        while (leaves < size)
-            leaves *= 2;
+    /** Update the score of a given overlap of the tree
+     * 
+     * @param o overlap to update.
+     * @param score new score to set.
+     */
+    void update(overlap o, int64_t score);
 
-        // Initialize the tree
-        m_tree.resize(2 * leaves - 1);
-        
-        auto& current_overlap = begin;
-        for (uint64_t i = 0; i <  leaves; i++)
-        {
-            
+    /** Get the maximum score in the range [0, second_coord]
+     * 
+     * @param second_coord Maximal second coord to consider
+     * @return The max score in the range [0, second_coord]
+     */
+    uint64_t rmq_right(uint64_t second_coord);
+
+    // --- Iterator for the enumeration of max compatible overlaps ---
+
+    class MaxValueIterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = overlap;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const RMQnode*;
+        using reference = const RMQnode&;
+
+    public:
+
+        MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
+            : tree(tree), score(score), right_boundary(right_boundary), leaf_index(0) {
+            assert(score <= tree.m_tree[0].score);
+
+            // Go to the leftmost leaf that if max score and compatible
+            uint64_t current_index = 0;
+            for (uint64_t lvl{0} ; lvl<tree.m_depth ; lvl++)
+            {
+                auto left_index = 2 * current_index + 1;
+                auto right_index = 2 * current_index + 2;
+
+                RMQnode const& left_child = tree.m_tree[left_index];
+
+                if (right_boundary < left_child.key.second)
+                    current_index = left_index;
+                else 
+                    if (score <= left_child.score)
+                        current_index = left_index;
+                    else
+                        current_index = right_index;
+            }
+
+            assert(score == tree.m_tree[current_index].score);
+            leaf_index = current_index;
         }
+
+        reference operator*() const { return tree.m_tree[leaf_index]; }
+        pointer operator->() const { return &(tree.m_tree[leaf_index]); }
+
+        // Pré-incrémentation
+        MaxValueIterator& operator++() {
+            next_valid_max();
+            return *this;
+        }
+
+        // Post-incrémentation
+        MaxValueIterator operator++(int) {
+            MaxValueIterator temp = *this;
+            ++(*this);
+            return temp;
+        }
+
+        bool operator==(const MaxValueIterator& other) const {
+            return leaf_index == other.leaf_index;
+        }
+
+    private:
+        RMQtree const& tree;
+        uint64_t const score;
+        uint64_t const right_boundary;
+        uint64_t leaf_index;
+
+        void next_valid_max() {
+            // TODO
+            while (index < nodes.size() && nodes[index].score > threshold) {
+                ++index;
+            }
+        }
+    };
+
+    MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const {
+        return MaxValueIterator(*this, score, right_boundary);
     }
 
-    void update()
-    {
-        // TODO
+    MaxValueIterator end() const {
+        return MaxValueIterator(*this, 0, 0);
     }
 
-    void rmq()
-    {
-        // TODO
-    }
 };
 
 /** Colinear chaining algorithm to select a compatible set of overlaps. The overlaps are compatible if their 
@@ -188,31 +286,7 @@ public:
  * 
  * @return a vector of overlaps containing compatible overlaps
  **/
-std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
-{
-    std::vector<overlap> overlaps;
-
-    // 1 - Sort the overlaps by the first coordinate.
-    std::sort(begin, end, [](const overlap& a, const overlap& b) {
-        if (a.first == b.first)
-            return a.second < b.second;
-        return a.first < b.first;
-    });
-
-    // 2 - Create a tree according to the order from 1 and initialize the scores with 0.
-    
-    
-    // 3 - Sort the overlaps by the second coordinate for the iteration.
-    std::sort(begin, end, [](const overlap& a, const overlap& b) {
-        if (a.second == b.second)
-            return a.first < b.first;
-        return a.second < b.second;
-    });
-
-    // 4 - For each overlap, update the score according to the best chaining.
-
-    return overlaps;
-}
+std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end);
 
 
 } // namespace sorting
