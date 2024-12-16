@@ -195,6 +195,16 @@ public:
      */
     uint64_t rmq_right(uint64_t second_coord);
 
+    /** Get the maximum score in the tree 
+     * @return The max score in the tree
+     */
+    uint64_t RMQtree::max_score() const;
+
+    /** Get the overlap with the maximum score in the tree 
+     * @return The overlap with the maximum score
+     */
+    overlap RMQtree::get_max_overlap() const;
+
     // --- Iterator for the enumeration of max compatible overlaps ---
 
     class MaxValueIterator {
@@ -205,75 +215,30 @@ public:
         using pointer = const RMQnode*;
         using reference = const RMQnode&;
 
-    public:
+        MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary);
 
-        MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
-            : tree(tree), score(score), right_boundary(right_boundary), leaf_index(0) {
-            assert(score <= tree.m_tree[0].score);
+        reference operator*() const;
+        pointer operator->() const;
 
-            // Go to the leftmost leaf that if max score and compatible
-            uint64_t current_index = 0;
-            for (uint64_t lvl{0} ; lvl<tree.m_depth ; lvl++)
-            {
-                auto left_index = 2 * current_index + 1;
-                auto right_index = 2 * current_index + 2;
+        MaxValueIterator& operator++();   // Pré-incrémentation
+        MaxValueIterator operator++(int); // Post-incrémentation
 
-                RMQnode const& left_child = tree.m_tree[left_index];
-
-                if (right_boundary < left_child.key.second)
-                    current_index = left_index;
-                else 
-                    if (score <= left_child.score)
-                        current_index = left_index;
-                    else
-                        current_index = right_index;
-            }
-
-            assert(score == tree.m_tree[current_index].score);
-            leaf_index = current_index;
-        }
-
-        reference operator*() const { return tree.m_tree[leaf_index]; }
-        pointer operator->() const { return &(tree.m_tree[leaf_index]); }
-
-        // Pré-incrémentation
-        MaxValueIterator& operator++() {
-            next_valid_max();
-            return *this;
-        }
-
-        // Post-incrémentation
-        MaxValueIterator operator++(int) {
-            MaxValueIterator temp = *this;
-            ++(*this);
-            return temp;
-        }
-
-        bool operator==(const MaxValueIterator& other) const {
-            return leaf_index == other.leaf_index;
+        bool operator==(const MaxValueIterator& other) const;
+        bool operator!=(const MaxValueIterator& other) const {
+            return !(*this == other);
         }
 
     private:
-        RMQtree const& tree;
-        uint64_t const score;
-        uint64_t const right_boundary;
+        const RMQtree& tree;
+        uint64_t score;
+        uint64_t right_boundary;
         uint64_t leaf_index;
 
-        void next_valid_max() {
-            // TODO
-            while (index < nodes.size() && nodes[index].score > threshold) {
-                ++index;
-            }
-        }
+        void next_valid_max();
     };
 
-    MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const {
-        return MaxValueIterator(*this, score, right_boundary);
-    }
-
-    MaxValueIterator end() const {
-        return MaxValueIterator(*this, 0, 0);
-    }
+    MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const;
+    MaxValueIterator end() const;
 
 };
 
