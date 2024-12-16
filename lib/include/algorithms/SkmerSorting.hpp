@@ -162,6 +162,10 @@ namespace sorting
 
 using overlap = std::pair<uint64_t, uint64_t>;
 
+/** Tree structure to support range maximum queries for ranges [0, x] where x is the second coordinate of an overlap.
+ * WARNING: This RMQ tree structure is not for general purpose. It has been optimized for this specific use case and
+ * may trigger exceptions on other contexts.
+ */
 class RMQtree
 {
 private:
@@ -230,15 +234,20 @@ public:
 
     private:
         const RMQtree& tree;
-        uint64_t score;
-        uint64_t right_boundary;
-        uint64_t leaf_index;
+        uint64_t m_score;
+        uint64_t m_right_boundary;
+        // Index of the leaf (not the tree vector index)
+        uint64_t m_leaf_index;
 
         void next_valid_max();
     };
 
-    MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const;
-    MaxValueIterator end() const;
+    MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const {
+        return RMQtree::MaxValueIterator(*this, score, right_boundary);
+    }
+    MaxValueIterator end() const {
+        return RMQtree::MaxValueIterator(*this, 0, 0);
+    }
 
 };
 

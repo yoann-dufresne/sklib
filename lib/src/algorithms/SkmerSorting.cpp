@@ -159,36 +159,28 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord)
 // --- Max node Iterator ---
 
 RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
-    : tree(tree), score(score), right_boundary(right_boundary), leaf_index(0) {
+    : tree(tree), m_score(score), m_right_boundary(right_boundary), m_leaf_index(0) {
     assert(score <= tree.m_tree[0].score);
+    // Setup the first leaf
+    m_leaf_index = 0;
+    uint64_t const vect_idx = tree.m_num_leaves - 1;
 
-    // Initial leaf
-    uint64_t current_index = 0;
-    for (uint64_t lvl = 0; lvl < tree.m_depth; ++lvl) {
-        auto left_index = 2 * current_index + 1;
-        auto right_index = 2 * current_index + 2;
+    // Find the first leaf with the right score
+    if (tree.m_tree[vect_idx].score != score)
+        next_valid_max();
 
-        RMQnode const& left_child = tree.m_tree[left_index];
-        if (right_boundary < left_child.key.second)
-            current_index = left_index;
-        else if (score <= left_child.score)
-            current_index = left_index;
-        else
-            current_index = right_index;
-    }
-
-    assert(score == tree.m_tree[current_index].score);
-    leaf_index = current_index;
+    // Verify the score
+    assert(tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score == score);
 }
 
 // --- Définition des opérateurs ---
 
 RMQtree::MaxValueIterator::reference RMQtree::MaxValueIterator::operator*() const {
-    return tree.m_tree[leaf_index];
+    return tree.m_tree[m_leaf_index + tree.m_num_leaves - 1];
 }
 
 RMQtree::MaxValueIterator::pointer RMQtree::MaxValueIterator::operator->() const {
-    return &(tree.m_tree[leaf_index]);
+    return &(tree.m_tree[m_leaf_index + tree.m_num_leaves - 1]);
 }
 
 RMQtree::MaxValueIterator& RMQtree::MaxValueIterator::operator++() {
@@ -203,17 +195,18 @@ RMQtree::MaxValueIterator RMQtree::MaxValueIterator::operator++(int) {
 }
 
 bool RMQtree::MaxValueIterator::operator==(const MaxValueIterator& other) const {
-    return leaf_index == other.leaf_index;
+    return m_leaf_index == other.m_leaf_index;
 }
 
-// --- Définition de next_valid_max ---
+// --- Find the next valid max scored overlap ---
 void RMQtree::MaxValueIterator::next_valid_max() {
-    // Implémentation pour trouver le prochain nœud valide
-    // Exemple fictif, dépend de votre logique
-    leaf_index++;
-    while (leaf_index < tree.m_tree.size() && tree.m_tree[leaf_index].score != score) {
-        ++leaf_index;
-    }
+    // 1 - Go up the tree until we find a right sibling with the same score
+    
+    // 2 - Go down the tree to the leftmost leaf with a score >= to the current score
+
+    // 3 - If score is not the right one, recursive call
+    if (tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score != m_score)
+        next_valid_max();
 }
 
 
