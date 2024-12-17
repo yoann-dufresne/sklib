@@ -200,11 +200,49 @@ bool RMQtree::MaxValueIterator::operator==(const MaxValueIterator& other) const 
 
 // --- Find the next valid max scored overlap ---
 void RMQtree::MaxValueIterator::next_valid_max() {
+    uint64_t current_idx = m_leaf_index + tree.m_num_leaves - 1;
+
     // 1 - Go up the tree until we find a right sibling with the same score
+    while (current_idx > 0)
+    {
+        auto parent_idx = (current_idx - 1) / 2;
+        bool is_left = (current_idx == 2 * parent_idx + 1);
+        
+        if (is_left)
+        {
+            RMQnode const& right_child = tree.m_tree[current_idx + 1];
+            if (right_child.score >= m_score)
+            {
+                current_idx = current_idx + 1;
+                break;
+            }
+        }
+
+        current_idx = parent_idx;
+    }
     
     // 2 - Go down the tree to the leftmost leaf with a score >= to the current score
+    while (current_idx < tree.m_num_leaves - 1)
+    {
+        auto left_idx = 2 * current_idx + 1;
+        auto right_idx = 2 * current_idx + 2;
 
-    // 3 - If score is not the right one, recursive call
+        RMQnode const& left_child = tree.m_tree[left_idx];
+
+        if (left_child.score < m_score)
+            current_idx = right_idx;
+        else
+            current_idx = left_idx;
+    }
+
+    // 3 - If current leaf is outside of the right boundary, set the iterator to the end
+    if (tree.m_tree[current_idx].key.second > m_right_boundary)
+    {
+        m_leaf_index = tree.m_num_leaves;
+        return;
+    }
+
+    // 4 - If score is not the right one, recursive call
     if (tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score != m_score)
         next_valid_max();
 }

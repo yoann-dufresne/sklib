@@ -202,12 +202,12 @@ public:
     /** Get the maximum score in the tree 
      * @return The max score in the tree
      */
-    uint64_t RMQtree::max_score() const;
+    uint64_t max_score() const;
 
     /** Get the overlap with the maximum score in the tree 
      * @return The overlap with the maximum score
      */
-    overlap RMQtree::get_max_overlap() const;
+    overlap get_max_overlap() const;
 
     // --- Iterator for the enumeration of max compatible overlaps ---
 
