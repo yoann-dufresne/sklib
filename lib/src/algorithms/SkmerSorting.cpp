@@ -1,4 +1,4 @@
-
+#include <sstream>
 
 #include "algorithms/SkmerSorting.hpp"
 
@@ -198,6 +198,26 @@ bool RMQtree::MaxValueIterator::operator==(const MaxValueIterator& other) const 
     return m_leaf_index == other.m_leaf_index;
 }
 
+std::string RMQtree::toDot() const
+{
+    stringstream ss;
+
+    ss << "digraph RMQtree {" << std::endl;
+    for (uint64_t i = 0; i < m_tree.size(); i++)
+    {
+        RMQnode const& node = m_tree[i];
+        ss << i << " [label=\"" << node.key.first << "," << node.key.second << " (" << node.score << ")\"];" << std::endl;
+        if (i > 0)
+        {
+            uint64_t parent = (i - 1) / 2;
+            ss << parent << " -> " << i << ";" << std::endl;
+        }
+    }
+    ss << "}" << std::endl;
+
+    return ss.str();
+}
+
 // --- Find the next valid max scored overlap ---
 void RMQtree::MaxValueIterator::next_valid_max() {
     uint64_t current_idx = m_leaf_index + tree.m_num_leaves - 1;
@@ -316,6 +336,12 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
 
 
     uint64_t score = tree.max_score();
+
+    std::cout << "score: " << score << std::endl;
+    std::cout << tree.toDot() << std::endl;
+    
+    std::cout << "auto-kill" << std::endl;
+
     std::vector<overlap> overlaps(score);
     // 5 - Get the last overlap of the chain
     overlaps[--score] = tree.get_max_overlap();

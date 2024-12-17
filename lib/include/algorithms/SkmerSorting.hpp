@@ -209,6 +209,12 @@ public:
      */
     overlap get_max_overlap() const;
 
+    /** Transform the tree into its dot representation
+     * 
+     * @return a string containing the dot representation of the tree
+     */
+    std::string toDot() const;
+
     // --- Iterator for the enumeration of max compatible overlaps ---
 
     class MaxValueIterator {
