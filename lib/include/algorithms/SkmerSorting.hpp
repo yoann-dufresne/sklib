@@ -239,7 +239,7 @@ public:
         }
 
     private:
-        const RMQtree& tree;
+        RMQtree const& tree;
         uint64_t m_score;
         uint64_t m_right_boundary;
         // Index of the leaf (not the tree vector index)

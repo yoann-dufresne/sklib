@@ -66,6 +66,8 @@ TEST(RMQtree, basic_score_update)
 }
 
 
+/** Construction of a simple tree with a score update for each node 
+ */
 TEST(RMQtree, multiple_score_updates)
 {
     vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
@@ -84,6 +86,25 @@ TEST(RMQtree, multiple_score_updates)
         ASSERT_EQ(nodes[idx].key, expected_keys[idx]);
         ASSERT_EQ(nodes[idx].score, expected_scores[idx]);
     }
+}
+
+
+/** Test the range query on multiple values before and after the right coordinates from the tree */
+TEST(RMQtree, rmq_right)
+{
+    vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
+    // Expected keys. They should remain the same along all the update processes
+    std::vector<overlap> expected_keys {overlap(0,UINT64_MAX), overlap(0,1), overlap(0,UINT64_MAX), overlap(0,1), overlap(3,1), overlap(7,12), overlap(UINT64_MAX, UINT64_MAX)};
+
+    RMQtree tree(overlaps.begin(), overlaps.end());
+    tree.update(overlaps[0], 3);
+    tree.update(overlaps[1], 4);
+    tree.update(overlaps[2], 7);
+
+    ASSERT_EQ(tree.rmq_right(0), 0);
+    ASSERT_EQ(tree.rmq_right(1), 4);
+    ASSERT_EQ(tree.rmq_right(11), 4);
+    ASSERT_EQ(tree.rmq_right(12), 7);
 }
 
 

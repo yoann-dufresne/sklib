@@ -303,15 +303,21 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     for (auto it = begin; it != end; it++)
     {
         overlap const& current_overlap = *it;
+        // std::cout << "(" << current_overlap.first << "," << current_overlap.second << ")" << " ";
+        // std::cout << tree.toDot() << std::endl << std::endl;
 
         // Get previous max scores with compatible second coordinate
         uint64_t max_score = tree.rmq_right(it->second - 1);
         
+        // std::cout << "score:" << max_score << " ";
+        // std::cout << tree.toDot() << std::endl << std::endl;
         if (max_score == 0)
         {
             // No compatible overlap
             tree.update(current_overlap, 1);
             previous_overlaps[current_overlap] = null_overlap;
+            // std::cout << "Update 0 ";
+            // std::cout << tree.toDot() << std::endl << std::endl;
             continue;
         }
 
@@ -330,8 +336,12 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         }
 
         // Update the score
+        // std::cout << tree.toDot() << std::endl << std::endl;
         tree.update(current_overlap, max_score);
+        // std::cout << tree.toDot() << std::endl << std::endl;
         previous_overlaps[current_overlap] = previous;
+
+        exit(0);
     }
 
 
