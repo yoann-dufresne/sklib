@@ -9,6 +9,86 @@ using namespace km::sorting;
 using namespace std;
 
 
+// --- Range Max Query tree tests ---
+
+
+/** Construction of a basic tree with no score update
+ */
+TEST(RMQtree, construction)
+{
+    vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
+    RMQtree tree(overlaps.begin(), overlaps.end());
+
+    auto nodes = tree.get_all_nodes();
+    ASSERT_EQ(nodes.size(), 7);
+
+    // Keys
+    std::vector<overlap> expected_keys {overlap(0,UINT64_MAX), overlap(0,1), overlap(0,UINT64_MAX), overlap(0,1), overlap(3,1), overlap(7,12), overlap(UINT64_MAX, UINT64_MAX)};
+
+    for(uint64_t i=0; i<nodes.size(); i++)
+    {
+        ASSERT_EQ(nodes[i].key, expected_keys[i]);
+        ASSERT_EQ(nodes[i].score, 0);
+    }
+}
+
+
+/** Construction of a basic tree with no score update
+ */
+TEST(RMQtree, basic_score_update)
+{
+    vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
+    // Expected keys. They should remain the same along all the update processes
+    std::vector<overlap> expected_keys {overlap(0,UINT64_MAX), overlap(0,1), overlap(0,UINT64_MAX), overlap(0,1), overlap(3,1), overlap(7,12), overlap(UINT64_MAX, UINT64_MAX)};
+
+    std::vector<uint_fast64_t> expected_scores[3] {
+        {7, 7, 0, 7, 0, 0, 0},
+        {7, 7, 0, 0, 7, 0, 0},
+        {7, 0, 7, 0, 0, 7, 0}
+    };
+
+    uint64_t idx = 0;
+    for (overlap const& o : overlaps)
+    {
+        RMQtree tree(overlaps.begin(), overlaps.end());
+
+        tree.update(o, 7);
+
+        std::vector<RMQnode> const& nodes = tree.get_all_nodes();
+        for (uint64_t i=0; i<nodes.size(); i++)
+        {
+            ASSERT_EQ(nodes[i].key, expected_keys[i]);
+            ASSERT_EQ(nodes[i].score, expected_scores[idx][i]);
+        }
+
+        idx += 1;
+    }
+}
+
+
+TEST(RMQtree, multiple_score_updates)
+{
+    vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
+    // Expected keys. They should remain the same along all the update processes
+    std::vector<overlap> expected_keys {overlap(0,UINT64_MAX), overlap(0,1), overlap(0,UINT64_MAX), overlap(0,1), overlap(3,1), overlap(7,12), overlap(UINT64_MAX, UINT64_MAX)};
+
+    RMQtree tree(overlaps.begin(), overlaps.end());
+    tree.update(overlaps[0], 3);
+    tree.update(overlaps[1], 7);
+    tree.update(overlaps[2], 4);
+
+    std::vector<uint_fast64_t> expected_scores {7, 7, 4, 3, 7, 4, 0};
+    std::vector<RMQnode> const& nodes = tree.get_all_nodes();
+    for (uint idx{0}; idx<nodes.size(); idx++)
+    {
+        ASSERT_EQ(nodes[idx].key, expected_keys[idx]);
+        ASSERT_EQ(nodes[idx].score, expected_scores[idx]);
+    }
+}
+
+
+// --- Colinear chaining global tests ---
+
 /** Single pair
  */
 TEST(ColinearChaining, single_overlap)

@@ -255,6 +255,12 @@ public:
         return RMQtree::MaxValueIterator(*this, 0, 0);
     }
 
+    /** Get the nodes of the tree. Function mostly used for testing.
+     * 
+     * @return a vector of RMQnode
+     */
+    std::vector<RMQnode> const& get_all_nodes() const { return m_tree; }
+
 };
 
 /** Colinear chaining algorithm to select a compatible set of overlaps. The overlaps are compatible if their 
