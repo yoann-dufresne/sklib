@@ -189,7 +189,7 @@ TEST(SkmerManipulator, masks_generation)
     std::array < kpair, 5 > const expected_kpairs { kpair(0b0011001100110011U,0), kpair(0b1111001100110000U,0),
                                               kpair(0b1111111100000000U,0), kpair(0b1111110011000000U,0),
                                               kpair(0b1100110011001100U,0) };
-    auto const masks {manip.generate_masks()};
+    auto const masks {manip.generate_masks_sp()};
 
     for(uint64_t pos {0}; pos < expected_kpairs.size(); pos += 1){
         ASSERT_EQ(expected_kpairs[pos],masks[pos]);

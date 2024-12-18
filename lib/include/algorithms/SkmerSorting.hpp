@@ -5,6 +5,7 @@
 #include <numeric>
 #include <unordered_map>
 #include <utility>
+#include <forward_list>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -18,8 +19,49 @@ namespace km
 namespace sorting
 {
 
+template<typename kuint>
+struct Sorted_skmer {
+    Skmer<kuint> skmer;
+    uint64_t last_id;
+};
+
+template<typename kuint>
+using LList = std::forward_list<sorted_skmer<kuint>>;
+template<typename kuint>
+using kpair = km::Skmer<kuint>::pair;
+using overlap = std::pair<uint64_t, uint64_t>;
 template <class It, typename kuint>
 class compare_kmer_skmer_pos;
+
+
+/** Generates a new sorted Skmer
+ * @param skmer_enumeration start_position in the skmer generator
+ * @param m_manip skmer manipulator
+ * @param skmer_id end_positon in the skmer generator
+ * @param kmer_pos position of the kmer in the skmer (column position)
+ * @return a new sorted_skmer 
+ **/
+template<typename kuint>
+Skmer<kuint> generate_sorted_skmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
+
+    Sorted_skmer<kuint> s_skmer = {m_manip.get_skmer_of_kmer(skmer_enumeration[skmer_id], kmer_pos), skmer_id};
+    return s_skmer;
+}
+
+/** Generates a new sorted Skmer
+ * @param skmer_enumeration start_position in the skmer generator
+ * @param m_manip skmer manipulator
+ * @param skmer_id end_positon in the skmer generator
+ * @param kmer_pos position of the kmer in the skmer (column position)
+ * @return a new sorted_skmer 
+ **/
+template<typename kuint>
+void add_kmer_sorted_skmer(Sorted_skmer<kuint> sorted_skmer, std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
+
+    
+    sorted_skmer.skmer.
+    return s_skmer;
+}
 
 
 /** Sorts skmer ids based on the kmers they contain at a given positon.
@@ -41,7 +83,7 @@ std::vector<uint64_t> sort_column(It start, It end, uint64_t kmer_pos, SkmerMani
     //Iterating over the range [start, end)
     for(It skmer = start; skmer != end; ++skmer)
     {
-        pp << *skmer;
+        // pp << *skmer;
         // std::cout << "checking kmer validity" << pp << std::endl;
         if (m_manip.has_valid_kmer(*skmer, kmer_pos)){
             valid_skmer.push_back(sk_id);
@@ -66,14 +108,14 @@ std::vector<uint64_t> sort_column(It start, It end, uint64_t kmer_pos, SkmerMani
 
 /** Returns candidate overlaps between two columns of sorted skmer ids
  * @param skmer_enumeration the enumeration of skmer from the iterator
- * @param manipulator the skmer manipulator inizialized for the iterator
+ * @param m_manip the skmer manipulator inizialized for the iterator
  * @param left_position the "column" position: i.e. the starting point of leftmost kmer considered for the overlap
  * @param left_column the list of skmers that have a valid kmer at the left position
  * @param right_column the list of skmers that have a valid kmer at the left position + 1 (contigous one)
  * @return a vector of pairs of candidate overlaps between the two columns
  **/
 template<typename kuint>
-std::vector<std::pair<uint64_t, uint64_t> > get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& manipulator, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column)
+std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column)
 {
     using kpair = typename Skmer<kuint>::pair;
     using kpairhash = typename Skmer<kuint>::pair_hasher;
@@ -87,14 +129,14 @@ std::vector<std::pair<uint64_t, uint64_t> > get_candidate_overlaps(std::vector<S
         // std::cout << "pref" << std::endl;
         assert(skmer_id < skmer_enumeration.size());
         assert(skmer_id > 0);
-        prefix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
+        prefix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
         prefixes[prefix].push_back(skmer_id);
     }
 
     // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
     for (auto& skmer_id : left_column) {
         // std::cout << "suff" << std::endl;
-        suffix = manipulator.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
+        suffix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
         
         matching_prefix = prefixes.find (suffix);
         if (matching_prefix != prefixes.end()){
@@ -106,6 +148,69 @@ std::vector<std::pair<uint64_t, uint64_t> > get_candidate_overlaps(std::vector<S
     return candidare_overlaps;
 }
 
+// --- reconciliation of kmers into skmers ---
+
+// 1 - Intialize the linked list with the elements of the first column
+
+/** Returns candidate overlaps between two columns of sorted skmer ids
+ * @param skmer_enumeration the enumeration of skmer from the iterator
+ * @param manipulator the skmer manipulator inizialized for the iterator
+ * @param column the list of skmers that have a valid kmer at the left position
+ * @return a linked list containing the sorted superkmer and the skmer id of the last kmer added 
+ **/
+template<typename kuint>
+LList<kuint> generate_LList(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, std::vector<uint64_t> const & column)
+{
+    LList sorted_skmer_llist {};
+    sorted_skmer this_skmer; 
+    for (std::vector<uint64_t>::reverse_iterator rit = column.rbegin(); rit != column.rend();  ++rit){
+        // get kmer of that column into a new skmer
+        this_skmer.last_id = *rit;
+        this_skmer.skmer = manipulator.
+        sorted_skmer_llist.push_front()
+    }
+}
+// 2 - I take a pair of sorted skmer columns (their position), the valid overlaps from the colinear chaining, and the skmers in input and output a linked-list of sorted skmers
+
+/** Returns candidate overlaps between two columns of sorted skmer ids
+ * @param skmer_enumeration the enumeration of skmer from the iterator
+ * @param manipulator the skmer manipulator inizialized for the iterator
+ * @param left_column the list of skmers that have a valid kmer at the left position
+ * @param right_column the list of skmers that have a valid kmer at the left position + 1 (contigous one)
+ * @param valid_overlaps the list of overlaps between kmers of the two columns produced by the colinear chaining
+ * @return a vector of pairs of candidate overlaps between the two columns
+ **/
+template<typename kuint>
+void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, LList<kuint> & left_column, std::vector<uint64_t> const & right_column, std::vector<overlap> const &valid_overlaps)
+{
+    using kpair = typename Skmer<kuint>::pair;
+    using kpairhash = typename Skmer<kuint>::pair_hasher;
+
+    // initiliaze the iterators over the columns 
+    auto left_it = left_column.begin();
+    auto right_it = right_column.begin();
+    auto overlap_it = valid_overlaps.begin();
+
+    while (left_it != left_column.end() || right_it != right_column.end()){
+    // To access the element pointer by the iterator I use '*it'
+    
+    // 1 - check if elements pointed in the left and right column are in the next valid overlap
+    bool is_left_in_overlap = (*left_it == *overlap_it.first); //? true : false;
+    bool is_right_in_overlap =  (*right_it == *overlap_it.second);
+    // Increasing the iterator at the end depends on which element has been inserted
+    // ++left_it;
+    // ++right_it;
+    }
+
+    // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be.
+    // Process remaining elements in the left column
+    // std::for_each(left_it, left_column.end(), processSingle);
+
+    // Process remaining elements in the righ column
+    // std::for_each(right_it, right_column.end(), processSingle);
+}
+
+
 
 template <class It, typename kuint>
 class compare_kmer_skmer_pos {
@@ -113,7 +218,6 @@ class compare_kmer_skmer_pos {
     SkmerManipulator<kuint> & manipulator;
     const It start;
     const It end;
-
 
 public:
     // the comparison function takes as argument 2 integers, a position and the vector of skmers. 
