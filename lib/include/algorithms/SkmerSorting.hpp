@@ -197,7 +197,7 @@ public:
      * @param second_coord Maximal second coord to consider
      * @return The max score in the range [0, second_coord]
      */
-    uint64_t rmq_right(uint64_t second_coord);
+    uint64_t rmq_right(uint64_t second_coord) const;
 
     /** Get the maximum score in the tree 
      * @return The max score in the tree

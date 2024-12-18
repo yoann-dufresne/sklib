@@ -89,6 +89,37 @@ TEST(RMQtree, multiple_score_updates)
 }
 
 
+/** RMQtree should not be changed by the queries. Some mutaion bugs led to this test */
+TEST(RMQtree, rmq_right_stability)
+{
+    vector<overlap> overlaps {overlap(0,1), overlap(3, 1), overlap(7, 12)};
+    // Expected keys. They should remain the same along all the update processes
+    std::vector<overlap> expected_keys {overlap(0,UINT64_MAX), overlap(0,1), overlap(0,UINT64_MAX), overlap(0,1), overlap(3,1), overlap(7,12), overlap(UINT64_MAX, UINT64_MAX)};
+    std::vector<uint64_t> expected_scores {7, 4, 7, 3, 4, 7, 0};
+
+    RMQtree tree(overlaps.begin(), overlaps.end());
+    tree.update(overlaps[0], 3);
+    tree.update(overlaps[1], 4);
+    tree.update(overlaps[2], 7);
+
+    std::vector<RMQnode> const& nodes = tree.get_all_nodes();
+    for (uint idx{0}; idx<nodes.size(); idx++)
+    {
+        ASSERT_EQ(nodes[idx].key, expected_keys[idx]);
+        ASSERT_EQ(nodes[idx].score, expected_scores[idx]);
+    }
+
+    ASSERT_EQ(tree.rmq_right(11), 4);
+
+    std::vector<RMQnode> const& after_nodes = tree.get_all_nodes();
+    for (uint idx{0}; idx<after_nodes.size(); idx++)
+    {
+        ASSERT_EQ(after_nodes[idx].key, expected_keys[idx]);
+        ASSERT_EQ(after_nodes[idx].score, expected_scores[idx]);
+    }
+}
+
+
 /** Test the range query on multiple values before and after the right coordinates from the tree */
 TEST(RMQtree, rmq_right)
 {

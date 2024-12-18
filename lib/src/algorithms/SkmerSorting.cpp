@@ -109,7 +109,7 @@ overlap RMQtree::get_max_overlap() const
  * @param second_coord Maximal second coord to consider
  * @return The max score in the range [0, second_coord]
  */
-uint64_t RMQtree::rmq_right(uint64_t second_coord)
+uint64_t RMQtree::rmq_right(uint64_t second_coord) const
 {
     // Go down to the leftmost non-compatible leaf
     uint64_t current_idx = 0;
@@ -118,26 +118,25 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord)
         auto left_idx = 2 * current_idx + 1;
         auto right_idx = 2 * current_idx + 2;
 
-        RMQnode& left_child = m_tree[left_idx];
+        RMQnode const& left_child = m_tree[left_idx];
 
-        if (second_coord < left_child.key.second)
+        if (second_coord < left_child.key.second) {
             current_idx = left_idx;
-        else
+        } else {
             current_idx = right_idx;
+        }
     }
     
     // Take the first compatible leaf
-    RMQnode& current_node = m_tree[current_idx];
-    if (second_coord < current_node.key.second)
+    if (second_coord < m_tree[current_idx].key.second)
     {
         if (current_idx == m_num_leaves - 1)
             return 0;
-        current_idx -= 2;
-        current_node = m_tree[current_idx];
+        current_idx -= 1;
     }
 
     // Go up to the root and get the max score
-    uint64_t max_score = 0;
+    uint64_t max_score = m_tree[current_idx].score;
     while (current_idx > 0)
     {
         auto parent_idx = (current_idx - 1) / 2;
@@ -145,7 +144,7 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord)
         
         if (is_right)
         {
-            RMQnode& left_child = m_tree[current_idx - 1];
+            RMQnode const& left_child = m_tree[current_idx - 1];
             max_score = std::max(max_score, left_child.score);
         }
 
