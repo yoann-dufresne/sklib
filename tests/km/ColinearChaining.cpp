@@ -184,6 +184,90 @@ TEST(ColinearChaining, crossing_overlap)
 }
 
 
+/** V shape with left overlap colision
+ */
+TEST(ColinearChaining, leftV_overlap)
+{   
+    vector<overlap> overlaps {overlap(7, 1), overlap(7,12)};
+    vector<overlap> expected {overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    ASSERT_EQ(chaining[0], expected[0]);
+}
+
+
+/** V shape with right overlap colision
+ */
+TEST(ColinearChaining, rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    ASSERT_EQ(chaining[0], expected[0]);
+}
+
+
+/** left and right V shape
+ */
+TEST(ColinearChaining, leftV_rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** parallel left V shape
+ */
+TEST(ColinearChaining, parallel_leftV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 7), overlap(5,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** parallel right V shape
+ */
+TEST(ColinearChaining, parallel_rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
 /** 3 parallel pairs
  */
 TEST(ColinearChaining, parallel_overlap_3)

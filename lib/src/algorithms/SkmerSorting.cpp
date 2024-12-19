@@ -383,7 +383,7 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         // std::cout << "Update " << max_score << std::endl;
         // std::cout << tree.toDot() << std::endl << std::endl;
         previous_overlaps[current_overlap] = previous;
-        // std::cout << "Previous: (" << previous.first << "," << previous.second << ")" << std::endl;
+        std::cout << "Previous: (" << current_overlap.first << ", " << current_overlap.second << ") -> (" << previous.first << "," << previous.second << ")" << std::endl;
 
         // exit(0);
     }
@@ -391,9 +391,9 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
 
     uint64_t score = tree.max_score();
 
-    // std::cout << "score: " << score << std::endl;
-    // std::cout << tree.toDot() << std::endl;
-    
+    std::cout << "score: " << score << std::endl;
+    std::cout << tree.toDot() << std::endl;
+
     // std::cout << "auto-kill" << std::endl;
 
     std::vector<overlap> overlaps(score);
