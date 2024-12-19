@@ -158,6 +158,7 @@ TEST(ColinearChaining, single_overlap)
 TEST(ColinearChaining, parallel_overlap)
 {   
     vector<overlap> overlaps {overlap(3,1), overlap(7, 12)};
+    vector<overlap> expected {overlap(3,1), overlap(7, 12)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
 
