@@ -43,21 +43,8 @@ include(ExternalProject)
 
 # --- kseq lib ---
 
-if(NOT EXISTS "${PROJECT_SOURCE_DIR}/thirdparty/kseqpp/CMakeLists.txt")
-    message(FATAL_ERROR "Kseqpp submodule not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
-endif()
-
+add_subdirectory(kseqpp)
 add_library(kseqpp INTERFACE)
-
-ExternalProject_Add(
-  KSEQPP
-  PREFIX KSEQPP
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/thirdparty/kseqpp
-  INSTALL_COMMAND ""
-  LOG_CONFIGURE ON
-  LOG_BUILD ON
-)
-
 target_include_directories(kseqpp INTERFACE ${THIRD_DIR}/kseqpp/include ${THIRD_DIR}/kseqpp/include/kseq++)
 
 
