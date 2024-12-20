@@ -159,7 +159,7 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord) const
 
 RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
     : tree(tree), m_score(score), m_right_boundary(right_boundary), m_leaf_index(tree.m_num_leaves) {
-    std::cout << "MaxValueIterator(" << score << ", " << right_boundary << ")" << std::endl;
+    // std::cout << "MaxValueIterator(" << score << ", " << right_boundary << ")" << std::endl;
     // Skip construction if end()
     if (right_boundary == tree.m_num_leaves)
     {
@@ -178,12 +178,12 @@ RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score,
     // Verify the score
     assert(tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score == score);
 
-    std::cout << "end constructor" << std::endl;
+    // std::cout << "end constructor" << std::endl;
 }
 
 RMQtree::MaxValueIterator::MaxValueIterator(MaxValueIterator const& other)
     : tree(other.tree), m_score(other.m_score), m_right_boundary(other.m_right_boundary), m_leaf_index(other.m_leaf_index) {
-        std::cout << "Copy constructor" << std::endl;
+        // std::cout << "Copy constructor" << std::endl;
     }
 
 // --- Définition des opérateurs ---
@@ -199,7 +199,7 @@ RMQtree::MaxValueIterator::pointer RMQtree::MaxValueIterator::operator->() const
 }
 
 RMQtree::MaxValueIterator& RMQtree::MaxValueIterator::operator++() {
-    std::cout << "operator++" << std::endl;
+    // std::cout << "operator++" << std::endl;
     next_valid_max();
     return *this;
 }
@@ -339,6 +339,7 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     for (auto it = begin; it != end; it++)
     {
         overlap const& current_overlap = *it;
+        // std::cout << std::endl << "(" << current_overlap.first << "," << current_overlap.second << ")" << std::endl;
         // std::cout << "(" << current_overlap.first << "," << current_overlap.second << ")" << " ";
         // std::cout << tree.toDot() << std::endl << std::endl;
 
@@ -360,12 +361,12 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         overlap previous {null_overlap};
         // std::cout << "Init iterator " << current_overlap.second-1 << " " << max_score << std::endl;
         // std::cout << tree.toDot() << std::endl << std::endl;
+        // std::cout << std::endl << "Max iterator " << max_score << std::endl;
         for (auto max_it=tree.begin(max_score, it->second-1); max_it != tree.end(); max_it++)
         {
             RMQnode const& node = *max_it;
-            // std::cout << "node: (" << node.key.first << "," << node.key.second << ") " << node.score << std::endl;
+            // std::cout << "  node: (" << node.key.first << "," << node.key.second << ") " << node.score << std::endl;
 
-            // std::cout << "Score Iterator" << std::endl;
 
             // Is it compatible on the first coordinate?
             if (node.key.first < current_overlap.first)
@@ -375,7 +376,12 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
                 previous = node.key;
                 break;
             }
+            else
+            {
+                previous = previous_overlaps[node.key];
+            }
         }
+        // std::cout << "/Max iterator" << std::endl << std::endl;
 
         // Update the score
         // std::cout << tree.toDot() << std::endl << std::endl;
@@ -383,7 +389,7 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         // std::cout << "Update " << max_score << std::endl;
         // std::cout << tree.toDot() << std::endl << std::endl;
         previous_overlaps[current_overlap] = previous;
-        std::cout << "Previous: (" << current_overlap.first << ", " << current_overlap.second << ") -> (" << previous.first << "," << previous.second << ")" << std::endl;
+        // std::cout << "Previous: (" << current_overlap.first << ", " << current_overlap.second << ") -> (" << previous.first << "," << previous.second << ")" << std::endl;
 
         // exit(0);
     }
@@ -391,8 +397,8 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
 
     uint64_t score = tree.max_score();
 
-    std::cout << "score: " << score << std::endl;
-    std::cout << tree.toDot() << std::endl;
+    // std::cout << "score: " << score << std::endl;
+    // std::cout << tree.toDot() << std::endl;
 
     // std::cout << "auto-kill" << std::endl;
 

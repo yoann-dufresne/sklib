@@ -267,6 +267,63 @@ TEST(ColinearChaining, parallel_rightV_overlap)
     }
 }
 
+/** left V parallel shape
+ */
+TEST(ColinearChaining, leftV_parallel_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(3, 7), overlap(5,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** right V parallel shape
+ */
+TEST(ColinearChaining, rightV_parallel_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 1), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** clique shape
+ */
+TEST(ColinearChaining, clique_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(7, 1), overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+    // for (uint i{0}; i<chaining.size(); i++)
+    // {
+    //     std::cout << chaining[i].first << " " << chaining[i].second << std::endl;
+    // }
 
 /** 3 parallel pairs
  */
@@ -359,12 +416,7 @@ TEST(ColinearChaining, triple_cross_overlap)
     vector<overlap> expected {overlap(7, 1)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
-    ASSERT_EQ(chaining.size(), 1);
-
-    for (uint i{0}; i<chaining.size(); i++)
-    {
-        std::cout << chaining[i].first << " " << chaining[i].second << std::endl;
-    }
+    ASSERT_EQ(chaining.size(), expected.size());
 
     for (uint i{0}; i<chaining.size(); i++)
     {
