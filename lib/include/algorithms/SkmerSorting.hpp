@@ -23,10 +23,12 @@ template<typename kuint>
 struct Sorted_skmer {
     Skmer<kuint> skmer;
     uint64_t last_id;
+
+    Sorted_skmer() : skmer(), last_id(0) {}
 };
 
 template<typename kuint>
-using LList = std::forward_list<sorted_skmer<kuint>>;
+using LList = std::forward_list<Sorted_skmer<kuint>>;
 template<typename kuint>
 using kpair = km::Skmer<kuint>::pair;
 using overlap = std::pair<uint64_t, uint64_t>;
@@ -59,8 +61,8 @@ template<typename kuint>
 void add_kmer_sorted_skmer(Sorted_skmer<kuint> sorted_skmer, std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
 
     
-    sorted_skmer.skmer.
-    return s_skmer;
+    // sorted_skmer.skmer.
+    return;
 }
 
 
@@ -161,13 +163,13 @@ std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & s
 template<typename kuint>
 LList<kuint> generate_LList(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, std::vector<uint64_t> const & column)
 {
-    LList sorted_skmer_llist {};
-    sorted_skmer this_skmer; 
+    LList<kuint> sorted_skmer_llist;
+    Sorted_skmer<kuint> this_skmer; 
     for (std::vector<uint64_t>::reverse_iterator rit = column.rbegin(); rit != column.rend();  ++rit){
         // get kmer of that column into a new skmer
         this_skmer.last_id = *rit;
-        this_skmer.skmer = manipulator.
-        sorted_skmer_llist.push_front()
+        // this_skmer.skmer = manipulator.
+        sorted_skmer_llist.push_front();
     }
 }
 // 2 - I take a pair of sorted skmer columns (their position), the valid overlaps from the colinear chaining, and the skmers in input and output a linked-list of sorted skmers
@@ -195,8 +197,8 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
     // To access the element pointer by the iterator I use '*it'
     
     // 1 - check if elements pointed in the left and right column are in the next valid overlap
-    bool is_left_in_overlap = (*left_it == *overlap_it.first); //? true : false;
-    bool is_right_in_overlap =  (*right_it == *overlap_it.second);
+    bool is_left_in_overlap = (*left_it == overlap_it->first); //? true : false;
+    bool is_right_in_overlap =  (*right_it == (*overlap_it).second);
     // Increasing the iterator at the end depends on which element has been inserted
     // ++left_it;
     // ++right_it;

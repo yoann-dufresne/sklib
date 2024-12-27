@@ -642,7 +642,7 @@ public:
         uint16_t prefix_size = half_size - kmer_pos;
         
         // Suffix size: how many nucleotides nucleotides are in the second half of the skmer
-        uint16_t suffix_size = half_size - (m_manip.k - 1 - kmer_pos);
+        uint16_t suffix_size = half_size - (this->k - 1 - kmer_pos);
 
         // getting the kmer and generating the skmer
         auto kmer = get_kmer(given_skmer, kmer_pos);
@@ -669,6 +669,7 @@ public:
             //then start adding 00s while returning each time
             add_nucleotide(discard_nucl);
         }
+        this->init_skmer();
         // return the vector
         return masks;
     }
@@ -691,6 +692,7 @@ public:
             //then start adding 00s while returning each time
             add_nucleotide(discard_nucl);
         }
+        this->init_skmer();
         // return the vector
         return masks;
     }
@@ -712,6 +714,7 @@ public:
             //then start adding 00s while returning each time
             add_nucleotide(discard_nucl);
         }
+        this->init_skmer();
         // return the vector
         return masks;
     }
