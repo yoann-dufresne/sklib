@@ -158,7 +158,14 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord) const
 // --- Max node Iterator ---
 
 RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
-    : tree(tree), m_score(score), m_right_boundary(right_boundary), m_leaf_index(0) {
+    : tree(tree), m_score(score), m_right_boundary(right_boundary), m_leaf_index(tree.m_num_leaves) {
+    // std::cout << "MaxValueIterator(" << score << ", " << right_boundary << ")" << std::endl;
+    // Skip construction if end()
+    if (right_boundary == tree.m_num_leaves)
+    {
+        return;
+    }
+
     assert(score <= tree.m_tree[0].score);
     // Setup the first leaf
     m_leaf_index = 0;
@@ -170,30 +177,42 @@ RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score,
 
     // Verify the score
     assert(tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score == score);
+
+    // std::cout << "end constructor" << std::endl;
 }
+
+RMQtree::MaxValueIterator::MaxValueIterator(MaxValueIterator const& other)
+    : tree(other.tree), m_score(other.m_score), m_right_boundary(other.m_right_boundary), m_leaf_index(other.m_leaf_index) {
+        // std::cout << "Copy constructor" << std::endl;
+    }
 
 // --- Définition des opérateurs ---
 
 RMQtree::MaxValueIterator::reference RMQtree::MaxValueIterator::operator*() const {
+    // std::cout << "operator*" << std::endl;
     return tree.m_tree[m_leaf_index + tree.m_num_leaves - 1];
 }
 
 RMQtree::MaxValueIterator::pointer RMQtree::MaxValueIterator::operator->() const {
+    // std::cout << "operator->" << std::endl;
     return &(tree.m_tree[m_leaf_index + tree.m_num_leaves - 1]);
 }
 
 RMQtree::MaxValueIterator& RMQtree::MaxValueIterator::operator++() {
+    // std::cout << "operator++" << std::endl;
     next_valid_max();
     return *this;
 }
 
 RMQtree::MaxValueIterator RMQtree::MaxValueIterator::operator++(int) {
+    // std::cout << "before ++(int)" << std::endl;
     MaxValueIterator temp = *this;
     ++(*this);
     return temp;
 }
 
 bool RMQtree::MaxValueIterator::operator==(const MaxValueIterator& other) const {
+    // std::cout << "== operator " << m_leaf_index << " " << other.m_leaf_index << std::endl;
     return m_leaf_index == other.m_leaf_index;
 }
 
@@ -221,6 +240,10 @@ std::string RMQtree::toDot() const
 void RMQtree::MaxValueIterator::next_valid_max() {
     uint64_t current_idx = m_leaf_index + tree.m_num_leaves - 1;
 
+    // std::cout << "next_valid_max() " << m_score << " " << m_right_boundary << " " << m_leaf_index << std::endl;
+    // std::cout << tree.toDot() << std::endl;
+
+    // cout << "current_idx: " << current_idx << endl;
     // 1 - Go up the tree until we find a right sibling with the same score
     while (current_idx > 0)
     {
@@ -239,6 +262,14 @@ void RMQtree::MaxValueIterator::next_valid_max() {
 
         current_idx = parent_idx;
     }
+    // cout << "after up: " << current_idx << endl;
+
+    // 1 bis - If we are at the root, set the iterator to the end
+    if (current_idx == 0)
+    {
+        m_leaf_index = tree.m_num_leaves;
+        return;
+    }
     
     // 2 - Go down the tree to the leftmost leaf with a score >= to the current score
     while (current_idx < tree.m_num_leaves - 1)
@@ -253,6 +284,7 @@ void RMQtree::MaxValueIterator::next_valid_max() {
         else
             current_idx = left_idx;
     }
+    // cout << "after down: " << current_idx << endl;
 
     // 3 - If current leaf is outside of the right boundary, set the iterator to the end
     if (tree.m_tree[current_idx].key.second > m_right_boundary)
@@ -262,8 +294,13 @@ void RMQtree::MaxValueIterator::next_valid_max() {
     }
 
     // 4 - If score is not the right one, recursive call
-    if (tree.m_tree[m_leaf_index + tree.m_num_leaves - 1].score != m_score)
+    if (tree.m_tree[current_idx].score != m_score)
+    {
         next_valid_max();
+    }
+    
+    m_leaf_index = current_idx - tree.m_num_leaves + 1;
+    // std::cout << "end next_valid_max() -> " << m_leaf_index << std::endl << std::endl;
 }
 
 
@@ -295,20 +332,21 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         return a.second < b.second;
     });
 
-
+    
     // 4 - For each overlap, update the score according to the best chaining.
     // 4 bis - Also register the previous compatible overlap
     unordered_map<overlap, overlap> previous_overlaps;
     for (auto it = begin; it != end; it++)
     {
         overlap const& current_overlap = *it;
+        // std::cout << std::endl << "(" << current_overlap.first << "," << current_overlap.second << ")" << std::endl;
         // std::cout << "(" << current_overlap.first << "," << current_overlap.second << ")" << " ";
         // std::cout << tree.toDot() << std::endl << std::endl;
 
         // Get previous max scores with compatible second coordinate
         uint64_t max_score = tree.rmq_right(it->second - 1);
         
-        // std::cout << "score:" << max_score << " ";
+        // std::cout << "max_score:" << max_score << " ";
         // std::cout << tree.toDot() << std::endl << std::endl;
         if (max_score == 0)
         {
@@ -321,9 +359,15 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
         }
 
         overlap previous {null_overlap};
+        // std::cout << "Init iterator " << current_overlap.second-1 << " " << max_score << std::endl;
+        // std::cout << tree.toDot() << std::endl << std::endl;
+        // std::cout << std::endl << "Max iterator " << max_score << std::endl;
         for (auto max_it=tree.begin(max_score, it->second-1); max_it != tree.end(); max_it++)
         {
             RMQnode const& node = *max_it;
+            // std::cout << "  node: (" << node.key.first << "," << node.key.second << ") " << node.score << std::endl;
+
+
             // Is it compatible on the first coordinate?
             if (node.key.first < current_overlap.first)
             {
@@ -332,24 +376,31 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
                 previous = node.key;
                 break;
             }
+            else
+            {
+                previous = previous_overlaps[node.key];
+            }
         }
+        // std::cout << "/Max iterator" << std::endl << std::endl;
 
         // Update the score
         // std::cout << tree.toDot() << std::endl << std::endl;
         tree.update(current_overlap, max_score);
+        // std::cout << "Update " << max_score << std::endl;
         // std::cout << tree.toDot() << std::endl << std::endl;
         previous_overlaps[current_overlap] = previous;
+        // std::cout << "Previous: (" << current_overlap.first << ", " << current_overlap.second << ") -> (" << previous.first << "," << previous.second << ")" << std::endl;
 
-        exit(0);
+        // exit(0);
     }
 
 
     uint64_t score = tree.max_score();
 
-    std::cout << "score: " << score << std::endl;
-    std::cout << tree.toDot() << std::endl;
-    
-    std::cout << "auto-kill" << std::endl;
+    // std::cout << "score: " << score << std::endl;
+    // std::cout << tree.toDot() << std::endl;
+
+    // std::cout << "auto-kill" << std::endl;
 
     std::vector<overlap> overlaps(score);
     // 5 - Get the last overlap of the chain

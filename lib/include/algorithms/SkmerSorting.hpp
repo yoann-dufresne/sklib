@@ -332,6 +332,7 @@ public:
         using reference = const RMQnode&;
 
         MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary);
+        MaxValueIterator(MaxValueIterator const& other);
 
         reference operator*() const;
         pointer operator->() const;
@@ -355,10 +356,12 @@ public:
     };
 
     MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const {
+        // std::cout << "begin()" << std::endl;
         return RMQtree::MaxValueIterator(*this, score, right_boundary);
     }
     MaxValueIterator end() const {
-        return RMQtree::MaxValueIterator(*this, 0, 0);
+        // std::cout << "end()" << std::endl;
+        return RMQtree::MaxValueIterator(*this, 0, this->m_num_leaves);
     }
 
     /** Get the nodes of the tree. Function mostly used for testing.

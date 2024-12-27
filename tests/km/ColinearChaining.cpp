@@ -145,11 +145,11 @@ TEST(RMQtree, rmq_right)
  */
 TEST(ColinearChaining, single_overlap)
 {   
-    vector<overlap> overlaps {overlap(0,1)};
+    vector<overlap> overlaps {overlap(0, 1)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
     ASSERT_EQ(chaining.size(), 1);
-    ASSERT_EQ(chaining[0], overlap(0,1));
+    ASSERT_EQ(chaining[0], overlap(0, 1));
 }
 
 
@@ -157,17 +157,320 @@ TEST(ColinearChaining, single_overlap)
  */
 TEST(ColinearChaining, parallel_overlap)
 {   
-    vector<overlap> overlaps {overlap(3,1), overlap(7, 12)};
+    vector<overlap> overlaps {overlap(3, 1), overlap(7, 12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
 
-    cout << "Chaining: " << endl;
-    for(auto el: chaining){
-        cout << el.first << " " << el.second << endl;
-    }
-
     ASSERT_EQ(chaining.size(), 2);
 
-    ASSERT_EQ(chaining[0], overlaps[0]);
-    ASSERT_EQ(chaining[1], overlaps[1]);
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+}
+
+
+/** 2 crossing pairs
+ */
+TEST(ColinearChaining, crossing_overlap)
+{   
+    vector<overlap> overlaps {overlap(7, 1), overlap(3,12)};
+    vector<overlap> expected {overlap(7, 1)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 1);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+}
+
+
+/** V shape with left overlap colision
+ */
+TEST(ColinearChaining, leftV_overlap)
+{   
+    vector<overlap> overlaps {overlap(7, 1), overlap(7,12)};
+    vector<overlap> expected {overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    ASSERT_EQ(chaining[0], expected[0]);
+}
+
+
+/** V shape with right overlap colision
+ */
+TEST(ColinearChaining, rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    ASSERT_EQ(chaining[0], expected[0]);
+}
+
+
+/** left and right V shape
+ */
+TEST(ColinearChaining, leftV_rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** parallel left V shape
+ */
+TEST(ColinearChaining, parallel_leftV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 7), overlap(5,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** parallel right V shape
+ */
+TEST(ColinearChaining, parallel_rightV_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+/** left V parallel shape
+ */
+TEST(ColinearChaining, leftV_parallel_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(3, 7), overlap(5,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** right V parallel shape
+ */
+TEST(ColinearChaining, rightV_parallel_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 1), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** clique shape
+ */
+TEST(ColinearChaining, clique_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(7, 1), overlap(3, 12), overlap(7,12)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+    // for (uint i{0}; i<chaining.size(); i++)
+    // {
+    //     std::cout << chaining[i].first << " " << chaining[i].second << std::endl;
+    // }
+
+/** 3 parallel pairs
+ */
+TEST(ColinearChaining, parallel_overlap_3)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 7), overlap(7, 12)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 7), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 3);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** 2 cross 1 parallel pairs
+ */
+TEST(ColinearChaining, cross2_parallel1_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 7), overlap(5, 1), overlap(7, 12)};
+    vector<overlap> expected {overlap(3, 7), overlap(7, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 2);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** 2 cross 1 parallel pairs
+ */
+TEST(ColinearChaining, parallel1_cross2_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 12), overlap(7, 7)};
+    vector<overlap> expected {overlap(3, 1), overlap(7, 7)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 2);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+/** 1 overlap 2 cross
+ */
+TEST(ColinearChaining, doublecross_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 12), overlap(5, 1), overlap(7, 7)};
+    vector<overlap> expected {overlap(5, 1), overlap(7, 7)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 2);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+/** 1 overlap 2 cross
+ */
+TEST(ColinearChaining, doublecross_rev_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 7), overlap(5, 12), overlap(7, 1)};
+    vector<overlap> expected {overlap(3, 7), overlap(5, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 2);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** triple cross
+ */
+TEST(ColinearChaining, triple_cross_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 12), overlap(5, 7), overlap(7, 1)};
+    vector<overlap> expected {overlap(7, 1)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** 4 parallel pairs
+ */
+TEST(ColinearChaining, parallel_overlap_4)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 7), overlap(7, 12), overlap(8, 15)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 7), overlap(7, 12), overlap(8, 15)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), 4);
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** parallel cross parallel pairs
+ */
+TEST(ColinearChaining, parallel_cross_parallel_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 1), overlap(5, 12), overlap(7, 7), overlap(8, 15)};
+    vector<overlap> expected {overlap(3, 1), overlap(5, 12), overlap(8, 15)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
+}
+
+
+/** cross cross pairs
+ */
+TEST(ColinearChaining, cross_cross_overlap)
+{   
+    vector<overlap> overlaps {overlap(3, 7), overlap(5, 1), overlap(7, 15), overlap(8, 12)};
+    vector<overlap> expected {overlap(3, 7), overlap(8, 12)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+    ASSERT_EQ(chaining.size(), expected.size());
+
+    for (uint i{0}; i<chaining.size(); i++)
+    {
+        ASSERT_EQ(chaining[i], expected[i]);
+    }
 }
