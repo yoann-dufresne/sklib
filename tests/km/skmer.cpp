@@ -193,7 +193,8 @@ TEST(SkmerManipulator, overlap_masks_generation)
     std::array < kpair, 5 > const expected_kpairs { kpair(0b0011001100110011U,0), kpair(0b1111001100110000U,0),
                                               kpair(0b1111111100000000U,0), kpair(0b1111110011000000U,0),
                                               kpair(0b1100110011001100U,0) };
-    auto const masks {manip.generate_masks_sp()};
+    // auto const masks {manip.generate_masks_sp()};
+    auto const masks {manip.get_sp_mask()};
 
     for(uint64_t pos {0}; pos < expected_kpairs.size(); pos += 1){
         ASSERT_EQ(expected_kpairs[pos],masks[pos]);
@@ -212,8 +213,8 @@ TEST(SkmerManipulator, generate_masks_k)
 
     std::array < kpair, 4 > const expected_kpairs { kpair(0b1111001100110011U,0), kpair(0b1111111100110000U,0),
                                               kpair(0b1111111111000000U,0), kpair(0b1111110011001100U,0) };
-    auto const masks {manip.generate_masks_k()};
-
+    auto const masks {manip.get_k_mask()};
+    // auto const masks {manip.kmer_masks};
     for(uint64_t pos {0}; pos < expected_kpairs.size(); pos += 1){
         ASSERT_EQ(expected_kpairs[pos],masks[pos]);
     }
@@ -233,7 +234,7 @@ TEST(SkmerManipulator, generate_masks_nucleotide)
                                               kpair(0b0000001100000000U,0), kpair(0b0011000000000000U,0),
                                               kpair(0b1100000000000000U,0), kpair(0b0000110000000000U,0), 
                                               kpair(0b0000000011000000U,0), kpair(0b0000000000001100U,0) };
-    auto const masks {manip.generate_masks_nucleotide()};
+    auto const masks {manip.get_n_mask()};
 
     for(uint64_t pos {0}; pos < expected_kpairs.size(); pos += 1){
         ASSERT_EQ(expected_kpairs[pos],masks[pos]);

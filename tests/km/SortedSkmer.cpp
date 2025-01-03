@@ -334,3 +334,95 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_end)
         ASSERT_EQ(computed_overlaps[i],expected_overlaps[i]);
     }
 }
+
+TEST(SkmerSorting, generate_virtual_skmer)
+{
+    //                    Prefix:      A   C   G   T             
+    //                    Suffix:    A   C   T   C                         
+    const kpair input_skmer {0b0000010110110110U, 0};
+    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmer,4,4)};
+
+    std::vector< km::sorting::Virtual_skmer<kuint> > extracted_skmers;
+
+    for(int i = 0; i < 4; i++){
+        extracted_skmers.push_back(km::sorting::generate_virtual_skmer(m_skmer_vector,manip,0,i));
+    }
+
+    //                    Prefix:      A   C   G   T             A   C   G   _            A   C   _   _             
+    //                    Suffix:    A   _   _   _             A   C   _   _             A   C   T   _ 
+    const kpair expected_kpairs[4] {{0b0000110111111110U, 0}, {0b0000010111111111U, 0}, {0b0000010110111111U, 0}, 
+    //                                 A   _   _   _   
+    //                               A   C   T   C
+                                    {0b0000011110110111U, 0}};
+    std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers {km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,1,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,2,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[2],2,3,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[3],1,4,0) };
+
+    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
+        // ASSERT_EQ(expected_virtual_skmers[i].last_id, extracted_skmers[i].last_id);
+    }
+
+}
+
+TEST(SkmerSorting, generate_virtual_skmer_2)
+{
+    uint64_t k {5};
+    uint64_t m {3};
+    km::SkmerManipulator<kuint> manip {k, m};
+    //                    Prefix:      A   C   G   T             
+    //                    Suffix:       C   T   C                         
+    const kpair input_skmer {0b0000010110110110U, 0};
+    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmer,4,3)};
+
+    std::vector< km::sorting::Virtual_skmer<kuint> > extracted_skmers;
+
+    for(int i = 0; i < 3; i++){
+        extracted_skmers.push_back(km::sorting::generate_virtual_skmer(m_skmer_vector,manip,0,i));
+    }
+
+    //                    Prefix:      A   C   G   T             A   C   G   _            A   C   _   _             
+    //                    Suffix:        C   _   _                 C   T   _                C   T   C
+    const kpair expected_kpairs[3] {{0b0000010111111110U, 0}, {0b0000010110111111U, 0}, {0b0000010110110111U, 0}}; 
+ 
+    std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers {km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,1,0), km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,2,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[2],2,3,0)};
+
+    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
+        // ASSERT_EQ(expected_virtual_skmers[i].last_id, extracted_skmers[i].last_id);
+    }
+}
+
+TEST(SkmerSorting, add_kmer_to_virtual_skmer)
+{
+    //                    Prefix:      A   C   G   _             
+    //                    Suffix:    A   C   _   _                         
+    const kpair input_skmer {0b0000010111111111U, 0};
+    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmer,4,4)};
+
+    std::vector< km::sorting::Virtual_skmer<kuint> > extracted_skmers;
+    uint64_t skmer_id {0};
+    uint64_t kmers_to_add[2] {2,3};
+
+    for(uint64_t kmer_pos : kmers_to_add){
+        km::sorting::Virtual_skmer<kuint> new_virtual_skmer(m_skmer_vector[0],skmer_id);
+        add_kmer_Virtual_skmer(new_virtual_skmer, m_skmer_vector, manip, skmer_id, kmer_pos);
+        extracted_skmers.push_back(new_virtual_skmer);
+    }
+    // 0b0000010111111110U, 0}, 
+    //                      Prefix:      A   C   G   T             A   C   G   _            A   C   _   _             
+    //                      Suffix:    A   C   _   _             A   C   T   _             A   C   T   C 
+    const kpair expected_kpairs[4] {{0b0000010110111111U, 0}, {0b0000010110110111U, 0}};
+ 
+    // km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,2,0),
+    std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers { km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,3,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[2],2,4,0)};
+
+    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
+        ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
+        // ASSERT_EQ(expected_virtual_skmers[i].last_id, extracted_skmers[i].last_id);
+    }
+}
