@@ -61,30 +61,28 @@ Virtual_skmer<kuint> generate_virtual_skmer(std::vector<Skmer<kuint> > const & s
     return s_skmer;
 }
 
-/** Generates a new Virtual Skmer
- * @param skmer_enumeration start_position in the skmer generator
- * @param m_manip skmer manipulator
- * @param skmer_id end_positon in the skmer generator
- * @param kmer_pos position of the kmer in the skmer (column position)
- * @return a new Virtual_skmer 
+/** Add k-mer to virtual super-k-mer
+ * @param virtual_skmer the virtual super-k-mer it is in generation
+ * @param skmer_enumeration start_position in the super-k-mer generator
+ * @param m_manip super-k-mer manipulator
+ * @param skmer_id end_positon in the super-k-mer generator
+ * @param kmer_pos position of the k-mer in the super-k-mer (column position)
+ * @return a new virtual super-k-mer
  **/
 template<typename kuint>
-void add_kmer_Virtual_skmer(Virtual_skmer<kuint> virtual_skmer, std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
+void add_kmer_Virtual_skmer(Virtual_skmer<kuint> & virtual_skmer, std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
+
     using kpair = typename Skmer<kuint>::pair;
-
     // Free the nucleotide slot in the skmer to accomodate the nucleotide associated with the kmer
+    // As it would contain 1s in not used slots
     m_manip.clean_nucleotide_position_skmer(virtual_skmer.skmer, kmer_pos);
-
-    // Extract the nucleotide from the contigous skmer
+    // Extract the nucleotide from the "contigous" corresponding skmer
     kpair nucleotide {m_manip.extract_nucleotide(skmer_enumeration[skmer_id],kmer_pos + m_manip.k - 1)};
-
-    // Merge them
-    virtual_skmer.skmer.m_pair.m_value[0] &= nucleotide.m_value[0];
-    virtual_skmer.skmer.m_pair.m_value[1] &= nucleotide.m_value[1];
-
+    // Add the nucleotide by OR logical operation
+    virtual_skmer.skmer.m_pair.m_value[0] |= nucleotide.m_value[0];
+    virtual_skmer.skmer.m_pair.m_value[1] |= nucleotide.m_value[1];
     return;
 }
-
 
 /** Sorts skmer ids based on the kmers they contain at a given positon.
  * @param start start_position in the skmer generator
@@ -213,18 +211,24 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
     auto right_it = right_column.begin();
     auto overlap_it = valid_overlaps.begin();
 
+    // Until one of the two columns is used
     while (left_it != left_column.end() || right_it != right_column.end()){
     // To access the element pointer by the iterator I use '*it'
     
     // 1 - check if elements pointed in the left and right column are in the next valid overlap
     bool is_left_in_overlap = (*left_it == overlap_it->first); //? true : false;
     bool is_right_in_overlap =  (*right_it == (*overlap_it).second);
-    // Increasing the iterator at the end depends on which element has been inserted
-    // ++left_it;
-    // ++right_it;
+    
+    // CASE (A) IF BOTH ELEMENTS ARE POINTED, I MERGE THE VIRTUAL SKMER WITH THE KMER
+
+    // CASE (B) THE ELEMENT IN THE LL IS POINTED, INSERT THE ELEMENT FROM THE COLUMN TO THE LL IN THE PLACE BEFORE
+
+    // CASE (C) THE ELEMENT IN THE LL IS NOT POINTED, I CAN INCREASE THE ITERATOR IN THE LL
+
+
     }
 
-    // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be.
+    // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be. This coincides with the special case of filling the LL the first time
     // Process remaining elements in the left column
     // std::for_each(left_it, left_column.end(), processSingle);
 
