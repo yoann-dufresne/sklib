@@ -408,12 +408,12 @@ TEST(SkmerSorting, add_kmer_to_virtual_skmer)
 
     for(uint64_t kmer_pos : kmers_to_add){
         km::sorting::Virtual_skmer<kuint> new_virtual_skmer(m_skmer_vector[0],skmer_id);
-        add_kmer_Virtual_skmer(new_virtual_skmer, m_skmer_vector, manip, skmer_id, kmer_pos);
+        km::sorting::add_kmer_virtual_skmer(new_virtual_skmer, m_skmer_vector, manip, skmer_id, kmer_pos);
         extracted_skmers.push_back(new_virtual_skmer);
     }
     // 0b0000010111111110U, 0}, 
-    //                      Prefix:      A   C   G   T             A   C   G   _            A   C   _   _             
-    //                      Suffix:    A   C   _   _             A   C   T   _             A   C   T   C 
+    //                      Prefix:      A   C   G   T             A   C   G   _             
+    //                      Suffix:    A   C   _   _             A   C   T   _       
     const kpair expected_kpairs[4] {{0b0000010110111111U, 0}, {0b0000010110110111U, 0}};
  
     // km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,2,0),
@@ -425,4 +425,19 @@ TEST(SkmerSorting, add_kmer_to_virtual_skmer)
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
         // ASSERT_EQ(expected_virtual_skmers[i].last_id, extracted_skmers[i].last_id);
     }
+}
+
+TEST(SkmerSorting, empty_list_fill)
+{
+    //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _  _             
+    //                    Suffix:    A   C   T   C             A   C   C   C             A   C   C   C                 
+    const kpair input_skmers[2] { {0b0000010110110111U, 0}, {0b0000011001110111U, 0}};
+    std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmers[0],2,3), km::Skmer<kuint>(input_skmers[1],2,3)};
+    const std::vector<uint64_t> column{0,1};
+    std::forward_list<km::sorting::Virtual_skmer<kuint>> my_list;
+    const std::vector<std::pair<uint64_t, uint64_t>> valid_overlaps;
+    km::sorting::merge_LList_column(m_skmer_vector, manip, my_list, column, valid_overlaps, 2);
+
+    km::sorting::print_list(my_list);
+    // merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint> & m_manip, LList<kuint> & list, std::vector<uint64_t> const & column, std::vector<overlap> const & valid_overlaps, uint64_t const column_pos)
 }
