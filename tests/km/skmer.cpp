@@ -241,3 +241,55 @@ TEST(SkmerManipulator, generate_masks_nucleotide)
     }
 
 }
+
+TEST(SkmerManipulator, extract_nucleotide_from_skmer)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+
+    //                    Prefix:      A   C   G   T             
+    //                    Suffix:    A   C   T   C                         
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    const km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
+
+    std::array < kpair, 8 > const expected_kpairs { kpair(0b0000000000000010U,0), kpair(0b000000000110000U,0),
+                                              kpair(0b0000000100000000U,0), kpair(0b0000000000000000U,0),
+                                              kpair(0b0000000000000000U,0), kpair(0b0000010000000000U,0), 
+                                              kpair(0b0000000010000000U,0), kpair(0b0000000000000100U,0) };
+    uint64_t position {0};
+    for (kpair expected_nucleotide : expected_kpairs){
+        ASSERT_EQ(expected_nucleotide,manip.extract_nucleotide(m_skmer, position));
+        position++;
+    }
+}
+
+TEST(SkmerManipulator, clean_nucleotide_at_position)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+
+    //                    Prefix:      A   C   G   T             
+    //                    Suffix:    A   C   T   C                         
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
+    std::array < kpair, 8 > const expected_kpairs { kpair(0b0000010110110100U,0), kpair(0b0000010110000110U,0),
+        kpair(0b0000010010110110U,0), kpair(0b0000010110110110U,0),
+        kpair(0b0000010110110110U,0), kpair(0b0000000110110110U,0), 
+        kpair(0b0000010100110110U,0), kpair(0b0000010110110010U,0) };
+
+    uint64_t position {0};
+    for (kpair expected_nucleotide : expected_kpairs){
+        manip.clean_nucleotide_position_skmer(m_skmer, position);
+        ASSERT_EQ(expected_nucleotide,m_skmer.m_pair);
+        position++;
+        m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
+    }
+}
