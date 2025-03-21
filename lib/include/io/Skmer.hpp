@@ -1,5 +1,5 @@
 #include <cstdint>
-#include <ostream>
+#include <iostream>
 #include <assert.h>
 
 #ifndef SKMER_H
@@ -594,7 +594,7 @@ public:
     
     }
 
-    /** Check if a skmer has a skmer starting at the given position.
+    /** Check if a skmer has a kmer starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
@@ -618,14 +618,15 @@ public:
         return true;
     }
 
-    /** Check if a skmer has a skmer starting at the given position.
-     * @param skmer The skmer you want to evaluate having a kmer at the given position
+    /** Generate a skmer has a kmer starting at the given position.
+     * @param given_skmer The skmer from which you want to extract the kmer
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
     Skmer<kuint> get_skmer_of_kmer(Skmer<kuint> given_skmer, uint64_t kmer_pos){
         // prefix and suffix sizes computation
         uint64_t const half_size = (2 * this->k - this->m + 1) / 2;
+
         // Prefix size: how many nucleotides are in the first half of the skmer
         uint16_t prefix_size = m_pref_size - kmer_pos;
         
@@ -634,18 +635,24 @@ public:
 
         // getting the kmer and generating the skmer
         kpair kmer = extract_kmer(given_skmer, kmer_pos); // extracting the kpair from the kmer
-        kmer.m_value[0] |= (~kmer_masks[kmer_pos].m_value[0] & this->m_mask.m_value[0]);
-        kmer.m_value[1] |= (~kmer_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
 
-        //kmer |= (~kmer_masks[kmer_pos] & this->m_mask); // setting to 1s the positions not used in the skmer
+        kpair mmask = this->m_mask;
+        
+        // std::cerr << "KMER: " << kmer << std::endl;
+        // std::cerr << "KMER_MASK: " << k_mask << std::endl;
+        // std::cerr << " M_MASK: " << mmask<< std::endl;
+        // std::cerr << "MASK: " << (~k_mask & mmask) << std::endl;
+
+        kmer |= (~kmer_masks[kmer_pos] & mmask); // setting to 1s the positions not used in the skmer
+        // std::cerr << "OUT_SKMER: " << kmer << std::endl;
         Skmer<kuint> new_sorted_skmer(kmer, prefix_size, suffix_size);
     
         return new_sorted_skmer;
     }
 
-    void clean_nucleotide_position_skmer(Skmer<kuint> given_skmer, uint64_t kmer_pos){
-        given_skmer.m_pair.m_value[0] &= (~nucleotide_masks[kmer_pos + this->k - 1].m_value[0] & this->m_mask.m_value[0]);
-        given_skmer.m_pair.m_value[1] &= (~nucleotide_masks[kmer_pos + this->k - 1].m_value[1] & this->m_mask.m_value[1]);
+    void clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos){
+        given_skmer.m_pair.m_value[0] &= (~nucleotide_masks[kmer_pos].m_value[0] & this->m_mask.m_value[0]);
+        given_skmer.m_pair.m_value[1] & (~nucleotide_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
         return;
     }
 
