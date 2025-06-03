@@ -638,13 +638,18 @@ public:
 
         kpair mmask = this->m_mask;
         
-        // std::cerr << "KMER: " << kmer << std::endl;
-        // std::cerr << "KMER_MASK: " << k_mask << std::endl;
-        // std::cerr << " M_MASK: " << mmask<< std::endl;
-        // std::cerr << "MASK: " << (~k_mask & mmask) << std::endl;
+        std::cerr << "K: " << this->k << std::endl;
+        std::cerr << "M: " << this->m << std::endl;
+        std::cerr << "GIVEN KMER: " << given_skmer << std::endl;
+        std::cerr << "KMER POS: " << kmer_pos << std::endl;
+        std::cerr << "EXTRACTED KMER: " << kmer << std::endl;
+        std::cerr << " M_MASK: " << mmask << std::endl;
+        std::cerr << " ~KMER_MASK: " << ~kmer_masks[kmer_pos] << std::endl;
+        std::cerr << "PREFIX SIZE: " << prefix_size << std::endl;
+        std::cerr << "SUFFIX SIZE: " << suffix_size << std::endl;
 
         kmer |= (~kmer_masks[kmer_pos] & mmask); // setting to 1s the positions not used in the skmer
-        // std::cerr << "OUT_SKMER: " << kmer << std::endl;
+        std::cerr << "OUT_SKMER: " << kmer << std::endl;
         Skmer<kuint> new_sorted_skmer(kmer, prefix_size, suffix_size);
     
         return new_sorted_skmer;
@@ -652,7 +657,7 @@ public:
 
     void clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos){
         given_skmer.m_pair.m_value[0] &= (~nucleotide_masks[kmer_pos].m_value[0] & this->m_mask.m_value[0]);
-        given_skmer.m_pair.m_value[1] & (~nucleotide_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
+        given_skmer.m_pair.m_value[1] &= (~nucleotide_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
         return;
     }
 
