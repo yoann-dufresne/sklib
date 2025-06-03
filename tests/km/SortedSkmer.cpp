@@ -9,27 +9,19 @@
 #include <algorithms/SkmerSorting.hpp>
 
 using namespace std;
-
 using kuint = uint16_t;
 using kpair = km::Skmer<kuint>::pair;
 
-constexpr uint64_t k{5};
-constexpr uint64_t m{2};
-
-km::SkmerManipulator<kuint> manip {k, m};
-km::SkmerPrettyPrinter<kuint> pp {k, m};
-
-//                      Prefix:                        A   _   _   _                 A   _   _   _  
-//                      Suffix:                      A   A   A   A                 A   C   C   C 
-std::array< kpair, 3 > const kmer_triplet { kpair(0b0000001100110011U,0), kpair(0b0000011101110111U,0),
-//                      Prefix:                        C   _   _   _
-//                      Suffix:                      C   C   C   C 
-                                            kpair(0b0101011101110111U,0) };
-const std::array< std::string, 3 > skmer_strings {"AAAAA", "AACCC", "CCCCC"};
-
-
 std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::array< kpair, 3> const & kmer_triplet)
 {
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    const std::array< std::string, 3 > skmer_strings {"AAAAA", "AACCC", "CCCCC"};
 
     std::array< std::array< km::Skmer<kuint>, 3>, 6> permutation_array {};
 
@@ -55,6 +47,15 @@ std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::ar
  */
 TEST(SkmerSorting, kmer_validation)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
     //                  Prefix:         A   T   _   _             A   _   _   _   
     //                  Suffix:       A   C   C   C             C   C   C   C     
     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
@@ -76,7 +77,14 @@ TEST(SkmerSorting, kmer_validation)
 /** Test the order of 2 kmers after a sort on one column */
 TEST(SkmerSorting, Single_kmer_sorting)
 {
-    
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                 Prefix:          A   T   _   _             A   _   _   _   
     //                 Suffix:        A   C   C   C             C   C   C   C     
     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
@@ -97,6 +105,22 @@ TEST(SkmerSorting, Single_kmer_sorting)
 /** Test sorting on a column for all possible permutations of 3 skmers */
 TEST(SkmerSorting, Three_kmer_sorting)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+        //                      Prefix:                        A   _   _   _                 A   _   _   _  
+    //                      Suffix:                      A   A   A   A                 A   C   C   C 
+    std::array< kpair, 3 > const kmer_triplet { kpair(0b0000001100110011U,0), kpair(0b0000011101110111U,0),
+        //                      Prefix:                        C   _   _   _
+        //                      Suffix:                      C   C   C   C 
+                                                    kpair(0b0101011101110111U,0) };
+
     std::vector<uint64_t> ordered_kmers {};
 
     uint64_t position {3};
@@ -120,6 +144,14 @@ TEST(SkmerSorting, Three_kmer_sorting)
  */
 TEST(SkmerSorting, get_candidate_overlaps__no_overlap)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:       A   C   _   _             A   _   _   _   
     //                    Suffix:     A   C   C   _             A   G   C   C     
     const kpair input_skmers[2] { {0b0000010101111111U, 0}, {0b0000111101110111U, 0}} ;
@@ -144,6 +176,14 @@ TEST(SkmerSorting, get_candidate_overlaps__no_overlap)
  */
 TEST(SkmerSorting, get_candidate_overlaps__1_overlap)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:       A   C   _   _             A   _   _   _   
     //                    Suffix:     A   C   C   _             A   C   C   C     
     const kpair input_skmers[2] { {0b0000010101111111U, 0}, {0b0000011101110111U, 0}} ;
@@ -166,6 +206,14 @@ TEST(SkmerSorting, get_candidate_overlaps__1_overlap)
  */
 TEST(SkmerSorting, get_candidate_overlaps_1_2)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   _   _   _             A   _   _   _   
     //                    Suffix:    A   C   C   _             A   C   C   C             A   C   C   T
     const kpair input_skmers[3] { {0b0000010101111111U, 0}, {0b0000011101110111U, 0}, {0b0000011101111011U, 0}} ;
@@ -188,6 +236,14 @@ TEST(SkmerSorting, get_candidate_overlaps_1_2)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_1)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _             A   _   _   _   
     //                    Suffix:    A   C   C   _             A   C   C   _             A   C   C   C
     const kpair input_skmers[3] { {0b0000010101111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}} ;
@@ -211,6 +267,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_1)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_parallel)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _
     //                    Suffix:    A   C   C   _             A   C   T   _             A   C   C   C
     const kpair input_skmers[4] { {0b0000010101111111U, 0}, {0b0000011010111111U, 0}, {0b0000011101110111U, 0},
@@ -237,6 +301,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_parallel)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
     //                    Suffix:    A   C   T   _             A   C   C   _             A   C   C   C                 
     const kpair input_skmers[4] { {0b0000010110111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, 
@@ -263,6 +335,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_1)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
     //                    Suffix:    A   C   A   _             A   C   C   _             A   C   C   C                 
     const kpair input_skmers[4] { {0b0000010100111111U, 0}, {0b0000011001111111U, 0}, {0b0000011101110111U, 0}, 
@@ -289,6 +369,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_1)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_beginning)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   C   C             A   T   T   T             A   T   T   _
     //                    Suffix:    A   _   _   _             A   _   _   _             A   C   _   _
     const kpair input_skmers[4] { {0b0000110111011101U, 0}, {0b0000111011101110U, 0}, {0b0000011011101111U, 0}, 
@@ -316,6 +404,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_beginning)
  */
 TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_end)
 {   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _              A   _   _   _             
     //                    Suffix:    A   C   T   C             A   C   C   C             A   C   C   C                 
     const kpair input_skmers[4] { {0b0000010110110111U, 0}, {0b0000011001110111U, 0}, {0b0000011101110111U, 0}, 
@@ -338,6 +434,14 @@ TEST(SkmerSorting, get_candidate_overlaps_2_2_crossed_end)
 
 TEST(SkmerSorting, generate_virtual_skmer)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   G   T             
     //                    Suffix:    A   C   T   C                         
     const kpair input_skmer {0b0000010110110110U, 0};
@@ -357,7 +461,7 @@ TEST(SkmerSorting, generate_virtual_skmer)
                                     {0b0000011110110111U, 0}};
     std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers {km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,1,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,2,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[2],2,3,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[3],1,4,0) };
 
-    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+    for(size_t i {0}; i < expected_virtual_skmers.size(); i++){
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
@@ -368,11 +472,17 @@ TEST(SkmerSorting, generate_virtual_skmer)
 
 TEST(SkmerSorting, generate_virtual_skmer_2)
 {
-    uint64_t k {5};
-    uint64_t m {3};
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{3};
+
     km::SkmerManipulator<kuint> manip {k, m};
-    //                    Prefix:      A   C   G   T             
-    //                    Suffix:       C   T   C                         
+    // km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    //              Prefix:      A   C   G   T             
+    //               Suffix:       C   T   C                         
     const kpair input_skmer {0b0000010110110110U, 0};
     std::vector<km::Skmer<kuint> > m_skmer_vector{km::Skmer<kuint>(input_skmer,4,3)};
 
@@ -388,16 +498,23 @@ TEST(SkmerSorting, generate_virtual_skmer_2)
  
     std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers {km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,1,0), km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,2,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[2],2,3,0)};
 
-    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+    for(size_t i {0}; i < expected_virtual_skmers.size(); i++){
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
-        // ASSERT_EQ(expected_virtual_skmers[i].last_id, extracted_skmers[i].last_id);
     }
 }
 
 TEST(SkmerSorting, add_kmer_to_virtual_skmer)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   G   T             
     //                    Suffix:    A   C   T   C                         
     const kpair m_vector_pair {0b0000010110110110U, 0};
@@ -426,7 +543,7 @@ TEST(SkmerSorting, add_kmer_to_virtual_skmer)
     // km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],4,2,0),
     std::vector< km::sorting::Virtual_skmer<kuint> > expected_virtual_skmers { km::sorting::Virtual_skmer<kuint>(expected_kpairs[0],3,3,0),km::sorting::Virtual_skmer<kuint>(expected_kpairs[1],3,4,0)};
 
-    for(int i {0}; i < expected_virtual_skmers.size(); i++){
+    for(size_t i {0}; i < expected_virtual_skmers.size(); i++){
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pair,extracted_skmers[i].skmer.m_pair);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_pref_size,extracted_skmers[i].skmer.m_pref_size);
         ASSERT_EQ(expected_virtual_skmers[i].skmer.m_suff_size,extracted_skmers[i].skmer.m_suff_size);
@@ -436,6 +553,14 @@ TEST(SkmerSorting, add_kmer_to_virtual_skmer)
 
 TEST(SkmerSorting, empty_list_fill)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   _   _             A   T   _   _                   
     //                    Suffix:    A   C   T   C             A   C   C   C                          
     const kpair input_skmers[2] { {0b0000010110110111U, 0}, {0b0000011001110111U, 0}};
@@ -458,7 +583,7 @@ TEST(SkmerSorting, empty_list_fill)
     auto vector_iterator = expected_list.begin();
     auto list_iterator = computed_list.begin();
 
-    for(vector_iterator; vector_iterator < expected_list.end(); vector_iterator++){
+    for(; vector_iterator != expected_list.end(); vector_iterator++){
         km::sorting::Virtual_skmer<kuint> expected_vskmer {*vector_iterator};
         km::sorting::Virtual_skmer<kuint> computed_vskmer {*list_iterator};
 
@@ -473,6 +598,14 @@ TEST(SkmerSorting, empty_list_fill)
 
 TEST(SkmerSorting, merge_left_and_right_column_elements)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   C   C             A   C   C   T             A   C   C   G     
     //                    Suffix:    A   G   G   G             A   T   G   T             A   C   T   T                
     const kpair input_skmers[3] { {0b0000110111011101U, 0}, {0b0000100111011010U, 0}, {0b0000010110011011U, 0}};
@@ -501,7 +634,7 @@ TEST(SkmerSorting, merge_left_and_right_column_elements)
     auto vector_iterator = expected_list.begin();
     auto list_iterator = computed_list.begin();
 
-    for(vector_iterator; vector_iterator < expected_list.end(); vector_iterator++){
+    for(; vector_iterator != expected_list.end(); vector_iterator++){
         km::sorting::Virtual_skmer<kuint> expected_vskmer {*vector_iterator};
         km::sorting::Virtual_skmer<kuint> computed_vskmer {*list_iterator};
 
@@ -517,6 +650,14 @@ TEST(SkmerSorting, merge_left_and_right_column_elements)
 
 TEST(SkmerSorting, add_right_column_element)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   C   C             A   C   C   T             A   C   C   G     
     //                    Suffix:    A   G   G   G             A   G   T   T             A   G   T   T       
     const kpair input_skmers[3] { {0b0000110111011101U, 0}, {0b0000110110011010U, 0}, {0b0000110110011011U, 0}};
@@ -542,7 +683,7 @@ TEST(SkmerSorting, add_right_column_element)
     auto vector_iterator = expected_list.begin();
     auto list_iterator = computed_list.begin();
 
-    for(vector_iterator; vector_iterator < expected_list.end(); vector_iterator++){
+    for(; vector_iterator != expected_list.end(); vector_iterator++){
         km::sorting::Virtual_skmer<kuint> expected_vskmer {*vector_iterator};
         km::sorting::Virtual_skmer<kuint> computed_vskmer {*list_iterator};
 
@@ -557,6 +698,14 @@ TEST(SkmerSorting, add_right_column_element)
 
 TEST(SkmerSorting, add_left_column_element)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   C   C             A   C   C   T             A   C   C   G     
     //                    Suffix:    A   G   G   G             A   G   T   T             A   G   T   T       
     const kpair input_skmers[3] { {0b0000110111011101U, 0}, {0b0000110110011010U, 0}, {0b0000110110011011U, 0}};
@@ -582,7 +731,7 @@ TEST(SkmerSorting, add_left_column_element)
     auto vector_iterator = expected_list.begin();
     auto list_iterator = computed_list.begin();
 
-    for(vector_iterator; vector_iterator < expected_list.end(); vector_iterator++){
+    for(; vector_iterator != expected_list.end(); vector_iterator++){
         km::sorting::Virtual_skmer<kuint> expected_vskmer {*vector_iterator};
         km::sorting::Virtual_skmer<kuint> computed_vskmer {*list_iterator};
 
@@ -597,6 +746,14 @@ TEST(SkmerSorting, add_left_column_element)
 
 TEST(SkmerSorting, no_element_pointed)
 {
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
     //                    Prefix:      A   C   C   C             A   C   C   T             A   C   C   G     
     //                    Suffix:    A   A   G   G             A   G   T   T             A   A   T   T       
     const kpair input_skmers[3] { {0b0000000111011101U, 0}, {0b0000110110011010U, 0}, {0b0000000110011011U, 0}};
@@ -622,7 +779,7 @@ TEST(SkmerSorting, no_element_pointed)
     auto vector_iterator = expected_list.begin();
     auto list_iterator = computed_list.begin();
 
-    for(vector_iterator; vector_iterator < expected_list.end(); vector_iterator++){
+    for(; vector_iterator != expected_list.end(); vector_iterator++){
         km::sorting::Virtual_skmer<kuint> expected_vskmer {*vector_iterator};
         km::sorting::Virtual_skmer<kuint> computed_vskmer {*list_iterator};
 

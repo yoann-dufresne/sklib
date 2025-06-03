@@ -222,35 +222,35 @@ std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & s
 template<typename kuint>
 void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint> & m_manip, LList<kuint> & list, std::vector<uint64_t> const & column, std::vector<overlap> const & valid_overlaps, uint64_t const column_pos)
 {   
-    assert(column_pos >= 0);
+    // assert(column_pos >= 0);
     assert(column_pos <= (m_manip.k - m_manip.m));
 
-    using kpair = typename Skmer<kuint>::pair;
-    using kpairhash = typename Skmer<kuint>::pair_hasher;
+    // using kpair = typename Skmer<kuint>::pair;
+    // using kpairhash = typename Skmer<kuint>::pair_hasher;
 
     // initiliazation of the iterators over the Linked List, Skmer_id column and valid overlaps vector
-    std::cerr << "VARIABLES INITIALIZATION" << std::endl;
+    // std::cerr << "VARIABLES INITIALIZATION" << std::endl;
     auto list_it_previous_element = list.before_begin(); // this specific iterator element is needed in some cases
     auto list_it = list.begin();
     auto column_it = column.begin();
     auto overlap_it = valid_overlaps.begin();
 
     // Until one of the two columns is used
-    std::cerr << "BEFORE WHILE LOOP" << std::endl;
+    // std::cerr << "BEFORE WHILE LOOP" << std::endl;
     bool verification_list = (list_it != list.end()) ? true : false;
     bool verification_column = (column_it != column.end()) ? true : false;
-    std::cerr << "List_iterator: " << verification_list<< std::endl;
-    std::cerr << "Column_iterator: " << verification_column << std::endl;
+    // std::cerr << "List_iterator: " << verification_list<< std::endl;
+    // std::cerr << "Column_iterator: " << verification_column << std::endl;
     while (list_it != list.end() && column_it != column.end() and overlap_it != valid_overlaps.end() ){
-        std::cerr << "IN WHILE LOOP" << std::endl;
+        // std::cerr << "IN WHILE LOOP" << std::endl;
 
         // 1 - check if elements pointed in the left and right column are in the next valid overlap
         auto curr_value = *list_it;
         bool is_left_in_overlap = (curr_value.last_id == overlap_it->first); //? true : false;
         bool is_right_in_overlap =  (*column_it == (*overlap_it).second);
 
-        std::cerr << "LL ID: " << curr_value.last_id << " ; COL ID: " << *column_it << std::endl;
-        std::cerr << "OVERLAP: " << overlap_it->first << "," << overlap_it->second << std::endl;
+        // std::cerr << "LL ID: " << curr_value.last_id << " ; COL ID: " << *column_it << std::endl;
+        // std::cerr << "OVERLAP: " << overlap_it->first << "," << overlap_it->second << std::endl;
         
         // CASE (A) IF BOTH ELEMENTS ARE POINTED, I MERGE THE VIRTUAL SKMER WITH THE KMER
         if ((is_left_in_overlap == is_right_in_overlap) && (is_left_in_overlap == true)){
@@ -263,7 +263,7 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
             ++list_it;
             ++column_it;
             ++overlap_it;
-            std::cerr << "CASE BOTH POINTED" << std::endl;
+            // std::cerr << "CASE BOTH POINTED" << std::endl;
         }
 
         // CASE (B) THE ELEMENT IN THE LL IS POINTED, INSERT THE ELEMENT FROM THE COLUMN TO THE LL IN THE PLACE BEFORE
@@ -273,14 +273,14 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
             list.insert_after(list_it, generate_virtual_skmer(skmer_enumeration,m_manip,*column_it, column_pos));
             ++list_it;
             ++column_it;
-            std::cerr << "CASE LL EL POINTED" << std::endl;
+            // std::cerr << "CASE LL EL POINTED" << std::endl;
         }
 
         // CASE (C) THE ELEMENT IN THE COLUMN IS POINTED, I CAN INCREASE THE ITERATOR IN THE LL
         else if (is_right_in_overlap){ // if(is_right_in_overlap)
             list_it_previous_element = list_it;
             ++list_it;
-            std::cerr << "CASE COLUMN EL POINTED" << std::endl;
+            // std::cerr << "CASE COLUMN EL POINTED" << std::endl;
         }
         
         // CASE (D) BOTH ELEMENTS ARE NOT POINTED, INSERT BASED ON SKMER 
@@ -300,10 +300,10 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
             }
         }
     }
-    std::cerr << "AFTER WHILE LOOP" << std::endl;
+    // std::cerr << "AFTER WHILE LOOP" << std::endl;
     // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be. This coincides with the special case of filling the LL the first time
     while (list_it != list.end() && column_it != column.end()){
-        std::cerr << "FILLING WHEN OVERLAP IS EMPTY" << std::endl;
+        // std::cerr << "FILLING WHEN OVERLAP IS EMPTY" << std::endl;
         // list.insert_after(list_it, generate_virtual_skmer(skmer_enumeration, m_manip, *column_it, column_pos));
         // ++column_it;
         // ++list_it;
@@ -326,7 +326,7 @@ void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, Sk
     // If there are still elements in the column, I add them into the linked list.
     list_it = list_it_previous_element; // I need to start to the element before the end.
     while (column_it != column.end()){
-        std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN" << std::endl;
+        // std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN" << std::endl;
         list.insert_after(list_it, generate_virtual_skmer(skmer_enumeration, m_manip, *column_it, column_pos));
         ++column_it;
         ++list_it;
