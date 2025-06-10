@@ -1,4 +1,3 @@
-#include <array>
 #include <vector>
 #include <cstdint>
 #include <algorithm>

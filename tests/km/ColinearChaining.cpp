@@ -2,10 +2,10 @@
 #include <utility>
 #include <iostream>
 
-#include <algorithms/SkmerSorting.hpp>
+#include <algorithms/ColinearChaining.hpp>
 
 using overlap = std::pair<uint64_t, uint64_t>;
-using namespace km::sorting;
+using namespace km::chaining;
 using namespace std;
 
 

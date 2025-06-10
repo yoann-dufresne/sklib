@@ -1,13 +1,13 @@
 #include <sstream>
 
-#include "algorithms/SkmerSorting.hpp"
+#include "algorithms/ColinearChaining.hpp"
 
 // --- Colienar chaining algorithm and data structures---
 
 
 namespace km
 {
-namespace sorting
+namespace chaining
 {
 
     static overlap const null_overlap = {UINT64_MAX, UINT64_MAX};
@@ -218,7 +218,7 @@ bool RMQtree::MaxValueIterator::operator==(const MaxValueIterator& other) const 
 
 std::string RMQtree::toDot() const
 {
-    stringstream ss;
+    std::stringstream ss;
 
     ss << "digraph RMQtree {" << std::endl;
     for (uint64_t i = 0; i < m_tree.size(); i++)
@@ -335,7 +335,7 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     
     // 4 - For each overlap, update the score according to the best chaining.
     // 4 bis - Also register the previous compatible overlap
-    unordered_map<overlap, overlap> previous_overlaps;
+    std::unordered_map<overlap, overlap> previous_overlaps;
     for (auto it = begin; it != end; it++)
     {
         overlap const& current_overlap = *it;
