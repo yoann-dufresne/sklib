@@ -346,13 +346,11 @@ protected:
     kpair* m_pref_masks;
     kpair* m_suff_masks;
 
-    std::vector<kpair > nucleotide_masks;
-    std::vector<kpair > kmer_masks;
-    std::vector<kpair > sp_kmer_masks;
 
-    // std::vector<kpair > nucleotide_masks;
-    // std::vector<kpair > kmer_masks;
-    // std::vector<kpair > sp_kmer_masks;
+    std::vector<kpair > sp_kmer_masks;
+    std::vector<kpair > kmer_masks;
+    std::vector<kpair > nucleotide_masks;
+ 
     // // The amount of bit shifts needed to reach the 4 most significant bits of a kuint
     // static constexpr uint64_t uints_middle_shift {sizeof(kuint) * 8 - 4};
 

@@ -1,13 +1,33 @@
 #include <vector>
+#include <fstream>
+#include <stdexcept>
 
-#include "ColinearChaining.hpp"
+#include "SkmerSorting.hpp"
+#include "algorithms/ColinearChaining.hpp"
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
+
+#ifndef VIRTUALSKMER_H
+#define VIRTUALSKMER_H
 
 namespace km
 {
 namespace sortedlist
 {
+// INTEGER USED TO CHECK THAT THE ENDIANESS IS CORRECT
+constexpr uint64_t ENDINANESS_SANITY_INTEGER = 0x56534B4D45525F4DULL; // "VSKMER_M" in ASCII
+
+// Helper function to check endiannesss
+inline uint64_t swap_endian(uint64_t value) {
+    return ((value & 0x00000000000000FFULL) << 56) |
+           ((value & 0x000000000000FF00ULL) << 40) |
+           ((value & 0x0000000000FF0000ULL) << 24) |
+           ((value & 0x00000000FF000000ULL) << 8)  |
+           ((value & 0x000000FF00000000ULL) >> 8)  |
+           ((value & 0x0000FF0000000000ULL) >> 24) |
+           ((value & 0x00FF000000000000ULL) >> 40) |
+           ((value & 0xFF00000000000000ULL) >> 56);
+}
 
 
 // PAIR WRAPPER CLASS TO PROCESS PAIR OF COLUMNS
@@ -45,7 +65,6 @@ struct Virtual_skmer {
     }
 
     void add_kmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
-
         using kpair = typename Skmer<kuint>::pair;
         // Free the nucleotide slot in the skmer to accomodate the nucleotide associated with the kmer
         // As it would contain 1s in not used slots
@@ -53,14 +72,11 @@ struct Virtual_skmer {
         // Extract the nucleotide from the "contigous" corresponding skmer
         kpair nucleotide {m_manip.extract_nucleotide(skmer_enumeration[skmer_id],kmer_pos + m_manip.k - 1)};
         // Add the nucleotide by OR logical operation
-        // std::cerr << "Pos:" << (kmer_pos + m_manip.k -1) << " , nucleotide: " << nucleotide << " , before: " << virtual_skmer.skmer.m_pair; 
         this->skmer.m_pair.m_value[0] |= nucleotide.m_value[0];
         this->skmer.m_pair.m_value[1] |= nucleotide.m_value[1];
-        // std::cerr << " ,after: " << virtual_skmer.skmer.m_pair << " , nucleotide[0]:" << nucleotide << std::endl;
         // HANDLING PREFIX / SUFFIX
         assert(this->skmer.m_suff_size < (2 * m_manip.k - m_manip.m + 1)/2 );
         this->skmer.m_suff_size += 1;
-    
         return;
     }
 
@@ -74,16 +90,20 @@ class Sorted_Virtual_Skmer_List {
     using LList = std::forward_list<Virtual_skmer<kuint>>;
     using overlap = std::pair<uint64_t, uint64_t>;
 
-    std::vector<Virtual_skmer<kuint>> m_list;
-    SkmerManipulator<kuint>& m_manip;
-
     public:
 
-    Sorted_Virtual_Skmer_List(SkmerManipulator<kuint>& manip) : m_manip(manip) {}
+    // Constructor with manipulator - makes a copy
+    Sorted_Virtual_Skmer_List(const SkmerManipulator<kuint>& manip) 
+        : m_manip(std::make_unique<SkmerManipulator<kuint>>(manip)) {}
+    
+    // Constructor for loading from file
+    Sorted_Virtual_Skmer_List(const std::string& filename) {
+        load_from_disk(filename);
+    }
 
     void print_list(){
         std::cout << "list : {";
-        for(char comma[3] = {'\0', ' ', '\0'}; Virtual_skmer<kuint> i : m_list){
+        for(char comma[3] = {'\0', ' ', '\0'}; Virtual_skmer<kuint> i : m_skmer_list){
             std::cout << comma << i.last_id << " : " << i.skmer.m_pair;
             comma[0] = ',';
         }
@@ -91,8 +111,9 @@ class Sorted_Virtual_Skmer_List {
     }
 
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
-        //initialize the linked list
-        LList<kuint> merge_list{};
+        //initialize the linked lists
+        //<kuint> 
+        LList merge_list{};
         
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
@@ -106,7 +127,7 @@ class Sorted_Virtual_Skmer_List {
         right_column_position++;
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
-        while(right_column_position < this->m_manip.sk_size ){
+        while(right_column_position < m_manip->sk_size ){
             // 1 - sort the column ids based on kmers
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
 
@@ -123,18 +144,141 @@ class Sorted_Virtual_Skmer_List {
             left_column_position = right_column_position;
             right_column_position++;
         }
-
-        // FINALLY store the sorted virtual superkmer list as vector
-        m_list = std::vector<Virtual_skmer<kuint>>(merge_list.begin(), merge_list.end());
+        // FINALLY store the sorted virtual superkmer list as vector of Skmers 
+        m_skmer_list.clear();
+        m_skmer_list.reserve(std::distance(merge_list.begin(), merge_list.end()));
+        for (const auto& vskmer : merge_list) {
+            m_skmer_list.push_back(vskmer.skmer);
+        }
     }
 
-    void load_from_disk(){}
+    int dump_to_disk(const std::string& filename, size_t chunk_size_mb = 100) {
+        std::ofstream outFile(filename, std::ios::binary);
+        
+        if (outFile.fail()) {
+            std::cerr << "Error opening file for writing: " << filename << std::endl;
+            return 1;
+        }
 
-    void dump_to_disk(){}
+        // ENDIANESS CHECKING INTEGER
+        outFile.write(reinterpret_cast<const char*>(&ENDINANESS_SANITY_INTEGER), sizeof(uint64_t));
+        
+        // Write k and m
+        outFile.write(reinterpret_cast<const char*>(&m_manip->k), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&m_manip->m), sizeof(uint64_t));
+        
+        // Write count
+        uint64_t count = m_skmer_list.size();
+        outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
+        
+        if (!outFile) {
+            std::cerr << "Error writing header to file: " << filename << std::endl;
+            return 1;
+        }
 
+        // Calculate chunk parameters
+        constexpr uint64_t bytes_per_mb = 1000000;
+        uint64_t bytes_per_vskmer = sizeof(Skmer<kuint>);
+        uint64_t max_elements_per_chunk = (chunk_size_mb * bytes_per_mb) / bytes_per_vskmer;
+        
+        // Write data in chunks
+        uint64_t elements_written = 0;
+        while (elements_written < count) {
+            uint64_t elements_to_write = std::min(max_elements_per_chunk, count - elements_written);
+            
+            outFile.write(reinterpret_cast<const char*>(m_skmer_list.data() + elements_written), 
+                         elements_to_write * sizeof(Skmer<kuint>));
+            
+            if (!outFile) {
+                std::cerr << "Error writing chunk to file: " << filename << std::endl;
+                return 1;
+            }
+            
+            elements_written += elements_to_write;
+        }
+        
+        outFile.close();
+        return 0;
+    }
+
+    // Getter for the list 
+    const std::vector<Skmer<kuint>>& get_list() const {
+        return m_skmer_list;
+    }
+
+    // Size getter
+    size_t size() const {
+        return m_skmer_list.size();
+    }
 
 
     private:
+
+    std::unique_ptr<SkmerManipulator<kuint>> m_manip;
+    std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
+
+    /** Loads the sorted virtual skmer list from disk and creates a new manipulator
+     * @param filename the path to the binary file to load
+     * @throws std::runtime_error if file cannot be opened, is corrupted, or has endianness mismatch
+     */
+    void load_from_disk(const std::string& filename) {
+        std::ifstream inFile(filename, std::ios::binary);
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error opening file for reading: " + filename);
+        }
+
+        // Read and check magic number
+        uint64_t read_endianess_int;
+        inFile.read(reinterpret_cast<char*>(&read_endianess_int), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading magic number from file: " + filename);
+        }
+        
+        // Check endianness
+        if (read_endianess_int != ENDINANESS_SANITY_INTEGER) {
+            uint64_t swapped_magic = swap_endian(read_endianess_int);
+            if (swapped_magic == ENDINANESS_SANITY_INTEGER) {
+                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
+            } else {
+                throw std::runtime_error("Invalid file format - ENDINANESS_SANITY_INTEGER mismatch");
+            }
+        }
+
+        // Read k and m values
+        uint64_t file_k, file_m;
+        inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
+        inFile.read(reinterpret_cast<char*>(&file_m), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading k and m values from file: " + filename);
+        }
+        
+        // Create new manipulator with the k and m values from the file
+        m_manip = std::make_unique<SkmerManipulator<kuint>>(file_k, file_m);
+        
+        // Log the loaded parameters
+        std::cerr << "Loaded parameters from file: k=" << file_k << ", m=" << file_m << std::endl;
+
+        // Read count
+        uint64_t count;
+        inFile.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading count from file: " + filename);
+        }
+
+        // Read the skmer data
+        m_skmer_list.resize(count);
+        inFile.read(reinterpret_cast<char*>(m_skmer_list.data()), count * sizeof(Skmer<kuint>));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading virtual skmer data from file: " + filename);
+        }
+        
+        inFile.close();
+    }
 
     /** Sorts skmer ids based on the kmers they contain at a given positon.
      * @param start start_position in the skmer generator
@@ -156,7 +300,7 @@ class Sorted_Virtual_Skmer_List {
         {
             // pp << *skmer;
             // std::cout << "checking kmer validity" << pp << std::endl;
-            if (m_manip.has_valid_kmer(*skmer, kmer_pos)){
+            if (m_manip->has_valid_kmer(*skmer, kmer_pos)){
                 valid_skmer_ids.push_back(sk_id);
                 // std::cout << "valid" << std::endl;
             }
@@ -171,7 +315,7 @@ class Sorted_Virtual_Skmer_List {
 
         std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), 
             [this, kmer_pos, start](uint64_t id1, uint64_t id2){
-                return this->m_manip.kmer_lt_kmer(*(start + id1), kmer_pos, *(start + id2), kmer_pos);
+                return this->m_manip->kmer_lt_kmer(*(start + id1), kmer_pos, *(start + id2), kmer_pos);
             });
 
         // std::cout << "Virtual SKMER LIST - ( size: " << valid_skmer.size() << ") " << std::endl;
@@ -202,14 +346,14 @@ class Sorted_Virtual_Skmer_List {
             // std::cout << "pref" << std::endl;
             assert(skmer_id < skmer_enumeration.size());
             assert(skmer_id > 0);
-            prefix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
+            prefix = m_manip->extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             prefixes[prefix].push_back(skmer_id);
         }
 
         // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
         for (auto& skmer_id : left_column) {
             // std::cout << "suff" << std::endl;
-            suffix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
+            suffix = m_manip->extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
             
             matching_prefix = prefixes.find (suffix);
             if (matching_prefix != prefixes.end()){
@@ -231,10 +375,11 @@ class Sorted_Virtual_Skmer_List {
      * @param column_pos the position of the column being introduced in the linked_list
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
-    void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, LList<kuint> & list, std::vector<uint64_t> const & column, std::vector<overlap> const & valid_overlaps, uint64_t const column_pos)
+    //<kuint>
+    void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, LList & list, std::vector<uint64_t> const & column, std::vector<overlap> const & valid_overlaps, uint64_t const column_pos)
     {   
         // assert(column_pos >= 0);
-        assert(column_pos <= (m_manip.k - m_manip.m));
+        assert(column_pos <= (m_manip->k - m_manip->m));
 
         // using kpair = typename Skmer<kuint>::pair;
         // using kpairhash = typename Skmer<kuint>::pair_hasher;
@@ -266,7 +411,7 @@ class Sorted_Virtual_Skmer_List {
             // CASE (A) IF BOTH ELEMENTS ARE POINTED, I MERGE THE VIRTUAL SKMER WITH THE KMER
             if ((is_left_in_overlap == is_right_in_overlap) && (is_left_in_overlap == true)){
                 Virtual_skmer<kuint> merging_virtual_skmer = *list_it;
-                merging_virtual_skmer.add_kmer(skmer_enumeration, m_manip, *column_it, column_pos);
+                merging_virtual_skmer.add_kmer(skmer_enumeration, *m_manip, *column_it, column_pos);
                 merging_virtual_skmer.last_id = *column_it;
                 *list_it = merging_virtual_skmer;
                 // as we 'used' the element in the linked list, column and overlap list, we go to the next element in all 3;
@@ -281,7 +426,7 @@ class Sorted_Virtual_Skmer_List {
             else if (is_left_in_overlap)
             {
                 list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
+                list.emplace_after(list_it, this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
                 ++list_it;
                 ++column_it;
@@ -299,14 +444,14 @@ class Sorted_Virtual_Skmer_List {
             // NOW COMMENTED AS <=> DEPENDS ON COLUMN POS
             else{
                 // If the LLink skmer <= enumeration one, do like case (C)
-                if (list_it->skmer <= this->m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
+                if (list_it->skmer <= this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
                     list_it_previous_element = list_it;
                     ++list_it;
                 }
                 // If the LLink skmer > enumeration one, do like case (B)
                 else{
                     list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                    list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
+                    list.emplace_after(list_it, this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
                     ++list_it;
                     ++column_it;
@@ -317,17 +462,14 @@ class Sorted_Virtual_Skmer_List {
         // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be. This coincides with the special case of filling the LL the first time
         while (list_it != list.end() && column_it != column.end()){
             // std::cerr << "FILLING WHEN OVERLAP IS EMPTY" << std::endl;
-            // list.insert_after(list_it, generate_virtual_skmer(skmer_enumeration, m_manip, *column_it, column_pos));
-            // ++column_it;
-            // ++list_it;
-            if (list_it->skmer <= this->m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
+            if (list_it->skmer <= this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
                 list_it_previous_element = list_it;
                 ++list_it;
             }
             // If the LLink skmer > enumeration one, do like case (B)
             else{
                 list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
+                list.emplace_after(list_it, this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
                 ++list_it;
                 ++column_it;
@@ -347,29 +489,9 @@ class Sorted_Virtual_Skmer_List {
             ++list_it;
         }
     }
-}
+}; // end of my class
 
-}
-}
+} // namespace sortedlist
+} // namespace km
 
-
-// COMPARE KMER IN SUPERKMER CLASS
-// template <class It, typename kuint>
-// class compare_kmer_skmer_pos {
-//     uint64_t position;
-//     SkmerManipulator<kuint> & manipulator;
-//     const It start;
-//     const It end;
-
-// public:
-//     // the comparison function takes as argument 2 integers, a position and the vector of skmers. 
-//     // It compares the two skmers in the selected position and returns which one is before the other.
-//     compare_kmer_skmer_pos(uint64_t p, SkmerManipulator<kuint> & skmer_manipulator, const It start_skmer_en, const It end_skmer_en) // 
-//     : position(p), manipulator(skmer_manipulator), start(start_skmer_en), end(end_skmer_en) {}
-
-//     bool operator()(const uint64_t skmer_id_1,const uint64_t skmer_id_2) const {
-//         assert((start+skmer_id_1) < end);
-//         assert((start+skmer_id_2) < end);
-//         return manipulator.kmer_lt_kmer(*(start+skmer_id_1), position, *(start+skmer_id_2), position);
-//     }
-// };
+#endif
