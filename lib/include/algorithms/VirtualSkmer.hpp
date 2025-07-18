@@ -1,8 +1,9 @@
 #include <vector>
 #include <fstream>
 #include <stdexcept>
+#include <forward_list>
 
-#include "SkmerSorting.hpp"
+// #include "SkmerSorting.hpp"
 #include "algorithms/ColinearChaining.hpp"
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -10,10 +11,45 @@
 #ifndef VIRTUALSKMER_H
 #define VIRTUALSKMER_H
 
+
+// namespace std {
+//     template <>
+//     struct hash<std::pair<unsigned long, unsigned long>> {
+//         std::size_t operator()(const std::pair<unsigned long, unsigned long>& p) const noexcept {
+//             return std::hash<unsigned long>{}(p.first) ^ (std::hash<unsigned long>{}(p.second) << 1);
+//         }
+//     };
+// }
+
 namespace km
 {
 namespace sortedlist
 {
+
+// template<typename kuint>
+// using kpair = km::Skmer<kuint>::pair;
+// using overlap = std::pair<uint64_t, uint64_t>;
+
+// template <class It, typename kuint>
+// class compare_kmer_skmer_pos {
+//     uint64_t position;
+//     SkmerManipulator<kuint> & manipulator;
+//     const It start;
+//     const It end;
+
+// public:
+//     // the comparison function takes as argument 2 integers, a position and the vector of skmers. 
+//     // It compares the two skmers in the selected position and returns which one is before the other.
+//     compare_kmer_skmer_pos(uint64_t p, SkmerManipulator<kuint> & skmer_manipulator, const It start_skmer_en, const It end_skmer_en) // 
+//     : position(p), manipulator(skmer_manipulator), start(start_skmer_en), end(end_skmer_en) {}
+
+//     bool operator()(const uint64_t skmer_id_1,const uint64_t skmer_id_2) const {
+//         assert((start+skmer_id_1) < end);
+//         assert((start+skmer_id_2) < end);
+//         return manipulator.kmer_lt_kmer(*(start+skmer_id_1), position, *(start+skmer_id_2), position);
+//     }
+// };
+
 // INTEGER USED TO CHECK THAT THE ENDIANESS IS CORRECT
 constexpr uint64_t ENDINANESS_SANITY_INTEGER = 0x56534B4D45525F4DULL; // "VSKMER_M" in ASCII
 
@@ -83,6 +119,8 @@ struct Virtual_skmer {
 };
 
 // VIRTUAL SUPERKMER LIST CLASS
+// Forward declaring VirtualSkmerSerializer
+template<typename kuint> class VirtualSkmerSerializer;
 
 template<typename kuint>
 class Sorted_Virtual_Skmer_List {
@@ -95,13 +133,8 @@ class Sorted_Virtual_Skmer_List {
     // Constructor with manipulator - makes a copy
     Sorted_Virtual_Skmer_List(const SkmerManipulator<kuint>& manip) 
         : m_manip(std::make_unique<SkmerManipulator<kuint>>(manip)) {}
-    
-    // Constructor for loading from file
-    Sorted_Virtual_Skmer_List(const std::string& filename) {
-        load_from_disk(filename);
-    }
 
-    void print_list(){
+    const void print_list(){
         std::cout << "list : {";
         for(char comma[3] = {'\0', ' ', '\0'}; Virtual_skmer<kuint> i : m_skmer_list){
             std::cout << comma << i.last_id << " : " << i.skmer.m_pair;
@@ -135,7 +168,7 @@ class Sorted_Virtual_Skmer_List {
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
 
             // 3 - get valid overlaps using colinear chaining
-            valid_overlaps = colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+            valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
 
             // 4 - reconcile kmers by merging columns
             merge_LList_column(skmer_enumeration, merge_list, window.right(), valid_overlaps, left_column_position);
@@ -150,55 +183,6 @@ class Sorted_Virtual_Skmer_List {
         for (const auto& vskmer : merge_list) {
             m_skmer_list.push_back(vskmer.skmer);
         }
-    }
-
-    int dump_to_disk(const std::string& filename, size_t chunk_size_mb = 100) {
-        std::ofstream outFile(filename, std::ios::binary);
-        
-        if (outFile.fail()) {
-            std::cerr << "Error opening file for writing: " << filename << std::endl;
-            return 1;
-        }
-
-        // ENDIANESS CHECKING INTEGER
-        outFile.write(reinterpret_cast<const char*>(&ENDINANESS_SANITY_INTEGER), sizeof(uint64_t));
-        
-        // Write k and m
-        outFile.write(reinterpret_cast<const char*>(&m_manip->k), sizeof(uint64_t));
-        outFile.write(reinterpret_cast<const char*>(&m_manip->m), sizeof(uint64_t));
-        
-        // Write count
-        uint64_t count = m_skmer_list.size();
-        outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
-        
-        if (!outFile) {
-            std::cerr << "Error writing header to file: " << filename << std::endl;
-            return 1;
-        }
-
-        // Calculate chunk parameters
-        constexpr uint64_t bytes_per_mb = 1000000;
-        uint64_t bytes_per_vskmer = sizeof(Skmer<kuint>);
-        uint64_t max_elements_per_chunk = (chunk_size_mb * bytes_per_mb) / bytes_per_vskmer;
-        
-        // Write data in chunks
-        uint64_t elements_written = 0;
-        while (elements_written < count) {
-            uint64_t elements_to_write = std::min(max_elements_per_chunk, count - elements_written);
-            
-            outFile.write(reinterpret_cast<const char*>(m_skmer_list.data() + elements_written), 
-                         elements_to_write * sizeof(Skmer<kuint>));
-            
-            if (!outFile) {
-                std::cerr << "Error writing chunk to file: " << filename << std::endl;
-                return 1;
-            }
-            
-            elements_written += elements_to_write;
-        }
-        
-        outFile.close();
-        return 0;
     }
 
     // Getter for the list 
@@ -217,69 +201,6 @@ class Sorted_Virtual_Skmer_List {
     std::unique_ptr<SkmerManipulator<kuint>> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
 
-    /** Loads the sorted virtual skmer list from disk and creates a new manipulator
-     * @param filename the path to the binary file to load
-     * @throws std::runtime_error if file cannot be opened, is corrupted, or has endianness mismatch
-     */
-    void load_from_disk(const std::string& filename) {
-        std::ifstream inFile(filename, std::ios::binary);
-        
-        if (inFile.fail()) {
-            throw std::runtime_error("Error opening file for reading: " + filename);
-        }
-
-        // Read and check magic number
-        uint64_t read_endianess_int;
-        inFile.read(reinterpret_cast<char*>(&read_endianess_int), sizeof(uint64_t));
-        
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading magic number from file: " + filename);
-        }
-        
-        // Check endianness
-        if (read_endianess_int != ENDINANESS_SANITY_INTEGER) {
-            uint64_t swapped_magic = swap_endian(read_endianess_int);
-            if (swapped_magic == ENDINANESS_SANITY_INTEGER) {
-                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
-            } else {
-                throw std::runtime_error("Invalid file format - ENDINANESS_SANITY_INTEGER mismatch");
-            }
-        }
-
-        // Read k and m values
-        uint64_t file_k, file_m;
-        inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
-        inFile.read(reinterpret_cast<char*>(&file_m), sizeof(uint64_t));
-        
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading k and m values from file: " + filename);
-        }
-        
-        // Create new manipulator with the k and m values from the file
-        m_manip = std::make_unique<SkmerManipulator<kuint>>(file_k, file_m);
-        
-        // Log the loaded parameters
-        std::cerr << "Loaded parameters from file: k=" << file_k << ", m=" << file_m << std::endl;
-
-        // Read count
-        uint64_t count;
-        inFile.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
-        
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading count from file: " + filename);
-        }
-
-        // Read the skmer data
-        m_skmer_list.resize(count);
-        inFile.read(reinterpret_cast<char*>(m_skmer_list.data()), count * sizeof(Skmer<kuint>));
-        
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading virtual skmer data from file: " + filename);
-        }
-        
-        inFile.close();
-    }
-
     /** Sorts skmer ids based on the kmers they contain at a given positon.
      * @param start start_position in the skmer generator
      * @param end end_positon in the skmer generator
@@ -294,15 +215,11 @@ class Sorted_Virtual_Skmer_List {
         std::vector<uint64_t> valid_skmer_ids;
         uint64_t sk_id = 0;
 
-        // km::SkmerPrettyPrinter<kuint> pp {m_manip.k, m_manip.m};
         //Iterating over the range [start, end)
         for(It skmer = start; skmer != end; ++skmer)
         {
-            // pp << *skmer;
-            // std::cout << "checking kmer validity" << pp << std::endl;
             if (m_manip->has_valid_kmer(*skmer, kmer_pos)){
                 valid_skmer_ids.push_back(sk_id);
-                // std::cout << "valid" << std::endl;
             }
             sk_id++;
         }
@@ -310,19 +227,10 @@ class Sorted_Virtual_Skmer_List {
         // 2nd pass over the column: return ordered list 
         // For every "column" i.e. possible kmer in the skmer size
         // For every skmer that has a kmer in that column
-        // std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(),
-                // compare_kmer_skmer_pos<It, kuint>(kmer_pos, this->m_manip, start, end));
-
         std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), 
             [this, kmer_pos, start](uint64_t id1, uint64_t id2){
                 return this->m_manip->kmer_lt_kmer(*(start + id1), kmer_pos, *(start + id2), kmer_pos);
             });
-
-        // std::cout << "Virtual SKMER LIST - ( size: " << valid_skmer.size() << ") " << std::endl;
-        // for (uint64_t i: valid_skmer) 
-        //     std::cout << i << ' ';
-        // std::cout << std::endl;
-        
         return valid_skmer_ids;
     }
 
@@ -483,13 +391,122 @@ class Sorted_Virtual_Skmer_List {
         list_it = list_it_previous_element; // I need to start to the element before the end.
         while (column_it != column.end()){
             // std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN" << std::endl;
-            list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
+            list.emplace_after(list_it, this->m_manip->get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
             ++column_it;
             ++list_it;
         }
     }
+
+    friend class VirtualSkmerSerializer<kuint>;
 }; // end of my class
+
+
+template<typename kuint>
+class VirtualSkmerSerializer {
+public:
+    static void save(const Sorted_Virtual_Skmer_List<kuint>& list, const std::string& filename) {
+        std::ofstream outFile(filename, std::ios::binary);
+        
+        if (outFile.fail()) {
+            std::cerr << "Error opening file for writing: " << filename << std::endl;
+            return outFile.close();
+        }
+
+        // ENDIANESS CHECKING INTEGER
+        outFile.write(reinterpret_cast<const char*>(&ENDINANESS_SANITY_INTEGER), sizeof(uint64_t));
+        
+        // Write k and m
+        outFile.write(reinterpret_cast<const char*>(&list.m_manip->k), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&list.m_manip->m), sizeof(uint64_t));
+        
+        // Write count
+        uint64_t count = list.size();
+        outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
+        
+        if (!outFile) {
+            std::cerr << "Error writing header to file: " << filename << std::endl;
+            return;
+        }
+
+        // Calculate chunk parameters
+        outFile.write(reinterpret_cast<const char*>(list.m_skmer_list.data()), 
+                  count * sizeof(Skmer<kuint>));
+        
+        int went_good = outFile.good() ? true : false;
+        if(!went_good){
+            std::cerr << "Error in the writing of the skmer to disk to file: " << filename << std::endl;
+        }
+        return outFile.close();
+    }
+    
+    /** Loads the sorted virtual skmer list from disk and creates a new manipulator
+     * @returns a Sorted_Virtual_Skmer_List object
+     * @param filename the path to the binary file to load
+     * @throws std::runtime_error if file cannot be opened, is corrupted, or has endianness mismatch
+     */
+    static Sorted_Virtual_Skmer_List<kuint> load(const std::string& filename) {
+        std::ifstream inFile(filename, std::ios::binary);
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error opening file for reading: " + filename);
+        }
+
+        // Read and check magic number
+        uint64_t read_endianess_int;
+        inFile.read(reinterpret_cast<char*>(&read_endianess_int), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading magic number from file: " + filename);
+        }
+        
+        // Check endianness
+        if (read_endianess_int != ENDINANESS_SANITY_INTEGER) {
+            uint64_t swapped_magic = swap_endian(read_endianess_int);
+            if (swapped_magic == ENDINANESS_SANITY_INTEGER) {
+                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
+            } else {
+                throw std::runtime_error("Invalid file format - ENDINANESS_SANITY_INTEGER mismatch");
+            }
+        }
+
+        // Read k and m values
+        uint64_t file_k, file_m;
+        inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
+        inFile.read(reinterpret_cast<char*>(&file_m), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading k and m values from file: " + filename);
+        }
+        
+        // Create new manipulator with the k and m values from the file
+        Sorted_Virtual_Skmer_List<kuint> m_virtual_skmer_list(SkmerManipulator<kuint>(file_k, file_m));
+        
+        // Log the loaded parameters
+        std::cerr << "Loaded parameters from file: k=" << file_k << ", m=" << file_m << std::endl;
+
+        // Read count
+        uint64_t count;
+        inFile.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading count from file: " + filename);
+        }
+
+        // Read the skmer data
+        m_virtual_skmer_list.m_skmer_list.resize(count);
+        inFile.read(reinterpret_cast<char*>(m_virtual_skmer_list.m_skmer_list.data()), count * sizeof(Skmer<kuint>));
+        
+        if (inFile.fail()) {
+            throw std::runtime_error("Error reading virtual skmer data from file: " + filename);
+        }
+        
+        inFile.close();
+
+        return m_virtual_skmer_list;
+    }
+};
+
 
 } // namespace sortedlist
 } // namespace km

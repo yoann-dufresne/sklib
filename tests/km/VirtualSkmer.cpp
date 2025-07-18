@@ -1,78 +1,108 @@
-// #include <iostream>
-// #include <cstdlib>
-// #include <gtest/gtest.h>
-// #include <string>
-// #include <array>
+#include <iostream>
+#include <cstdlib>
+#include <gtest/gtest.h>
+#include <string>
+#include <array>
 
-// #include <io/Skmer.hpp>
-// #include <io/Skmerator.hpp>
-// #include <algorithms/VirtualSkmer.hpp>
+#include <io/Skmer.hpp>
+#include <io/Skmerator.hpp>
+#include <algorithms/VirtualSkmer.hpp>
 
-// using namespace std;
-// using kuint = uint16_t;
-// using kpair = km::Skmer<kuint>::pair;
+using namespace std;
+using kuint = uint16_t;
+using kpair = km::Skmer<kuint>::pair;
 
-// std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::array< kpair, 3> const & kmer_triplet)
-// {
+std::array< std::array< km::Skmer<kuint>, 3>, 6> get_skmer_permutations (std::array< kpair, 3> const & kmer_triplet)
+{
 
-//     constexpr uint64_t k{5};
-//     constexpr uint64_t m{2};
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
 
-//     km::SkmerManipulator<kuint> manip {k, m};
-//     km::SkmerPrettyPrinter<kuint> pp {k, m};
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
 
-//     const std::array< std::string, 3 > skmer_strings {"AAAAA", "AACCC", "CCCCC"};
+    const std::array< std::string, 3 > skmer_strings {"AAAAA", "AACCC", "CCCCC"};
 
-//     std::array< std::array< km::Skmer<kuint>, 3>, 6> permutation_array {};
+    std::array< std::array< km::Skmer<kuint>, 3>, 6> permutation_array {};
 
-//     permutation_array[0] = {km::Skmer<kuint>(kmer_triplet[0],0,3),
-//                             km::Skmer<kuint>(kmer_triplet[1],0,3),
-//                             km::Skmer<kuint>(kmer_triplet[2],0,3)};
-//     // for(auto el: permutation_array[0]){
-//     //     pp << el;
-//     //     std::cout << el << std::endl;
-//     // }
+    permutation_array[0] = {km::Skmer<kuint>(kmer_triplet[0],0,3),
+                            km::Skmer<kuint>(kmer_triplet[1],0,3),
+                            km::Skmer<kuint>(kmer_triplet[2],0,3)};
 
-//     for(int64_t i {1}; i < 6; i++){
-//         permutation_array[i] = permutation_array[i-1];
-//         std::next_permutation(permutation_array[i].begin(), permutation_array[i].end());
-//     }
+    for(int64_t i {1}; i < 6; i++){
+        permutation_array[i] = permutation_array[i-1];
+        std::next_permutation(permutation_array[i].begin(), permutation_array[i].end());
+    }
 
-//     return permutation_array;
-// }
+    return permutation_array;
+}
 
 
-// /** Testing the result of "has_valid_kmer" on 2 skmers.
-//  * TODO: move to the manipulator test file.
-//  */
-// TEST(VirtualSkmer, kmer_validation)
-// {
-//     using kuint = uint16_t;
-//     using kpair = km::Skmer<kuint>::pair;
+/** Testing the result of "has_valid_kmer" on 2 skmers.
+ * TODO: move to the manipulator test file.
+ */
+TEST(VirtualSkmer, kmer_validation)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
 
-//     constexpr uint64_t k{5};
-//     constexpr uint64_t m{2};
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
 
-//     km::SkmerManipulator<kuint> manip {k, m};
-//     km::SkmerPrettyPrinter<kuint> pp {k, m};
+    km::SkmerManipulator<kuint> manip {k, m};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
 
-//     //                  Prefix:         A   T   _   _             A   _   _   _   
-//     //                  Suffix:       A   C   C   C             C   C   C   C     
-//     const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
-//     std::vector<km::Skmer<kuint>> skmer_vector{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
+    //                  Prefix:         A   T   _   _             A   _   _   _   
+    //                  Suffix:       A   C   C   C             C   C   C   C     
+    const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
+    std::vector<km::Skmer<kuint>> skmer_vector{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
 
-//     const uint64_t kmer_positions {k - m + 1};
+    const uint64_t kmer_positions {k - m + 1};
 
-//     const uint64_t expected_valid_kmers[kmer_positions][2]{{0,0},{0,0},{1,0},{1,1}};
-//     // 0 values map to false, else to true
-//     bool kmer_validity;
-//     for (uint64_t skmer_id {0}; skmer_id < 2; skmer_id++ ){
-//         for(uint64_t position{0}; position < kmer_positions; position++ ){
-//             kmer_validity = manip.has_valid_kmer(skmer_vector[skmer_id], position);
-//             ASSERT_EQ(kmer_validity, expected_valid_kmers[position][skmer_id]) << (string("has_valid_kmer returned an unexpected value for skmer ") + std::to_string(skmer_id) + " at position " + std::to_string(position));
-//         }
-//     }
-// }
+    const uint64_t expected_valid_kmers[kmer_positions][2]{{0,0},{0,0},{1,0},{1,1}};
+    // 0 values map to false, else to true
+    bool kmer_validity;
+    for (uint64_t skmer_id {0}; skmer_id < 2; skmer_id++ ){
+        for(uint64_t position{0}; position < kmer_positions; position++ ){
+            kmer_validity = manip.has_valid_kmer(skmer_vector[skmer_id], position);
+            ASSERT_EQ(kmer_validity, expected_valid_kmers[position][skmer_id]) << (string("has_valid_kmer returned an unexpected value for skmer ") + std::to_string(skmer_id) + " at position " + std::to_string(position));
+        }
+    }
+}
+
+
+TEST(VirtualSkmer, IO_1)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+
+    const kpair input_skmers[2] { {0b0000011001110111U, 0}, {0b0100011101110111U, 0}} ;
+    std::vector<km::Skmer<kuint>> skmer_enumeration{km::Skmer<kuint>(input_skmers[0],2,4), km::Skmer<kuint>(input_skmers[1],1,4)};
+
+    // Creating from computation
+    km::sortedlist::Sorted_Virtual_Skmer_List<kuint> list(manip);
+    list.generate_sorted_list_from_enumeration(skmer_enumeration);
+
+    // Saving
+    km::sortedlist::VirtualSkmerSerializer<kuint>::save(list, "output.bin");
+
+    // Loading
+    km::sortedlist::Sorted_Virtual_Skmer_List<kuint> loaded_list = km::sortedlist::VirtualSkmerSerializer<kuint>::load("input.bin");
+
+    std::vector<km::Skmer<kuint>> m_loaded_list = loaded_list.get_list();
+
+    for(size_t i {0}; i < skmer_enumeration.size(); i++){
+        ASSERT_EQ(skmer_enumeration[i].m_pref_size, m_loaded_list[i].m_pref_size);
+        ASSERT_EQ(skmer_enumeration[i].m_suff_size, m_loaded_list[i].m_suff_size);
+        ASSERT_EQ(skmer_enumeration[i].m_pair, m_loaded_list[i].m_pair);
+    }    
+
+}
 
 // /** Test the order of 2 kmers after a sort on one column */
 // TEST(VirtualSkmer, Single_kmer_sorting)
@@ -93,6 +123,9 @@
 
 //     std::vector<km::Skmer<kuint> > skmer_vector{km::Skmer<kuint>(input_skmers[0],1,4), km::Skmer<kuint>(input_skmers[1],2,4)};
 //     std::vector<uint64_t> expected_order {0, 1};
+
+//     km::sortedlist::Sorted_Virtual_Skmer_List m_list = km::sortedlist
+
 //     std::vector<uint64_t> ordered_kmers = km::sorting::sort_column(skmer_vector.begin(), skmer_vector.end(), position, manip);
 //     ASSERT_EQ(ordered_kmers,expected_order);
 
