@@ -339,34 +339,24 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     for (auto it = begin; it != end; it++)
     {
         overlap const& current_overlap = *it;
-        // std::cout << std::endl << "(" << current_overlap.first << "," << current_overlap.second << ")" << std::endl;
-        // std::cout << "(" << current_overlap.first << "," << current_overlap.second << ")" << " ";
-        // std::cout << tree.toDot() << std::endl << std::endl;
+
 
         // Get previous max scores with compatible second coordinate
         uint64_t max_score = tree.rmq_right(it->second - 1);
         
-        // std::cout << "max_score:" << max_score << " ";
-        // std::cout << tree.toDot() << std::endl << std::endl;
         if (max_score == 0)
         {
             // No compatible overlap
             tree.update(current_overlap, 1);
             previous_overlaps[current_overlap] = null_overlap;
-            // std::cout << "Update 0 ";
-            // std::cout << tree.toDot() << std::endl << std::endl;
             continue;
         }
 
         overlap previous {null_overlap};
-        // std::cout << "Init iterator " << current_overlap.second-1 << " " << max_score << std::endl;
-        // std::cout << tree.toDot() << std::endl << std::endl;
-        // std::cout << std::endl << "Max iterator " << max_score << std::endl;
+
         for (auto max_it=tree.begin(max_score, it->second-1); max_it != tree.end(); max_it++)
         {
             RMQnode const& node = *max_it;
-            // std::cout << "  node: (" << node.key.first << "," << node.key.second << ") " << node.score << std::endl;
-
 
             // Is it compatible on the first coordinate?
             if (node.key.first < current_overlap.first)
@@ -381,26 +371,16 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
                 previous = previous_overlaps[node.key];
             }
         }
-        // std::cout << "/Max iterator" << std::endl << std::endl;
 
         // Update the score
-        // std::cout << tree.toDot() << std::endl << std::endl;
         tree.update(current_overlap, max_score);
-        // std::cout << "Update " << max_score << std::endl;
-        // std::cout << tree.toDot() << std::endl << std::endl;
-        previous_overlaps[current_overlap] = previous;
-        // std::cout << "Previous: (" << current_overlap.first << ", " << current_overlap.second << ") -> (" << previous.first << "," << previous.second << ")" << std::endl;
 
-        // exit(0);
+        previous_overlaps[current_overlap] = previous;
+
     }
 
 
     uint64_t score = tree.max_score();
-
-    // std::cout << "score: " << score << std::endl;
-    // std::cout << tree.toDot() << std::endl;
-
-    // std::cout << "auto-kill" << std::endl;
 
     std::vector<overlap> overlaps(score);
     // 5 - Get the last overlap of the chain
