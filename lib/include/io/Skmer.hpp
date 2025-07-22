@@ -572,7 +572,7 @@ public:
      * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
      * @return true if the first kmer is less than the second one
      **/
-    bool kmer_lt_kmer(const Skmer<kuint>& first_skmer, const uint64_t first_kmer_pos, const Skmer<kuint>& second_skmer, const uint64_t second_kmer_pos) const
+    bool inline kmer_lt_kmer(const Skmer<kuint>& first_skmer, const uint64_t first_kmer_pos, const Skmer<kuint>& second_skmer, const uint64_t second_kmer_pos) const
     {
         // 1 - Compute the shift needed to only keep informative nucleotides
         uint64_t const first_missing_nucl {std::max(2*first_kmer_pos-1, 2*(k-m-first_kmer_pos))};
@@ -597,23 +597,24 @@ public:
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
-    bool has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos){ 
+    bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos){ 
         assert(kmer_pos <= this->k - this->m);
         // Half size of the skmer
-        uint64_t const half_size {(2 * this->k - this->m + 1) / 2};
-
-        // case position < start of skmer prefix
-        if (kmer_pos < (half_size - skmer.m_pref_size)){
-            // std::cout << "Case < " << kmer_pos << " " << (this->m_pref_size - skmer.m_pref_size) << " " << (this->m_pref_size) << " " << skmer.m_pref_size << std::endl;  
-            return false;
+        // uint64_t const half_size {(2 * this->k - this->m + 1) / 2};
+        // std::cout << "POSITION: " << kmer_pos << " ; SKMER.PREFIX_SIZE: " << skmer.m_pref_size << " ; SUFFIX SIZE: " << skmer.m_suff_size << ";" << std::endl;
+        // // case position < start of skmer prefix
+        // if (kmer_pos < (half_size - skmer.m_pref_size)){
+        //     return false;
+        // }
+        // // // case position > end of skmer suffix
+        // if (kmer_pos > skmer.m_suff_size){ // semplification of ((kmer_pos + this->k - 1) > this->k - 1 + skmer.m_suff_size) 
+        //     return false;
+        // }
+        // // in any other case the position is between the skmer positions 
+        if ((skmer.m_pref_size >= m_pref_size - kmer_pos) && (skmer.m_suff_size >= k - m_pref_size + kmer_pos)){
+            return true;
         }
-        // // case position > end of skmer suffix
-        if (kmer_pos > skmer.m_suff_size){ // semplification of ((kmer_pos + this->k - 1) > this->k - 1 + skmer.m_suff_size)
-            // std::cout << "Case > " << kmer_pos << " " << (this->k - 1 + skmer.m_suff_size) << std::endl;  
-            return false;
-        }
-        // in any other case the position is between the skmer positions 
-        return true;
+        else return false;
     }
 
     /** Generate a skmer has a kmer starting at the given position.
@@ -623,7 +624,7 @@ public:
      **/
     Skmer<kuint> get_skmer_of_kmer(Skmer<kuint> given_skmer, uint64_t kmer_pos){
         // prefix and suffix sizes computation
-        uint64_t const half_size = (2 * this->k - this->m + 1) / 2;
+        // uint64_t const half_size = (2 * this->k - this->m + 1) / 2;
 
         // Prefix size: how many nucleotides are in the first half of the skmer
         uint16_t prefix_size = m_pref_size - kmer_pos;
@@ -636,24 +637,24 @@ public:
 
         kpair mmask = this->m_mask;
         
-        std::cerr << "K: " << this->k << std::endl;
-        std::cerr << "M: " << this->m << std::endl;
-        std::cerr << "GIVEN KMER: " << given_skmer << std::endl;
-        std::cerr << "KMER POS: " << kmer_pos << std::endl;
-        std::cerr << "EXTRACTED KMER: " << kmer << std::endl;
-        std::cerr << " M_MASK: " << mmask << std::endl;
-        std::cerr << " ~KMER_MASK: " << ~kmer_masks[kmer_pos] << std::endl;
-        std::cerr << "PREFIX SIZE: " << prefix_size << std::endl;
-        std::cerr << "SUFFIX SIZE: " << suffix_size << std::endl;
+        // std::cerr << "K: " << this->k << std::endl;
+        // std::cerr << "M: " << this->m << std::endl;
+        // std::cerr << "GIVEN KMER: " << given_skmer << std::endl;
+        std::cerr << "[get_skmer_of_kmer] KMER POS: " << kmer_pos << std::endl;
+        // std::cerr << "EXTRACTED KMER: " << kmer << std::endl;
+        // std::cerr << " M_MASK: " << mmask << std::endl;
+        // std::cerr << " ~KMER_MASK: " << ~kmer_masks[kmer_pos] << std::endl;
+        std::cerr << "[get_skmer_of_kmer] PREFIX SIZE: " << prefix_size << std::endl;
+        std::cerr << "[get_skmer_of_kmer] SUFFIX SIZE: " << suffix_size << std::endl;
 
         kmer |= (~kmer_masks[kmer_pos] & mmask); // setting to 1s the positions not used in the skmer
-        std::cerr << "OUT_SKMER: " << kmer << std::endl;
+        // std::cerr << "OUT_SKMER: " << kmer << std::endl;
         Skmer<kuint> new_sorted_skmer(kmer, prefix_size, suffix_size);
     
         return new_sorted_skmer;
     }
 
-    void clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos){
+    void inline clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos){
         given_skmer.m_pair.m_value[0] &= (~nucleotide_masks[kmer_pos].m_value[0] & this->m_mask.m_value[0]);
         given_skmer.m_pair.m_value[1] &= (~nucleotide_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
         return;
@@ -759,7 +760,7 @@ public:
         return skmer.m_pair & kmer_masks[start_pos];
     }
 
-    kpair extract_nucleotide(const Skmer<kuint>& skmer, const uint64_t pos)
+    kpair inline extract_nucleotide(const Skmer<kuint>& skmer, const uint64_t pos)
     {
         return skmer.m_pair & nucleotide_masks[pos];
     }
