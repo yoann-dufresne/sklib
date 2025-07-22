@@ -293,3 +293,103 @@ TEST(SkmerManipulator, clean_nucleotide_at_position)
         m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
     }
 }
+
+
+TEST(SkmerManipulator, HasValidSkmer1)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,2,3);
+
+    std::vector<bool> expected_results {false,false,true,false}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
+TEST(SkmerManipulator, HasValidSkmer2)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,1);
+
+    std::vector<bool> expected_results {true,false,false,false}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
+TEST(SkmerManipulator, HasValidSkmer3)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,3,2);
+
+    std::vector<bool> expected_results {false,true,false,false}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
+TEST(SkmerManipulator, HasValidSkmer4)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,1,4);
+
+    std::vector<bool> expected_results {false,false,false,true}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
+
+TEST(SkmerManipulator, HasValidSkmer5)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
+
+    std::vector<bool> expected_results {true,true,true,true}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
+
+TEST(SkmerManipulator, HasValidSkmer6)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    const kpair m_basic_pair {0b0000010110110110U, 0};
+    km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,3,4);
+
+    std::vector<bool> expected_results {false,true,true,true}; 
+    for (int position {0}; position <= k-m; position++){
+        ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
+    }
+}
