@@ -160,9 +160,12 @@ class SortedVirtualSkmerList {
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
         right_column_position++;
 
-        LList merge_list{};
-        for(const uint64_t el: window.left()){
-            merge_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
+        LList m_vskmer_list;
+
+        m_vskmer_list.reserve(window.right().size());
+        for(const uint64_t el: window.right()){
+            m_vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
+            std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
@@ -201,18 +204,17 @@ class SortedVirtualSkmerList {
 
             // 4 - reconcile kmers by merging columns
             std::cout << "merge_LList_column" << std::endl;
-            merge_LList_column(skmer_enumeration, merge_list, window.right(), valid_overlaps, right_column_position);
+            merge_LList_column(skmer_enumeration, m_vskmer_list, window.right(), valid_overlaps, right_column_position);
             
             // go to next iteration
             left_column_position = right_column_position;
             right_column_position++;
         }
-        // FINALLY store the sorted virtual superkmer list as vector of Skmers 
-        m_skmer_list.clear();
-        m_skmer_list.reserve(std::distance(merge_list.begin(), merge_list.end()));
-        for (const auto& vskmer : merge_list) {
-            m_skmer_list.push_back(std::move(vskmer.skmer));
+        m_skmer_list.reserve(m_vskmer_list.size());
+        for(km::sortedlist::Virtual_skmer<kuint>& vskmer: m_vskmer_list){
+            m_skmer_list.emplace_back(std::move(vskmer.skmer));
         }
+
     }
     
     void add_list(std::vector<Skmer<kuint>>&  list){
@@ -356,127 +358,117 @@ class SortedVirtualSkmerList {
      * @param column_pos the position of the column being introduced in the linked_list
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
-    //<kuint>
-    void merge_LList_column(std::vector<Skmer<kuint> > const & skmer_enumeration, LList & list, std::vector<uint64_t> const & column, std::vector<overlap> const & valid_overlaps, uint64_t const column_pos)
-    {   
-        // assert(column_pos >= 0);
-        assert(column_pos <= (m_manip.k - m_manip.m));
-
-        list.reserve(list.size() + column.size());
-        // initiliazation of the iterators over the Linked List, Skmer_id column and valid overlaps vector
-        auto list_it_previous_element = list.before_begin(); // this specific iterator element is needed in some cases
-        auto list_it = list.begin();
-        auto column_it = column.begin();
-        auto overlap_it = valid_overlaps.begin();
-
-        // Until one of the two columns is used
-        std::cerr << "BEFORE WHILE LOOP" << std::endl;
-        bool verification_list = (list_it != list.end()) ? true : false;
-        bool verification_column = (column_it != column.end()) ? true : false;
-        std::cerr << "List_iterator: " << verification_list<< std::endl;
-        std::cerr << "Column_iterator: " << verification_column << std::endl;
-        while (list_it != list.end() && column_it != column.end() && overlap_it != valid_overlaps.end() ){
-            std::cerr << "IN WHILE LOOP" << std::endl;
-
-            // 1 - check if elements pointed in the left and right column are in the next valid overlap
-            auto curr_value = *list_it;
-            bool is_left_in_overlap = (curr_value.last_id == overlap_it->first); //? true : false;
-            bool is_right_in_overlap =  (*column_it == (*overlap_it).second);
-
-            std::cerr << "LL ID: " << curr_value.last_id << " ; COL ID: " << *column_it << std::endl;
-            std::cerr << "LL EL PREFIX: " << curr_value.skmer.m_pref_size << "; SUFFIX: " << curr_value.skmer.m_suff_size << std::endl;
-            std::cerr << "OVERLAP: " << overlap_it->first << "," << overlap_it->second << std::endl;
-            
-            // CASE (A) IF BOTH ELEMENTS ARE POINTED, I MERGE THE VIRTUAL SKMER WITH THE KMER
-            if ((is_left_in_overlap == is_right_in_overlap) && (is_left_in_overlap == true)){
-                std::cerr << "MERGING LIST AND COLUMN SKEMERS" << std::endl;
-                Virtual_skmer<kuint> merging_virtual_skmer = *list_it;
-                merging_virtual_skmer.add_kmer(skmer_enumeration, m_manip, *column_it, column_pos);
-                merging_virtual_skmer.last_id = *column_it;
-                *list_it = merging_virtual_skmer;
-                // as we 'used' the element in the linked list, column and overlap list, we go to the next element in all 3;
-                list_it_previous_element = list_it;
-                ++list_it;
-                ++column_it;
-                ++overlap_it;
-                // std::cerr << "CASE BOTH POINTED" << std::endl;
-            }
-
-            // CASE (B) THE ELEMENT IN THE LL IS POINTED, INSERT THE ELEMENT FROM THE COLUMN TO THE LL IN THE PLACE BEFORE
-            else if (is_left_in_overlap)
-            {
-                std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
-                list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
-                *column_it);
-                ++list_it;
-                ++column_it;
-                // std::cerr << "CASE LL EL POINTED" << std::endl;
-            }
-
-            // CASE (C) THE ELEMENT IN THE COLUMN IS POINTED, I CAN INCREASE THE ITERATOR IN THE LL
-            else if (is_right_in_overlap){ // if(is_right_in_overlap)
-                std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
-                list_it_previous_element = list_it;
-                ++list_it;
-                // std::cerr << "CASE COLUMN EL POINTED" << std::endl;
-            }
-            
-            // CASE (D) BOTH ELEMENTS ARE NOT POINTED, INSERT BASED ON SKMER 
-            // NOW COMMENTED AS <=> DEPENDS ON COLUMN POS
-            else{
-                std::cerr << "NO ELEMENT IN THE OVERLAP LIST. INSERTING BASED ON SKMER VALUE: ";
-                // If the LLink skmer <= enumeration one, do like case (C)
-                if (list_it->skmer <= m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
-                    std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
-                    list_it_previous_element = list_it;
-                    ++list_it;
-                }
-                // If the LLink skmer > enumeration one, do like case (B)
-                else{
-                    std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
-                    list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                    list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
-                *column_it);
-                    ++list_it;
-                    ++column_it;
-                }
-            }
+    void merge_LList_column(std::vector<Skmer<kuint>> const & skmer_enumeration, 
+                       std::vector<Virtual_skmer<kuint>>& list,
+                       std::vector<uint64_t> const & column, 
+                       std::vector<overlap> const & valid_overlaps, 
+                       uint64_t const column_pos)
+{
+    assert(column_pos <= (m_manip.k - m_manip.m));
+    
+    // Pre-reserve space to avoid reallocations
+    list.reserve(list.size() + column.size());
+    
+    size_t list_idx = 0;
+    size_t col_idx = 0;
+    size_t overlap_idx = 0;
+    
+    // Main merge loop
+    while (list_idx < list.size() && col_idx < column.size() && 
+           overlap_idx < valid_overlaps.size()) {
+        
+        bool is_left = (list[list_idx].last_id == valid_overlaps[overlap_idx].first);
+        bool is_right = (column[col_idx] == valid_overlaps[overlap_idx].second);
+        
+        if (is_left && is_right) {
+            // CASE A: Both elements are in overlap - merge
+            list[list_idx].add_kmer(skmer_enumeration, m_manip, column[col_idx], column_pos);
+            list[list_idx].last_id = column[col_idx];
+            list_idx++;
+            col_idx++;
+            overlap_idx++;
         }
-        std::cerr << "AFTER WHILE LOOP" << std::endl;
-        // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be. This coincides with the special case of filling the LL the first time
-        while (list_it != list.end() && column_it != column.end()){
-            std::cerr << "FILLING WHEN OVERLAP IS EMPTY: ";
-            if (list_it->skmer <= m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
-                std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
-                list_it_previous_element = list_it;
-                ++list_it;
-            }
-            // If the LLink skmer > enumeration one, do like case (B)
-            else{
-                std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
-                list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
-                list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
-                *column_it);
-                ++list_it;
-                ++column_it;
-            }
+        else if (is_left) {
+            // CASE B: Only list element in overlap - insert from column
+            assert(column[col_idx] < skmer_enumeration.size());
+            auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+            list.insert(list.begin() + list_idx,
+                Virtual_skmer<kuint>(
+                    skmer.m_pair,
+                    skmer.m_pref_size,
+                    skmer.m_suff_size,
+                    column[col_idx]
+                )
+            );
+            list_idx++; // Skip the newly inserted element
+            col_idx++;
         }
-
-        // First verify that the iterator over the valid overlaps has exausted eveything
-
-        // assert(overlap_it == valid_overlaps.end());
-
-        // If there are still elements in the column, I add them into the linked list.
-        list_it = list_it_previous_element; // I need to start to the element before the end.
-        while (column_it != column.end()){
-            std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN." << column_pos << std::endl;
-            list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
-                *column_it);
-            ++column_it;
-            ++list_it;
+        else if (is_right) {
+            // CASE C: Only column element in overlap - advance list
+            list_idx++;
+        }
+        else {
+            // CASE D: Neither in overlap - compare and insert smaller
+            assert(column[col_idx] < skmer_enumeration.size());
+            auto col_skmer = m_manip.get_skmer_of_kmer(
+                skmer_enumeration[column[col_idx]], column_pos);
+            
+            if (list[list_idx].skmer <= col_skmer) {
+                list_idx++;
+            } else {
+                list.insert(list.begin() + list_idx,
+                    Virtual_skmer<kuint>(
+                        col_skmer.m_pair,
+                        col_skmer.m_pref_size,
+                        col_skmer.m_suff_size,
+                        column[col_idx]
+                    )
+                );
+                list_idx++;
+                col_idx++;
+            }
         }
     }
+    
+    // Handle remaining elements when overlaps are exhausted but both lists have elements
+    while (list_idx < list.size() && col_idx < column.size()) {
+        assert(column[col_idx] < skmer_enumeration.size());
+        auto col_skmer = m_manip.get_skmer_of_kmer(
+            skmer_enumeration[column[col_idx]], column_pos);
+        
+        if (list[list_idx].skmer <= col_skmer) {
+            list_idx++;
+        } else {
+            list.insert(list.begin() + list_idx,
+                Virtual_skmer<kuint>(
+                    col_skmer.m_pair,
+                    col_skmer.m_pref_size,
+                    col_skmer.m_suff_size,
+                    column[col_idx]
+                )
+            );
+            list_idx++;
+            col_idx++;
+        }
+    }
+    
+    // Append any remaining column elements
+    // This handles the case where list is initially empty or we've reached the end
+    while (col_idx < column.size()) {
+        assert(column[col_idx] < skmer_enumeration.size());
+        auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+        list.emplace_back(
+            skmer.m_pair,
+            skmer.m_pref_size,
+            skmer.m_suff_size,
+            column[col_idx]
+        );
+        col_idx++;
+    }
+    
+    // If list has remaining elements and column is exhausted, they're already in place - nothing to do
+}
+
 }; // end of my class
 
 
