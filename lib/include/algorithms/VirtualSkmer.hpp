@@ -88,6 +88,9 @@ struct Virtual_skmer {
 
     Virtual_skmer() : skmer(), last_id(0) {}
 
+    Virtual_skmer(km::Skmer<kuint>& passed_skmer, SkmerManipulator<kuint>& m_manip, uint64_t kmer_pos, uint64_t id_value)
+        : skmer(m_manip.get_skmer_of_kmer(passed_skmer,kmer_pos)), last_id(id_value) {}
+
     Virtual_skmer(km::Skmer<kuint>::pair kmer, uint16_t prefix, uint16_t suffix, uint64_t id_value)
         : skmer(kmer, prefix, suffix), last_id(id_value) {}
     Virtual_skmer(km::Skmer<kuint>& passed_skmer, uint64_t id_value)
@@ -100,7 +103,7 @@ struct Virtual_skmer {
                 last_id == other.last_id);
     }
 
-    void add_kmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
+    void inline add_kmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
         using kpair = typename Skmer<kuint>::pair;
         // Free the nucleotide slot in the skmer to accomodate the nucleotide associated with the kmer
         // As it would contain 1s in not used slots
@@ -124,7 +127,7 @@ template<typename kuint> class VirtualSkmerSerializer;
 
 template<typename kuint>
 class SortedVirtualSkmerList {
-    using LList = std::forward_list<Virtual_skmer<kuint>>;
+    using LList = std::vector<Virtual_skmer<kuint>>;
     using overlap = std::pair<uint64_t, uint64_t>;
 
     public:
@@ -134,8 +137,8 @@ class SortedVirtualSkmerList {
 
     void print_list(){
         std::cout << "list : {";
-        for(char comma[3] = {'\0', ' ', '\0'}; Virtual_skmer<kuint> i : m_skmer_list){
-            std::cout << comma << i.last_id << " : " << i.skmer.m_pair;
+        for(char comma[3] = {'\0', ' ', '\0'}; Skmer<kuint> i : m_skmer_list){
+            std::cout << comma << i.m_pair;
             comma[0] = ',';
         }
         std::cout << "}" << std::endl;
@@ -143,9 +146,7 @@ class SortedVirtualSkmerList {
 
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
         //initialize the linked lists
-        //<kuint> 
         std::cout << "INIZIALIZING VALUES" << std::endl;
-        LList merge_list{};
         
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
@@ -159,23 +160,48 @@ class SortedVirtualSkmerList {
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
         right_column_position++;
 
+        LList merge_list{};
+        for(const uint64_t el: window.left()){
+            merge_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
+        }
+
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
-        while(right_column_position < m_manip.sk_size ){
+        while(right_column_position <= m_manip.k - m_manip.m ){
+            std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
             std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+            
+            std::cout << "LEFT COLUMN:" << std::endl;
+            for (const uint64_t el: window.left()){
+                std::cout << "L: " << el << ";\t";
+            }
+            std::cout << std::endl;
+            std::cout << "RIGHT COLUMN:" << std::endl;
+            for (const uint64_t el: window.right()){
+                std::cout << "R: " << el << ";\t";
+            }
+            std::cout << std::endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            std::cout << "get_candidate_overlaps" << std::endl;
+            std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
 
             // 3 - get valid overlaps using colinear chaining
-            std::cout << "colinear_chaining" << std::endl;
-            valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+            std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
+            for (auto overlap: candidate_overlaps){
+                std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
+            }
+            
+            std::vector<overlap> valid_overlaps;
+            if(candidate_overlaps.size() != 0){
+                valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+            }
+            else { valid_overlaps = candidate_overlaps;}
 
             // 4 - reconcile kmers by merging columns
             std::cout << "merge_LList_column" << std::endl;
-            merge_LList_column(skmer_enumeration, merge_list, window.right(), valid_overlaps, left_column_position);
+            merge_LList_column(skmer_enumeration, merge_list, window.right(), valid_overlaps, right_column_position);
             
             // go to next iteration
             left_column_position = right_column_position;
@@ -205,20 +231,6 @@ class SortedVirtualSkmerList {
 
     ~SortedVirtualSkmerList() = default;
 
-    // // Copy constructor
-    // SortedVirtualSkmerList(const SortedVirtualSkmerList& other) 
-    //     : m_manip(other.m_manip),  // Just copy the value
-    //     m_skmer_list(other.m_skmer_list) {}
-
-    // // Copy assignment
-    // SortedVirtualSkmerList& operator=(const SortedVirtualSkmerList& other) {
-    //     if (this != &other) {
-    //         m_manip = other.m_manip;  // Just copy, not make_unique
-    //         m_skmer_list = other.m_skmer_list;
-    //     }
-    //     return *this;
-    // }
-
     // Move constructor
     SortedVirtualSkmerList(SortedVirtualSkmerList&& other) noexcept = default;
 
@@ -230,11 +242,17 @@ class SortedVirtualSkmerList {
     friend class VirtualSkmerSerializer<kuint>;
     friend class SortedVirtualSkmerListTest;
     
+    // KMER SORTING
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer1);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer2);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer3);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer4);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSorting);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSortingReversed);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, ThreeKmerSorting);
+
+    // OVERLAP DETECTION
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlapNoOverlap);
-    
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap1Overlap);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap1Left2Right);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap2Left1Right);
@@ -243,6 +261,15 @@ class SortedVirtualSkmerList {
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap2Left2RightCrossed1);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap2Left2RightCrossed2);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, GetCandidateOverlap2Left2RightCrossed3);
+
+    // LISTS MERGING
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, MergeColumnFromEmpty1);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, MergeColumnFromEmpty2);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, MergeLeftRightColumnElements1);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, MergeLeftRightColumnsElements2);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, AddRightColumnElement);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, AddLeftColumnElement);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, NoElementPointed);
 
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
@@ -335,35 +362,34 @@ class SortedVirtualSkmerList {
         // assert(column_pos >= 0);
         assert(column_pos <= (m_manip.k - m_manip.m));
 
-        // using kpair = typename Skmer<kuint>::pair;
-        // using kpairhash = typename Skmer<kuint>::pair_hasher;
-
+        list.reserve(list.size() + column.size());
         // initiliazation of the iterators over the Linked List, Skmer_id column and valid overlaps vector
-        // std::cerr << "VARIABLES INITIALIZATION" << std::endl;
         auto list_it_previous_element = list.before_begin(); // this specific iterator element is needed in some cases
         auto list_it = list.begin();
         auto column_it = column.begin();
         auto overlap_it = valid_overlaps.begin();
 
         // Until one of the two columns is used
-        // std::cerr << "BEFORE WHILE LOOP" << std::endl;
+        std::cerr << "BEFORE WHILE LOOP" << std::endl;
         bool verification_list = (list_it != list.end()) ? true : false;
         bool verification_column = (column_it != column.end()) ? true : false;
-        // std::cerr << "List_iterator: " << verification_list<< std::endl;
-        // std::cerr << "Column_iterator: " << verification_column << std::endl;
-        while (list_it != list.end() && column_it != column.end() and overlap_it != valid_overlaps.end() ){
-            // std::cerr << "IN WHILE LOOP" << std::endl;
+        std::cerr << "List_iterator: " << verification_list<< std::endl;
+        std::cerr << "Column_iterator: " << verification_column << std::endl;
+        while (list_it != list.end() && column_it != column.end() && overlap_it != valid_overlaps.end() ){
+            std::cerr << "IN WHILE LOOP" << std::endl;
 
             // 1 - check if elements pointed in the left and right column are in the next valid overlap
             auto curr_value = *list_it;
             bool is_left_in_overlap = (curr_value.last_id == overlap_it->first); //? true : false;
             bool is_right_in_overlap =  (*column_it == (*overlap_it).second);
 
-            // std::cerr << "LL ID: " << curr_value.last_id << " ; COL ID: " << *column_it << std::endl;
-            // std::cerr << "OVERLAP: " << overlap_it->first << "," << overlap_it->second << std::endl;
+            std::cerr << "LL ID: " << curr_value.last_id << " ; COL ID: " << *column_it << std::endl;
+            std::cerr << "LL EL PREFIX: " << curr_value.skmer.m_pref_size << "; SUFFIX: " << curr_value.skmer.m_suff_size << std::endl;
+            std::cerr << "OVERLAP: " << overlap_it->first << "," << overlap_it->second << std::endl;
             
             // CASE (A) IF BOTH ELEMENTS ARE POINTED, I MERGE THE VIRTUAL SKMER WITH THE KMER
             if ((is_left_in_overlap == is_right_in_overlap) && (is_left_in_overlap == true)){
+                std::cerr << "MERGING LIST AND COLUMN SKEMERS" << std::endl;
                 Virtual_skmer<kuint> merging_virtual_skmer = *list_it;
                 merging_virtual_skmer.add_kmer(skmer_enumeration, m_manip, *column_it, column_pos);
                 merging_virtual_skmer.last_id = *column_it;
@@ -379,6 +405,7 @@ class SortedVirtualSkmerList {
             // CASE (B) THE ELEMENT IN THE LL IS POINTED, INSERT THE ELEMENT FROM THE COLUMN TO THE LL IN THE PLACE BEFORE
             else if (is_left_in_overlap)
             {
+                std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
                 list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
                 list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
@@ -389,6 +416,7 @@ class SortedVirtualSkmerList {
 
             // CASE (C) THE ELEMENT IN THE COLUMN IS POINTED, I CAN INCREASE THE ITERATOR IN THE LL
             else if (is_right_in_overlap){ // if(is_right_in_overlap)
+                std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
                 list_it_previous_element = list_it;
                 ++list_it;
                 // std::cerr << "CASE COLUMN EL POINTED" << std::endl;
@@ -397,13 +425,16 @@ class SortedVirtualSkmerList {
             // CASE (D) BOTH ELEMENTS ARE NOT POINTED, INSERT BASED ON SKMER 
             // NOW COMMENTED AS <=> DEPENDS ON COLUMN POS
             else{
+                std::cerr << "NO ELEMENT IN THE OVERLAP LIST. INSERTING BASED ON SKMER VALUE: ";
                 // If the LLink skmer <= enumeration one, do like case (C)
                 if (list_it->skmer <= m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
+                    std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
                     list_it_previous_element = list_it;
                     ++list_it;
                 }
                 // If the LLink skmer > enumeration one, do like case (B)
                 else{
+                    std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
                     list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
                     list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
@@ -412,16 +443,18 @@ class SortedVirtualSkmerList {
                 }
             }
         }
-        // std::cerr << "AFTER WHILE LOOP" << std::endl;
+        std::cerr << "AFTER WHILE LOOP" << std::endl;
         // When exiting the while loop, one or both vectors are consumed. I add the final elements by consuming both separately so that if one is not consumed, it will be. This coincides with the special case of filling the LL the first time
         while (list_it != list.end() && column_it != column.end()){
-            // std::cerr << "FILLING WHEN OVERLAP IS EMPTY" << std::endl;
+            std::cerr << "FILLING WHEN OVERLAP IS EMPTY: ";
             if (list_it->skmer <= m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it],column_pos)){
+                std::cerr << "INSERTING ELEMENT FROM THE LIST" << std::endl;
                 list_it_previous_element = list_it;
                 ++list_it;
             }
             // If the LLink skmer > enumeration one, do like case (B)
             else{
+                std::cerr << "INSERTING ELEMENT FROM THE COLUMN" << std::endl;
                 list_it = list_it_previous_element; // I need to place it to the element before the one pointed.
                 list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
@@ -431,12 +464,13 @@ class SortedVirtualSkmerList {
         }
 
         // First verify that the iterator over the valid overlaps has exausted eveything
-        assert(overlap_it == valid_overlaps.end());
+
+        // assert(overlap_it == valid_overlaps.end());
 
         // If there are still elements in the column, I add them into the linked list.
         list_it = list_it_previous_element; // I need to start to the element before the end.
         while (column_it != column.end()){
-            // std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN" << std::endl;
+            std::cerr << "NOW FILLING THE LINKED LIST FROM COLUMN." << column_pos << std::endl;
             list.emplace_after(list_it, m_manip.get_skmer_of_kmer(skmer_enumeration[*column_it], column_pos), 
                 *column_it);
             ++column_it;
