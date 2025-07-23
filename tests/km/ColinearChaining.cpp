@@ -235,6 +235,20 @@ TEST(ColinearChaining, parallel_overlap6)
     ASSERT_EQ(chaining[3], expected[3]);
 }
 
+TEST(ColinearChaining, parallel_overlap7)
+{   
+    vector<overlap> overlaps {overlap(1, 1)};
+    vector<overlap> expected {overlap(1, 1)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 1);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+
+}
+
+
 /** 2 crossing pairs
  */
 TEST(ColinearChaining, crossing_overlap)
