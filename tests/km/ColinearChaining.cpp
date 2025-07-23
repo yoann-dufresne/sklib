@@ -155,7 +155,7 @@ TEST(ColinearChaining, single_overlap)
 
 /** 2 parallel pairs
  */
-TEST(ColinearChaining, parallel_overlap)
+TEST(ColinearChaining, parallel_overlap1)
 {   
     vector<overlap> overlaps {overlap(3, 1), overlap(7, 12)};
     vector<overlap> expected {overlap(3, 1), overlap(7, 12)};
@@ -168,6 +168,72 @@ TEST(ColinearChaining, parallel_overlap)
     ASSERT_EQ(chaining[1], expected[1]);
 }
 
+TEST(ColinearChaining, parallel_overlap2)
+{   
+    vector<overlap> overlaps {overlap(0, 0), overlap(3, 3)};
+    vector<overlap> expected {overlap(0, 0), overlap(3, 3)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 2);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+}
+
+TEST(ColinearChaining, parallel_overlap3)
+{   
+    vector<overlap> overlaps {overlap(1, 1), overlap(3, 3)};
+    vector<overlap> expected {overlap(1, 1), overlap(3, 3)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 2);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+}
+
+TEST(ColinearChaining, parallel_overlap4)
+{   
+    vector<overlap> overlaps {overlap(4, 1), overlap(5, 5)};
+    vector<overlap> expected {overlap(4, 1), overlap(5, 5)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 2);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+}
+
+TEST(ColinearChaining, parallel_overlap5)
+{   
+    vector<overlap> overlaps {overlap(4, 4), overlap(5, 11)};
+    vector<overlap> expected {overlap(4, 4), overlap(5, 11)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 2);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+}
+
+TEST(ColinearChaining, parallel_overlap6)
+{   
+    vector<overlap> overlaps {overlap(1, 1), overlap(3, 3), overlap(4, 4), overlap(5, 5)};
+    vector<overlap> expected {overlap(1, 1), overlap(3, 3), overlap(4, 4), overlap(5, 5)};
+    
+    auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    ASSERT_EQ(chaining.size(), 4);
+
+    ASSERT_EQ(chaining[0], expected[0]);
+    ASSERT_EQ(chaining[1], expected[1]);
+    ASSERT_EQ(chaining[2], expected[2]);
+    ASSERT_EQ(chaining[3], expected[3]);
+}
 
 /** 2 crossing pairs
  */
