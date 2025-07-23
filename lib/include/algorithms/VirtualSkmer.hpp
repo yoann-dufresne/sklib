@@ -201,7 +201,12 @@ class SortedVirtualSkmerList {
                 valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
             else { valid_overlaps = candidate_overlaps;}
-
+            
+            std::cout << "VALID OVERLAPS: {";
+            for (auto overlap: valid_overlaps){
+                std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            }
+            std::cout << "}" << std::endl;
             // 4 - reconcile kmers by merging columns
             std::cout << "merge_LList_column" << std::endl;
             merge_LList_column(skmer_enumeration, m_vskmer_list, window.right(), valid_overlaps, right_column_position);
@@ -250,6 +255,7 @@ class SortedVirtualSkmerList {
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer3);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer4);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSorting);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSorting2);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSortingReversed);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, ThreeKmerSorting);
 
@@ -306,6 +312,11 @@ class SortedVirtualSkmerList {
             [this, kmer_pos, start](uint64_t id1, uint64_t id2){
                 return m_manip.kmer_lt_kmer(*(start + id1), kmer_pos, *(start + id2), kmer_pos);
             });
+        std::cout << "SORTED COLUMN: {" << std::endl;
+        for (const uint64_t el: valid_skmer_ids){
+            std::cout << "{" << el << "," << (start + el)->m_pair << "}\t";
+        }
+        std::cout << "}" << std::endl;
         return valid_skmer_ids;
     }
 

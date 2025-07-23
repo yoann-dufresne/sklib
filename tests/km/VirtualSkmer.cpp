@@ -361,6 +361,31 @@ namespace km
             std::vector<uint64_t> ordered_kmers = m_list.sort_column(skmer_vector.begin(), skmer_vector.end(), position);
             ASSERT_EQ(ordered_kmers, expected_order);
         }
+        TEST_F(SortedVirtualSkmerListPrivateTest, SingleKmerSorting2)
+        {
+            using kuint = uint16_t;
+            using kpair = km::Skmer<kuint>::pair;
+
+            constexpr uint64_t k{4};
+            constexpr uint64_t m{2};
+
+            //                 Prefix:          A   T   T                C   C   C   
+            //                 Suffix:        A   _   _                A   _   _   
+            const kpair input_skmers[2]{{0b000011101110U, 0}, {0b000111011101U, 0}};
+            const uint64_t position{0};
+
+            std::vector<km::Skmer<kuint>> skmer_vector{
+                km::Skmer<kuint>(input_skmers[1], 3, 1), 
+                km::Skmer<kuint>(input_skmers[0], 3, 1)
+            };
+            std::vector<uint64_t> expected_order{1, 0};
+
+            km::sortedlist::SortedVirtualSkmerList<kuint> m_list(k, m);
+
+            // std::vector<uint64_t> ordered_kmers = km::sorting::sort_column(skmer_vector.begin(), skmer_vector.end(), position, manip);
+            std::vector<uint64_t> ordered_kmers = m_list.sort_column(skmer_vector.begin(), skmer_vector.end(), position);
+            ASSERT_EQ(ordered_kmers, expected_order);
+        }
 
         TEST_F(SortedVirtualSkmerListPrivateTest, SingleKmerSortingReversed)
         {
@@ -1324,37 +1349,57 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers3)
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
 
-    constexpr uint64_t k{5};
+    constexpr uint64_t k{4};
     constexpr uint64_t m{2};
 
     km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
 
     //INPUT
-    const kpair input_skmers[3]{
-    // P:    A   C   T    _
-    // S:  A   C   _   _     
-        {0b0000010111101111U, 0},
-    // P:    A   C   T    G
-    // S:  A   _   _   _        
-        {0b0000110111101111U, 0},
-    // P:    A   C   _    _
-    // S:  A   C   G   G     
-        {0b0000010111111111U, 0},
+    const kpair input_skmers[5]{
+    // P:    A   C   _    
+    // S:  A   G   C        
+        {0b000011010111U, 0},
+    // P:    C   G   A    
+    // S:  A   C   _           
+        {0b000101111100U, 0},
+    // P:    A   C   C    
+    // S:  A   _   _        
+        {0b000011011101U, 0},
+    // P:    C   C   _    
+    // S:  A   G   T       
+        {0b000111011011U, 0},
+    // P:    C   _   _    
+    // S:  A   T   A        
+        {0b000110110011U, 0},
     };
     std::vector<km::Skmer<kuint>> skmer_enumeration{
-        km::Skmer<kuint>(input_skmers[0], 3, 2),
-        km::Skmer<kuint>(input_skmers[1], 4, 1),
-        km::Skmer<kuint>(input_skmers[2], 2, 4),
+        km::Skmer<kuint>(input_skmers[0], 2, 3),
+        km::Skmer<kuint>(input_skmers[1], 3, 2),
+        km::Skmer<kuint>(input_skmers[2], 3, 1),
+        km::Skmer<kuint>(input_skmers[3], 2, 3),
+        km::Skmer<kuint>(input_skmers[4], 1, 3)
     };
 
     //EXPECTED
-    const kpair expected_pairs[1]{
-    // P:    A   C   T    G
-    // S:  A   C   G   G     
-        {0b0000010111101111U, 0},
+    const kpair expected_pairs[4]{
+    // P:    A   C   C    
+    // S:  A   G   C        
+        {0b000011010101U, 0},
+    // P:    C   G   A    
+    // S:  A   C   _        
+        {0b000101111101U, 0},
+    // P:    C   _   _    
+    // S:  A   T   A        
+        {0b000110110011U, 0},
+    // P:    C   C   _    
+    // S:  A   G   T        
+        {0b000111011011U, 0},
     };
     std::vector<km::Skmer<kuint>> expected_skmer{
-        km::Skmer<kuint>(expected_pairs[0], 4, 4)
+        km::Skmer<kuint>(expected_pairs[0], 3, 3),
+        km::Skmer<kuint>(expected_pairs[1], 3, 2),
+        km::Skmer<kuint>(expected_pairs[2], 1, 3),
+        km::Skmer<kuint>(expected_pairs[3], 2, 3)
     };
 
     list.generate_sorted_list_from_enumeration(skmer_enumeration);
@@ -1373,6 +1418,59 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers3)
     }
 }
 
+TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+
+    //INPUT
+    const kpair input_skmers[2]{
+    // P:    C   G   A    
+    // S:  A   _   _           
+        {0b000111111100U, 0},
+    // P:    A   C   C    
+    // S:  A   _   _        
+        {0b000011011101U, 0},
+    };
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_skmers[0], 3, 1),
+        km::Skmer<kuint>(input_skmers[1], 3, 1),
+    };
+
+    //EXPECTED
+    const kpair expected_pairs[2]{
+    // P:    A   C   C    
+    // S:  A   _   _        
+        {0b000011011101U, 0},
+    // P:    C   G   A    
+    // S:  A   _   _           
+        {0b000111111100U, 0},
+    };
+    std::vector<km::Skmer<kuint>> expected_skmer{
+        km::Skmer<kuint>(expected_pairs[0], 3, 1),
+        km::Skmer<kuint>(expected_pairs[1], 3, 1),
+    };
+
+    list.generate_sorted_list_from_enumeration(skmer_enumeration);
+
+    std::vector<km::Skmer<kuint>> m_output_list = list.get_list();
+
+    ASSERT_EQ(m_output_list.size(), expected_skmer.size());
+
+    for (size_t i{0}; i < expected_skmer.size(); i++)
+    {
+        std::cout << "Checking skmer #" << i << std::endl;
+        std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
+        ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
+        ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
+    }
+}
 // QUERY TESTS
 
 

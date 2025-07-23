@@ -347,7 +347,7 @@ protected:
     kpair* m_suff_masks;
 
 
-    std::vector<kpair > sp_kmer_masks;
+    std::vector<kpair > prefix_suffix_mask;
     std::vector<kpair > kmer_masks;
     std::vector<kpair > nucleotide_masks;
  
@@ -359,7 +359,7 @@ public:
         : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
         , max_pair_value(static_cast<kuint>(~static_cast<kuint>(0)), static_cast<kuint>(~static_cast<kuint>(0)))
-        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - 2 * sk_size) ), sp_kmer_masks(generate_masks_sp())
+        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - 2 * sk_size) ), prefix_suffix_mask(generate_masks_sp())
         , kmer_masks(generate_masks_k()), nucleotide_masks(generate_masks_nucleotide())
     {
 
@@ -583,8 +583,11 @@ public:
         // check if first skmer shifted right of mask is < second skmer shifted right of mask 
         const auto first_kmer {first_skmer.m_pair >> (2 * mask_size)};
         const auto second_kmer {second_skmer.m_pair >> (2 * mask_size)};
-        
+        // std::cout << "HOLA" << std::endl;
+        // std::cout << first_skmer.m_pair << " | " << first_kmer << std::endl;
+        // std::cout << second_skmer.m_pair << " | " << second_kmer << std::endl;
         if (first_kmer != second_kmer){
+            // std::cout << "comparing m_pairs: " << first_kmer << " , " << second_kmer << std::endl;
             return first_kmer < second_kmer;}
         
         // 4 - If equals => true if second skmer is the first one to miss a nucleotide (left based)
@@ -662,7 +665,7 @@ public:
 
     std::vector<kpair > get_sp_mask()
     {
-        return this->sp_kmer_masks;
+        return this->prefix_suffix_mask;
     }
     std::vector<kpair > get_k_mask()
     {
@@ -747,7 +750,7 @@ public:
      * @return the k_pair associated to the k-1 mer
      **/
     kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
-        return skmer.m_pair & sp_kmer_masks[start_pos];
+        return skmer.m_pair & prefix_suffix_mask[start_pos];
     }
 
     /** Returns the (k-1)-mer (prefix/suffix) starting at the given position.
@@ -765,10 +768,9 @@ public:
         return skmer.m_pair & nucleotide_masks[pos];
     }
 
-    /** Get a kmer from a skmer at a given postion
-    * @param skmer The skmer you want to evaluate having a kmer at the given position
-    * @param kmer_pos Position of the start of the kmer
-    * @return true if the skmer has a valid kmer at the given position, false otherwise
+    /** Concatenate a kmer(given as superkmer) into an existing superkmer
+    * @param skmer The skmer you want to concatenate the kmer to
+    * @param kmer_skmer The skmer containing the kmer you want to concatenate
     **/
     void concatenate_skmer(Skmer<kuint>& skmer, const Skmer<kuint> kmer_skmer)
     {
