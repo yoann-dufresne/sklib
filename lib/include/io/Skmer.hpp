@@ -583,16 +583,55 @@ public:
         // check if first skmer shifted right of mask is < second skmer shifted right of mask 
         const auto first_kmer {first_skmer.m_pair >> (2 * mask_size)};
         const auto second_kmer {second_skmer.m_pair >> (2 * mask_size)};
-        // std::cout << "HOLA" << std::endl;
-        // std::cout << first_skmer.m_pair << " | " << first_kmer << std::endl;
-        // std::cout << second_skmer.m_pair << " | " << second_kmer << std::endl;
+
         if (first_kmer != second_kmer){
-            // std::cout << "comparing m_pairs: " << first_kmer << " , " << second_kmer << std::endl;
-            return first_kmer < second_kmer;}
+            std::cout << "KPAIR DIFFERENT: " << first_kmer << std::endl << "KPAIR DIFFERENT: " << second_kmer << std::endl;
+            return first_kmer < second_kmer;
+        }
         
         // 4 - If equals => true if second skmer is the first one to miss a nucleotide (left based)
-        return first_missing_nucl < second_missing_nucl;
-    
+        else if (first_missing_nucl != second_missing_nucl){
+            std::cout << "first_missing_nucl: " << first_missing_nucl << "; second_missing_nucl: " << second_missing_nucl << std::endl;
+            return first_missing_nucl < second_missing_nucl;
+        }
+
+        // 5 - If have the same position, I must compare them on all their nucleotides
+        else{
+            std::cout << "same kpair, same position. " << std::endl;
+            return kmer_less_than_kmer(first_skmer, second_skmer, first_kmer_pos);
+        }
+    }
+
+    /** Compare 2 kmers included in 2 skmers.
+     * @param first_skmer First kmer is included in this skmer
+     * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
+     * @param second_skmer Second kmer is included in this skmer
+     * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
+     * @return true if the first kmer is less than the second one
+     **/
+    bool inline kmer_less_than_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
+    {
+        auto first_kmer {first_skmer.m_pair};
+        auto second_kmer {second_skmer.m_pair};
+        first_kmer &= kmer_masks[kmer_pos];
+        second_kmer &= kmer_masks[kmer_pos];
+        return first_kmer < second_kmer;
+    }
+
+    /** Compare 2 kmers included in 2 skmers.
+     * @param first_skmer First kmer is included in this skmer
+     * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
+     * @param second_skmer Second kmer is included in this skmer
+     * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
+     * @return true if the first kmer is less than the second one
+     **/
+    bool inline kmer_equals_to_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
+    {
+        auto first_kmer {first_skmer.m_pair};
+        auto second_kmer {second_skmer.m_pair};
+        first_kmer &= kmer_masks[kmer_pos];
+        second_kmer &= kmer_masks[kmer_pos];
+        return first_kmer == second_kmer;
     }
 
     /** Check if a skmer has a kmer starting at the given position.
@@ -600,7 +639,7 @@ public:
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
-    bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos){ 
+    bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const { 
         assert(kmer_pos <= this->k - this->m);
         // Half size of the skmer
         // uint64_t const half_size {(2 * this->k - this->m + 1) / 2};
@@ -613,19 +652,27 @@ public:
         // if (kmer_pos > skmer.m_suff_size){ // semplification of ((kmer_pos + this->k - 1) > this->k - 1 + skmer.m_suff_size) 
         //     return false;
         // }
-        // // in any other case the position is between the skmer positions 
+
         if ((skmer.m_pref_size >= m_pref_size - kmer_pos) && (skmer.m_suff_size >= k - m_pref_size + kmer_pos)){
             return true;
         }
         else return false;
     }
 
+    std::pair<uint64_t, uint64_t> get_valid_kmer_bounds(const Skmer<kuint>& skmer) const {
+        uint64_t start_pos {this->m_pref_size - skmer.m_pref_size};
+        uint64_t end_pos {this->k - this->m - this->m_suff_size + skmer.m_suff_size};
+        return {start_pos, end_pos};
+
+    }
+
+
     /** Generate a skmer has a kmer starting at the given position.
      * @param given_skmer The skmer from which you want to extract the kmer
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
-    Skmer<kuint> get_skmer_of_kmer(Skmer<kuint> given_skmer, uint64_t kmer_pos){
+    Skmer<kuint> get_skmer_of_kmer(Skmer<kuint> given_skmer, uint64_t kmer_pos) {
         // prefix and suffix sizes computation
         // uint64_t const half_size = (2 * this->k - this->m + 1) / 2;
 
@@ -657,7 +704,7 @@ public:
         return new_sorted_skmer;
     }
 
-    void inline clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos){
+    void inline clean_nucleotide_position_skmer(Skmer<kuint> & given_skmer, uint64_t kmer_pos) const {
         given_skmer.m_pair.m_value[0] &= (~nucleotide_masks[kmer_pos].m_value[0] & this->m_mask.m_value[0]);
         given_skmer.m_pair.m_value[1] &= (~nucleotide_masks[kmer_pos].m_value[1] & this->m_mask.m_value[1]);
         return;
@@ -749,7 +796,7 @@ public:
      * @param start_pos Position of the start of the kmer
      * @return the k_pair associated to the k-1 mer
      **/
-    kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
+    kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos) { 
         return skmer.m_pair & prefix_suffix_mask[start_pos];
     }
 
@@ -758,7 +805,7 @@ public:
      * @param start_pos Position of the start of the kmer
      * @return the k_pair associated to the k-1 mer
      **/
-    kpair extract_kmer(const Skmer<kuint>& skmer, const uint64_t start_pos){ 
+    kpair extract_kmer(const Skmer<kuint>& skmer, const uint64_t start_pos) { 
         assert(start_pos <= this->k - this->m);
         return skmer.m_pair & kmer_masks[start_pos];
     }
@@ -772,7 +819,7 @@ public:
     * @param skmer The skmer you want to concatenate the kmer to
     * @param kmer_skmer The skmer containing the kmer you want to concatenate
     **/
-    void concatenate_skmer(Skmer<kuint>& skmer, const Skmer<kuint> kmer_skmer)
+    void concatenate_skmer(Skmer<kuint>& skmer, const Skmer<kuint> kmer_skmer) const
     {
         skmer.m_pair &= kmer_skmer.m_pair;
         skmer.m_suff_size += 1;

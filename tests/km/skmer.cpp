@@ -307,7 +307,7 @@ TEST(SkmerManipulator, HasValidSkmer1)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,2,3);
 
     std::vector<bool> expected_results {false,false,true,false}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -323,7 +323,7 @@ TEST(SkmerManipulator, HasValidSkmer2)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,1);
 
     std::vector<bool> expected_results {true,false,false,false}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -339,7 +339,7 @@ TEST(SkmerManipulator, HasValidSkmer3)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,3,2);
 
     std::vector<bool> expected_results {false,true,false,false}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -355,7 +355,7 @@ TEST(SkmerManipulator, HasValidSkmer4)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,1,4);
 
     std::vector<bool> expected_results {false,false,false,true}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -372,7 +372,7 @@ TEST(SkmerManipulator, HasValidSkmer5)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,4,4);
 
     std::vector<bool> expected_results {true,true,true,true}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -389,7 +389,7 @@ TEST(SkmerManipulator, HasValidSkmer6)
     km::Skmer<kuint> m_skmer = km::Skmer<kuint>(m_basic_pair,3,4);
 
     std::vector<bool> expected_results {false,true,true,true}; 
-    for (int position {0}; position <= k-m; position++){
+    for (size_t position {0}; position <= k-m; position++){
         ASSERT_EQ(expected_results[position],manip.has_valid_kmer(m_skmer,position));
     }
 }
@@ -413,7 +413,7 @@ TEST(SkmerManipulator, KmerLessThanKmer1)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0],position, skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer2)
@@ -435,7 +435,7 @@ TEST(SkmerManipulator, KmerLessThanKmer2)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0],position, skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer3)
@@ -457,7 +457,7 @@ TEST(SkmerManipulator, KmerLessThanKmer3)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0],position, skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer4)
@@ -479,5 +479,195 @@ TEST(SkmerManipulator, KmerLessThanKmer4)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0],position, skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+}
+
+
+TEST(SkmerManipulator, KmerLTKmer1)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:          A   T   T                C   C   C   
+    //                 Suffix:        A   _   _                A   _   _   
+    const kpair input_skmers[2]{{0b000011101110U, 0}, {0b000111011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 3, 1), 
+        km::Skmer<kuint>(input_skmers[1], 3, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0], position, skmer_vector[1], position));
+}
+
+TEST(SkmerManipulator, KmerLTKmer2)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{3};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:       A   T             C   C      
+    //                 Suffix:     A   _             A   _      
+    const kpair input_skmers[2]{{0b00001110U, 0}, {0b00011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 2, 1), 
+        km::Skmer<kuint>(input_skmers[1], 2, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0], position, skmer_vector[1], position));
+}
+
+TEST(SkmerManipulator, KmerLTKmer3)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:       A   T   T   T             G   C   C   C
+    //                 Suffix:     A   _   _   _             A   _   _   _
+    const kpair input_skmers[2]{{0b0000111011101110U, 0}, {0b0011110111011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 4, 1), 
+        km::Skmer<kuint>(input_skmers[1], 4, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0], position, skmer_vector[1], position));
+}
+
+TEST(SkmerManipulator, KmerLTKmer4)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:       A   T   T   _             G   C   C   _
+    //                 Suffix:     A   T   _   _             A   A   _   _
+    const kpair input_skmers[2]{{0b0000101011101111U, 0}, {0b0011000111011111U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 3, 2), 
+        km::Skmer<kuint>(input_skmers[1], 3, 2)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_lt_kmer(skmer_vector[0], position, skmer_vector[1], position));
+}
+
+
+TEST(get_valid_kmer_bounds, getValidKmerBounds1)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+
+    const kpair input_skmer{0, 0};
+    const std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmer, 3, 1), 
+        km::Skmer<kuint>(input_skmer, 3, 2),
+        km::Skmer<kuint>(input_skmer, 3, 3), 
+        km::Skmer<kuint>(input_skmer, 2, 2),
+        km::Skmer<kuint>(input_skmer, 2, 3), 
+        km::Skmer<kuint>(input_skmer, 1, 3),
+    };
+
+    const std::vector<std::pair<uint64_t, uint64_t>> expected_values{
+        {0,0},
+        {0,1},
+        {0,2},
+        {1,1},
+        {1,2},
+        {2,2},
+    };
+    
+    for(size_t pos {0}; pos < expected_values.size(); pos++){
+        ASSERT_EQ(expected_values[pos], manip.get_valid_kmer_bounds(skmer_vector[pos]));
+    }
+}
+
+TEST(SkmerManipulator, KmerEqualsKmer1)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:          A   T   T                A   T   T   
+    //                 Suffix:        A   _   _                A   _   _   
+    const kpair input_skmers[2]{{0b000011101110U, 0}, {0b000111011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 3, 1), 
+        km::Skmer<kuint>(input_skmers[1], 3, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+}
+
+TEST(SkmerManipulator, KmerEqualsKmer2)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:          A   T   T                A   C   T   
+    //                 Suffix:        A   _   _                A   _   _   
+    const kpair input_skmers[2]{{0b000011101110U, 0}, {0b000111011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 3, 1), 
+        km::Skmer<kuint>(input_skmers[1], 3, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+}
+
+
+TEST(SkmerManipulator, KmerEqualsKmer3)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};                    
+    //                 Prefix:          A   T   T                A   C   T   
+    //                 Suffix:        A   _   _                A   _   _   
+    const kpair input_skmers[2]{{0b000011101110U, 0}, {0b000111011101U, 0}};
+    std::vector<km::Skmer<kuint>> skmer_vector{
+        km::Skmer<kuint>(input_skmers[0], 3, 1), 
+        km::Skmer<kuint>(input_skmers[1], 3, 1)
+    };
+    const uint64_t position{0};
+
+    bool expected_result {true}; 
+
+    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
 }

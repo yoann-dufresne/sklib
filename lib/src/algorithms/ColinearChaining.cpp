@@ -1,4 +1,5 @@
 #include <sstream>
+#include <iostream>
 
 #include "algorithms/ColinearChaining.hpp"
 
@@ -321,6 +322,11 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
             return a.second < b.second;
         return a.first < b.first;
     });
+    
+    std::cout << "[colinear_chaining]::SORTED OVERLAPS" << std::endl;
+    for(auto el = begin; el != end; el++){
+        std::cout << "(" << el->first << "," << el->second << ")" << std::endl;
+    }
 
     // 2 - Create a tree according to the order from 1 and initialize the scores with 0.
     RMQtree tree {begin, end};
@@ -379,8 +385,8 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
 
     }
 
-
     uint64_t score = tree.max_score();
+    std::cout << "[colinear_chaining]::MAX SCORE: " << score << std::endl;
 
     std::vector<overlap> overlaps(score);
     // 5 - Get the last overlap of the chain

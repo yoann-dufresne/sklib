@@ -135,7 +135,7 @@ class SortedVirtualSkmerList {
     // Constructor with manipulator
     SortedVirtualSkmerList(uint64_t k, uint64_t m) : m_manip(k, m) {}
 
-    void print_list(){
+    void print_list() const{
         std::cout << "list : {";
         for(char comma[3] = {'\0', ' ', '\0'}; Skmer<kuint> i : m_skmer_list){
             std::cout << comma << i.m_pair;
@@ -206,7 +206,7 @@ class SortedVirtualSkmerList {
             for (auto overlap: valid_overlaps){
                 std::cout << "{" << overlap.first << "," << overlap.second << "},";
             }
-            std::cout << "}" << std::endl;
+            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
             // 4 - reconcile kmers by merging columns
             std::cout << "merge_LList_column" << std::endl;
             merge_LList_column(skmer_enumeration, m_vskmer_list, window.right(), valid_overlaps, right_column_position);
@@ -221,6 +221,140 @@ class SortedVirtualSkmerList {
         }
 
     }
+
+    std::vector<uint64_t> searchable_positions(
+        uint64_t mean, 
+        const std::vector<bool> & to_be_searched, 
+        const std::vector<std::pair<uint64_t,uint64_t>> & binary_search_positions) const
+    {
+        std::vector<uint64_t> searchable;
+        searchable.reserve(to_be_searched.size());
+
+        for(uint64_t position {0}; position < to_be_searched.size(); position++){
+            if (to_be_searched[position]){
+                if (!(mean < binary_search_positions[position].first || mean > binary_search_positions[position].second)){
+                    searchable.push_back(position);
+                }
+            }
+        }
+        return searchable;
+    }
+
+    template<typename T>
+    void print_vector(const std::vector<T>& my_v) const {
+        std::cout << " {";
+        bool first = true;
+        for(const T& el: my_v){
+            if (!first) std::cout << ", ";
+            std::cout << el;
+            first = false;
+        }
+        std::cout << "}\n";
+    }
+
+    std::vector<bool> query_skmer(Skmer<kuint> query) const{
+        if (m_skmer_list.size() == 0) return std::vector<bool>();
+        // 1 CHECK BOUNDARIES SKMER TO EVALUATE WHICH KMERS INSIDE TO QUERY
+        auto [query_start_position, query_end_position] = m_manip.get_valid_kmer_bounds(query);
+
+        // PREPARE PARAMETERS FOR SEARCH
+        const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
+        if (tot_num_kmers_to_search <= 0) return std::vector<bool>();
+        uint64_t mean {0};
+        uint64_t current_priority_offset {0};
+        uint64_t num_kmers_to_search {tot_num_kmers_to_search};
+        std::vector<bool> result(tot_num_kmers_to_search,false); // to be returned
+        std::vector<bool> to_search(tot_num_kmers_to_search,true); // to keep track which element I need to keep looking for
+        std::vector<std::pair<uint64_t,uint64_t>> binary_search_boundaries(tot_num_kmers_to_search,{0,m_skmer_list.size()-1}); // to store if the kmer is less than or equal to the one I am looking for now.
+
+
+        // 2 START BINARY SEARCH
+        while(num_kmers_to_search > 0){
+
+            // CASE 1 - I CANNOT FIND IN THE LIST THE KMER OF CURRENT_PRIORIY_OFFSET. I SET IT TO FALSE AND CONTINUE WITH ANOTHER IF POSSIBLE
+            if (binary_search_boundaries[current_priority_offset].first >= binary_search_boundaries[current_priority_offset].second){
+                result[current_priority_offset] = false;
+                to_search[current_priority_offset] = false;
+                num_kmers_to_search--;
+                if (num_kmers_to_search > 0){
+                    for (uint64_t i {current_priority_offset}; i < to_search.size(); i++){
+                        if (to_search[i]){
+                            current_priority_offset = i;
+                        }
+                    }
+                }
+                else return result;
+            }
+
+            // UPDATE MEAN
+            mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) / 2;
+
+            // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
+            auto sp = searchable_positions(mean, to_search, binary_search_boundaries);
+
+            // PRINT DEBUG
+            std::cout << "MEAN: " << mean << "; NUM_ELEMENTS_TO_SEARCH: " << num_kmers_to_search << std::endl;
+            std::cout << "SEARCHABLE POSITIONS: ";
+            print_vector(sp);
+            std::cout << "RESULT: ";
+            print_vector(result);
+
+            // IF NO POSITION FOR BINARY SEARCH I AM DONE, RETURN
+            if (sp.size() == 0){
+                return result;
+            }
+
+            for(const uint64_t valid_offset: sp){
+                uint64_t position {query_start_position + valid_offset};
+                if (m_manip.has_valid_kmer(query,position)){
+
+                    // IF THE ELEMENT IS FOUND
+                    if (m_manip.kmer_equals_to_kmer(query, m_skmer_list[mean], position)){
+                        std::cout << "ELEMENT AT POS " << position << " FOUND." << std::endl;
+                        result[valid_offset] = true;
+                        to_search[valid_offset] = false;
+                        num_kmers_to_search--;
+                        if(valid_offset == current_priority_offset){
+                            for (uint64_t i {valid_offset}; i < to_search.size(); i++){
+                                if (to_search[i]){
+                                    current_priority_offset = i;
+                                }
+                            }
+                        }
+                    }
+                    // UPDATING THE MAXIMUM
+                    else if (m_manip.kmer_less_than_kmer(query, m_skmer_list[mean], position)){
+                        //update values of binary_search_boundaries.second
+                        std::cout << "UPDATING UPPER BOUND OF ELEMENT AT binary_search_boundaries OF " << valid_offset << " TO " << mean << std::endl;
+                        binary_search_boundaries[valid_offset].second = mean - 1;
+                    }
+                    // UPDATING THE MINIMUM
+                    else{
+                        //update values of binary_search_boundaries.first
+                        std::cout << "UPDATING LOWER BOUND OF ELEMENT AT binary_search_boundaries OF " << valid_offset << " TO " << mean << std::endl;
+                        binary_search_boundaries[valid_offset].first = mean + 1;
+                    }
+                }
+            }
+        }
+        std::cout << "END" << std::endl;
+        // NOW FOR EACH ROUND OF BINARY SEARCH
+        // TAKE A SKMER FROM THE SORTED LIST
+        // FOR EVERY KMER I NEED TO QUERY IN SEARCH,
+        // FOR ALL KMERS THAT HAVE SAME DIRECTION (NEED TO UNDERSTAND HOW TO STATE THIS)
+        // CHECK IF IT HAS A VALID SKMER AND THEN TO <
+        // UPDATE DIRECTION
+        // UPDATE SEARCH
+        // UPDATE RESULT
+ 
+        // WHEN NO MORE SKMERS TO QUERY (search is all false)
+        // RETURN 
+        return result;
+    }
+
+    // std::vector<std::vector<uint64_t>> query_enumerated_skmers(std::vector<Skmer<kuint>>){
+
+    // }
     
     void add_list(std::vector<Skmer<kuint>>&  list){
         m_skmer_list = list;
@@ -310,7 +444,7 @@ class SortedVirtualSkmerList {
         // For every skmer that has a kmer in that column
         std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), 
             [this, kmer_pos, start](uint64_t id1, uint64_t id2){
-                return m_manip.kmer_lt_kmer(*(start + id1), kmer_pos, *(start + id2), kmer_pos);
+                return m_manip.kmer_less_than_kmer(*(start + id1), *(start + id2), kmer_pos);
             });
         std::cout << "SORTED COLUMN: {" << std::endl;
         for (const uint64_t el: valid_skmer_ids){

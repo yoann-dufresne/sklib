@@ -1471,8 +1471,166 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
     }
 }
-// QUERY TESTS
 
+// QUERY TESTS
+TEST(QueryTest, SearchablePositions)
+{   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+
+    uint64_t num_of_elements {6};
+    uint64_t mean {3};
+    std::vector<bool> search_slots(num_of_elements,true);
+    uint64_t no_search_slots[1] {1};
+    for (const uint64_t el: no_search_slots){
+        search_slots[el] = false;
+    } 
+    std::vector<std::pair<uint64_t,uint64_t>> binary_positions(num_of_elements);
+    binary_positions[0].first = 5;
+    binary_positions[0].second = 10;
+    binary_positions[1].first = 0;
+    binary_positions[1].second = 5;
+    binary_positions[2].first = 5;
+    binary_positions[2].second = 10;
+    binary_positions[3].first = 0;
+    binary_positions[3].second = 5;
+    binary_positions[4].first = 10;
+    binary_positions[4].second = 20;
+    binary_positions[5].first = 0;
+    binary_positions[5].second = 5;
+
+
+
+    const std::vector<uint64_t> computed_searchable_positions = list.searchable_positions(mean, search_slots, binary_positions);
+
+    const std::vector<uint64_t> expected_result {3, 5};
+
+    ASSERT_EQ(computed_searchable_positions.size(), expected_result.size());
+    for(size_t i {0}; i < expected_result.size(); i++){
+        ASSERT_EQ(computed_searchable_positions[i], expected_result[i]);
+    }
+}
+
+TEST(QueryTest, QueryOneKmerinSkmer)
+{   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    const kpair input_pairs[4]{
+    // P:    A   C   C    
+    // S:  A   G   C           
+        {0b000011010101U, 0},
+    // P:    C   G   A    
+    // S:  A   C   _        
+        {0b000101111100U, 0},
+    // P:    C   G   _    
+    // S:  A   T   A           
+        {0b000110110011U, 0},
+    // P:    C   C   _    
+    // S:  A   G   T        
+        {0b000111011011U, 0},
+    };
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_pairs[0], 3, 3),
+        km::Skmer<kuint>(input_pairs[1], 3, 2),
+        km::Skmer<kuint>(input_pairs[2], 2, 3),
+        km::Skmer<kuint>(input_pairs[3], 2, 3),
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(skmer_enumeration);
+
+    const kpair query_pairs[4]{
+    // P:    C   G   A    
+    // S:  A   _   _        
+        {0b000111111100U, 0}, // IS IN
+    // P:    C   G   _    
+    // S:  A   T   _        
+        {0b000110111111U, 0}, // IS IN
+    // P:    C   _   _    
+    // S:  A   G   T           
+        {0b000111111011U, 0}, // IS IN
+    // P:    A   A   _    
+    // S:  A   A   _        
+        {0b000000001111U, 0}, // IS NOT IN
+    };
+
+    std::vector<km::Skmer<kuint>> query_skmer{
+        km::Skmer<kuint>(query_pairs[0], 3, 1),
+        km::Skmer<kuint>(query_pairs[1], 2, 2),
+        km::Skmer<kuint>(query_pairs[2], 1, 3),
+        km::Skmer<kuint>(query_pairs[3], 2, 2),
+    };
+
+    std::vector<bool> expected_result {true, true, true, false};
+
+    for(size_t i {0}; i < query_skmer.size(); i++){
+        ASSERT_EQ(expected_result[i], list.query_skmer(query_skmer[i])[0]);
+    }
+}
+
+TEST(QueryTest, QueryMultipleKmersInSkmer)
+{   
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    const kpair input_pairs[4]{
+    // P:    A   C   C    
+    // S:  A   G   C           
+        {0b000011010101U, 0},
+    // P:    C   G   A    
+    // S:  A   C   _        
+        {0b000101111100U, 0},
+    // P:    C   G   _    
+    // S:  A   T   A           
+        {0b000110110011U, 0},
+    // P:    C   C   _    
+    // S:  A   G   T        
+        {0b000111011011U, 0},
+    };
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_pairs[0], 3, 3),
+        km::Skmer<kuint>(input_pairs[1], 3, 2),
+        km::Skmer<kuint>(input_pairs[2], 2, 3),
+        km::Skmer<kuint>(input_pairs[3], 2, 3),
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(skmer_enumeration);
+
+    const kpair query_pairs[4]{
+    // P:    C   G   A    
+    // S:  A   T   _        
+        {0b000110111100U, 0}, // IS IN
+    // P:    C   T   _    
+    // S:  A   G   T           
+        {0b000111101011U, 0}, // FIRST NOT IN, SECOND NOT IN
+    };
+
+    std::vector<km::Skmer<kuint>> query_skmer{
+        km::Skmer<kuint>(query_pairs[0], 3, 2),
+        km::Skmer<kuint>(query_pairs[1], 2, 3),
+    };
+
+    std::vector<std::vector<bool>> expected_result {{true, true}, {false, true}};
+
+    for(size_t i {0}; i < query_skmer.size(); i++){
+        ASSERT_EQ(expected_result[i], list.query_skmer(query_skmer[i]));
+    }
+}
 
 // SET OPERATION TESTS
 
