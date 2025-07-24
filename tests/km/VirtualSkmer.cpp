@@ -1490,7 +1490,7 @@ TEST(QueryTest, SearchablePositions)
     for (const uint64_t el: no_search_slots){
         search_slots[el] = false;
     } 
-    std::vector<std::pair<uint64_t,uint64_t>> binary_positions(num_of_elements);
+    std::vector<std::pair<int64_t,int64_t>> binary_positions(num_of_elements);
     binary_positions[0].first = 5;
     binary_positions[0].second = 10;
     binary_positions[1].first = 0;

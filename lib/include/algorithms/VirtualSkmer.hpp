@@ -225,7 +225,7 @@ class SortedVirtualSkmerList {
     std::vector<uint64_t> searchable_positions(
         uint64_t mean, 
         const std::vector<bool> & to_be_searched, 
-        const std::vector<std::pair<uint64_t,uint64_t>> & binary_search_positions) const
+        const std::vector<std::pair<int64_t,int64_t>> & binary_search_positions) const
     {
         std::vector<uint64_t> searchable;
         searchable.reserve(to_be_searched.size());
@@ -260,19 +260,19 @@ class SortedVirtualSkmerList {
         // PREPARE PARAMETERS FOR SEARCH
         const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
         if (tot_num_kmers_to_search <= 0) return std::vector<bool>();
-        uint64_t mean {0};
+        int mean {0};
         uint64_t current_priority_offset {0};
         uint64_t num_kmers_to_search {tot_num_kmers_to_search};
         std::vector<bool> result(tot_num_kmers_to_search,false); // to be returned
         std::vector<bool> to_search(tot_num_kmers_to_search,true); // to keep track which element I need to keep looking for
-        std::vector<std::pair<uint64_t,uint64_t>> binary_search_boundaries(tot_num_kmers_to_search,{0,m_skmer_list.size()-1}); // to store if the kmer is less than or equal to the one I am looking for now.
+        std::vector<std::pair<int64_t,int64_t>> binary_search_boundaries(tot_num_kmers_to_search,{0,m_skmer_list.size()-1}); // to store if the kmer is less than or equal to the one I am looking for now.
 
 
         // 2 START BINARY SEARCH
         while(num_kmers_to_search > 0){
 
             // CASE 1 - I CANNOT FIND IN THE LIST THE KMER OF CURRENT_PRIORIY_OFFSET. I SET IT TO FALSE AND CONTINUE WITH ANOTHER IF POSSIBLE
-            if (binary_search_boundaries[current_priority_offset].first >= binary_search_boundaries[current_priority_offset].second){
+            if (binary_search_boundaries[current_priority_offset].first > binary_search_boundaries[current_priority_offset].second){
                 result[current_priority_offset] = false;
                 to_search[current_priority_offset] = false;
                 num_kmers_to_search--;
@@ -300,9 +300,9 @@ class SortedVirtualSkmerList {
             print_vector(result);
 
             // IF NO POSITION FOR BINARY SEARCH I AM DONE, RETURN
-            if (sp.size() == 0){
-                return result;
-            }
+            // if (sp.size() == 0){
+            //     return result;
+            // }
 
             for(const uint64_t valid_offset: sp){
                 uint64_t position {query_start_position + valid_offset};
@@ -314,6 +314,7 @@ class SortedVirtualSkmerList {
                         result[valid_offset] = true;
                         to_search[valid_offset] = false;
                         num_kmers_to_search--;
+                        // IF IT WAS THE ONE AT PRIORITY, GIVE PRIORITY TO NEXT
                         if(valid_offset == current_priority_offset){
                             for (uint64_t i {valid_offset}; i < to_search.size(); i++){
                                 if (to_search[i]){
