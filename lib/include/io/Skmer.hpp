@@ -598,25 +598,25 @@ public:
         // 5 - If have the same position, I must compare them on all their nucleotides
         else{
             std::cout << "same kpair, same position. " << std::endl;
-            return kmer_less_than_kmer(first_skmer, second_skmer, first_kmer_pos);
+            return kmer_compare(first_skmer, second_skmer, first_kmer_pos) < 0;
         }
     }
 
-    /** Compare 2 kmers included in 2 skmers.
-     * @param first_skmer First kmer is included in this skmer
-     * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
-     * @param second_skmer Second kmer is included in this skmer
-     * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
-     * @return true if the first kmer is less than the second one
-     **/
-    bool inline kmer_less_than_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
-    {
-        auto first_kmer {first_skmer.m_pair};
-        auto second_kmer {second_skmer.m_pair};
-        first_kmer &= kmer_masks[kmer_pos];
-        second_kmer &= kmer_masks[kmer_pos];
-        return first_kmer < second_kmer;
-    }
+    // /** Compare 2 kmers included in 2 skmers.
+    //  * @param first_skmer First kmer is included in this skmer
+    //  * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
+    //  * @param second_skmer Second kmer is included in this skmer
+    //  * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
+    //  * @return true if the first kmer is less than the second one
+    //  **/
+    // bool inline kmer_less_than_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
+    // {
+    //     auto first_kmer {first_skmer.m_pair};
+    //     auto second_kmer {second_skmer.m_pair};
+    //     first_kmer &= kmer_masks[kmer_pos];
+    //     second_kmer &= kmer_masks[kmer_pos];
+    //     return first_kmer < second_kmer;
+    // }
 
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer
@@ -625,13 +625,16 @@ public:
      * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
      * @return true if the first kmer is less than the second one
      **/
-    bool inline kmer_equals_to_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
+    inline int kmer_compare(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
     {
         auto first_kmer {first_skmer.m_pair};
         auto second_kmer {second_skmer.m_pair};
         first_kmer &= kmer_masks[kmer_pos];
         second_kmer &= kmer_masks[kmer_pos];
-        return first_kmer == second_kmer;
+
+        if (first_kmer < second_kmer) return -1;
+        else if (first_kmer > second_kmer) return 1;
+        else return 0;
     }
 
     /** Check if a skmer has a kmer starting at the given position.
@@ -641,18 +644,6 @@ public:
      **/
     bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const { 
         assert(kmer_pos <= this->k - this->m);
-        // Half size of the skmer
-        // uint64_t const half_size {(2 * this->k - this->m + 1) / 2};
-        // std::cout << "POSITION: " << kmer_pos << " ; SKMER.PREFIX_SIZE: " << skmer.m_pref_size << " ; SUFFIX SIZE: " << skmer.m_suff_size << ";" << std::endl;
-        // // case position < start of skmer prefix
-        // if (kmer_pos < (half_size - skmer.m_pref_size)){
-        //     return false;
-        // }
-        // // // case position > end of skmer suffix
-        // if (kmer_pos > skmer.m_suff_size){ // semplification of ((kmer_pos + this->k - 1) > this->k - 1 + skmer.m_suff_size) 
-        //     return false;
-        // }
-
         if ((skmer.m_pref_size >= m_pref_size - kmer_pos) && (skmer.m_suff_size >= k - m_pref_size + kmer_pos)){
             return true;
         }

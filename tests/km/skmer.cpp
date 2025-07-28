@@ -413,7 +413,7 @@ TEST(SkmerManipulator, KmerLessThanKmer1)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer2)
@@ -435,7 +435,7 @@ TEST(SkmerManipulator, KmerLessThanKmer2)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer3)
@@ -457,7 +457,7 @@ TEST(SkmerManipulator, KmerLessThanKmer3)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 TEST(SkmerManipulator, KmerLessThanKmer4)
@@ -479,7 +479,7 @@ TEST(SkmerManipulator, KmerLessThanKmer4)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 
@@ -624,7 +624,7 @@ TEST(SkmerManipulator, KmerEqualsKmer1)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 TEST(SkmerManipulator, KmerEqualsKmer2)
@@ -646,7 +646,7 @@ TEST(SkmerManipulator, KmerEqualsKmer2)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
 
 
@@ -669,5 +669,5 @@ TEST(SkmerManipulator, KmerEqualsKmer3)
 
     bool expected_result {true}; 
 
-    ASSERT_EQ(expected_result, manip.kmer_less_than_kmer(skmer_vector[0], skmer_vector[1], position));
+    ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
