@@ -2,7 +2,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <forward_list>
-#include <gtest/gtest_prod.h>
+#include <execution>
+
 
 #include <algorithms/ColinearChaining.hpp>
 #include <io/Skmer.hpp>
@@ -11,48 +12,16 @@
 #ifndef VIRTUALSKMER_H
 #define VIRTUALSKMER_H
 
-
-// namespace std {
-//     template <>
-//     struct hash<std::pair<unsigned long, unsigned long>> {
-//         std::size_t operator()(const std::pair<unsigned long, unsigned long>& p) const noexcept {
-//             return std::hash<unsigned long>{}(p.first) ^ (std::hash<unsigned long>{}(p.second) << 1);
-//         }
-//     };
-// }
-
 namespace km
 {
 namespace sortedlist
 {
 
-// template<typename kuint>
-// using kpair = km::Skmer<kuint>::pair;
-// using overlap = std::pair<uint64_t, uint64_t>;
-
-// template <class It, typename kuint>
-// class compare_kmer_skmer_pos {
-//     uint64_t position;
-//     SkmerManipulator<kuint> & manipulator;
-//     const It start;
-//     const It end;
-
-// public:
-//     // the comparison function takes as argument 2 integers, a position and the vector of skmers. 
-//     // It compares the two skmers in the selected position and returns which one is before the other.
-//     compare_kmer_skmer_pos(uint64_t p, SkmerManipulator<kuint> & skmer_manipulator, const It start_skmer_en, const It end_skmer_en) // 
-//     : position(p), manipulator(skmer_manipulator), start(start_skmer_en), end(end_skmer_en) {}
-
-//     bool operator()(const uint64_t skmer_id_1,const uint64_t skmer_id_2) const {
-//         assert((start+skmer_id_1) < end);
-//         assert((start+skmer_id_2) < end);
-//         return manipulator.kmer_lt_kmer(*(start+skmer_id_1), position, *(start+skmer_id_2), position);
-//     }
-// };
-
+namespace util
+{
 // INTEGER USED TO CHECK THAT THE ENDIANESS IS CORRECT
 constexpr uint64_t ENDINANESS_SANITY_INTEGER = 0x56534B4D45525F4DULL; // "VSKMER_M" in ASCII
-
+constexpr uint64_t MAX_POSSIBLE_KMERS = 32;
 // Helper function to check endiannesss
 inline uint64_t swap_endian(uint64_t value) {
     return ((value & 0x00000000000000FFULL) << 56) |
@@ -65,6 +34,17 @@ inline uint64_t swap_endian(uint64_t value) {
            ((value & 0xFF00000000000000ULL) >> 56);
 }
 
+template<typename T>
+void print_vector(const std::vector<T>& my_v){
+    std::cout << " {";
+    bool first = true;
+    for(const T& el: my_v){
+        if (!first) std::cout << ", ";
+        std::cout << el;
+        first = false;
+    }
+    std::cout << "}\n";
+}
 
 // PAIR WRAPPER CLASS TO PROCESS PAIR OF COLUMNS
 class SlidingWindow {
@@ -80,7 +60,66 @@ public:
     const std::vector<uint64_t>& right() const {return next;}
 };
 
-// VIRTUAL SUPERKMER OBJECT
+// HELPER FUNCTIONS FOR SKMER QUERY
+inline void setFalse(uint8_t& val) {val = 0; }
+inline void setTrue(uint8_t& val) {val = 1; }
+
+/** Updates the vector containing the currently searchable k-mer positions.
+ * @param position_to_search position on the virtual s-kmer list that will be searched
+ * @param to_be_searched vector of flags (uint8 as bool) of k-mers that have been found yet or not
+ * @param binary_search_positions bound for binary search for each k-mer at that position
+ * @param searchable_positions the vector of positions to be searched
+ * @param tot_kmers_to_search number of total kmers being searched
+ * @return a vector of Virtual superkmer ids (if no kmer, no skmer id) 
+ **/
+inline uint64_t update_searchable_positions(
+const int64_t position_to_search, 
+const uint8_t* to_be_searched, 
+const std::pair<int64_t,int64_t>* binary_search_positions,
+uint64_t* searchable_positions, 
+const uint64_t tot_kmers_to_search)
+{
+    uint64_t count {0};
+    for(uint64_t position {0}; position < tot_kmers_to_search; position++){
+        if (to_be_searched[position] != 0 && 
+            position_to_search >= binary_search_positions[position].first && 
+            position_to_search <= binary_search_positions[position].second) {
+            searchable_positions[count++] = position;
+        }
+    }
+    return count++;
+}
+
+/** Gets the next position of k-mer in the super-k-mer to be prioritized for the binary search. To harness cache-locality, k-mer positions to be searched in the same range as the previous positions are first looked to choose the new value. 
+ * @param old_position position on the queried s-k-mer that was searched
+ * @param searchable_positions vector of positions of k-mer in the s-k-mer that could be searched in the same range as the old_position
+ * @param searchable_count num valid elements in searchable_positions array
+ * @param to_search vector that flags with 0 elements not to be searched anymore if found or not found.
+ * @param tot_kmers_to_search number of total kmers being searched
+ * @return a vector of Virtual superkmer ids (if no kmer, no skmer id) 
+ **/
+inline uint64_t get_new_priority_value(
+    const uint64_t old_position, 
+    const uint64_t* searchable_positions, 
+    const uint64_t searchable_count, 
+    const uint8_t* to_search, 
+    const uint64_t tot_kmers_to_search) {
+    // FIRST CHECK IN SEARCHABLE POSITIONS
+    for(uint64_t i {0}; i < searchable_count; i++){
+        const uint64_t position = searchable_positions[i];
+        if (position != old_position && to_search[position] != 0) return position;
+    }
+    // IF NO ELEMENT IN SEARCHABLE POSIIONS IS GOOD, LOOK FOR KMER STILL TO BE SEARCHED.
+    for (uint64_t i {0}; i < tot_kmers_to_search; i++){
+        if (to_search[i] != 0) return i;
+    }
+    // IF NO POSITION IS GOOD, RETURN OLD POSITION (IF I GET HERE, THE SEARCH SHOULD BE END)
+    return old_position;
+}
+
+}
+
+// VIRTUAL SUPERKMER CLASS
 template<typename kuint>
 struct Virtual_skmer {
     Skmer<kuint> skmer;
@@ -122,7 +161,6 @@ struct Virtual_skmer {
 };
 
 // VIRTUAL SUPERKMER LIST CLASS
-// Forward declaring VirtualSkmerSerializer
 template<typename kuint> class VirtualSkmerSerializer;
 
 template<typename kuint>
@@ -136,65 +174,60 @@ class SortedVirtualSkmerList {
     SortedVirtualSkmerList(uint64_t k, uint64_t m) : m_manip(k, m) {}
 
     void print_list() const{
-        std::cout << "list : {";
-        for(char comma[3] = {'\0', ' ', '\0'}; Skmer<kuint> i : m_skmer_list){
-            std::cout << comma << i.m_pair;
-            comma[0] = ',';
-        }
-        std::cout << "}" << std::endl;
+        util::print_vector(m_skmer_list);
     }
 
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
         //initialize the linked lists
-        std::cout << "INIZIALIZING VALUES" << std::endl;
+        // std::cout << "INIZIALIZING VALUES" << std::endl;
         
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
-        SlidingWindow window;
+        util::SlidingWindow window;
         std::vector<overlap> candidate_overlaps;
         std::vector<overlap> valid_overlaps;
 
         // 0 - sort the column ids based on kmers of the first column
-        std::cout << "SLIDING FIRST WINDOW" << std::endl;
+        // std::cout << "SLIDING FIRST WINDOW" << std::endl;
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
         right_column_position++;
 
-        LList m_vskmer_list;
+        LList vskmer_list;
 
-        m_vskmer_list.reserve(window.right().size());
+        vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
-            m_vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
-            std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
+            vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
+            // std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
-            std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
+            // std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
-            std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
+            // std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
             
-            std::cout << "LEFT COLUMN:" << std::endl;
-            for (const uint64_t el: window.left()){
-                std::cout << "L: " << el << ";\t";
-            }
-            std::cout << std::endl;
-            std::cout << "RIGHT COLUMN:" << std::endl;
-            for (const uint64_t el: window.right()){
-                std::cout << "R: " << el << ";\t";
-            }
-            std::cout << std::endl;
+            // std::cout << "LEFT COLUMN:" << std::endl;
+            // for (const uint64_t el: window.left()){
+            //     std::cout << "L: " << el << ";\t";
+            // }
+            // std::cout << std::endl;
+            // std::cout << "RIGHT COLUMN:" << std::endl;
+            // for (const uint64_t el: window.right()){
+            //     std::cout << "R: " << el << ";\t";
+            // }
+            // std::cout << std::endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
+            // std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
 
             // 3 - get valid overlaps using colinear chaining
-            std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
-            for (auto overlap: candidate_overlaps){
-                std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
-            }
+            // std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
+            // for (auto overlap: candidate_overlaps){
+            //     std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
+            // }
             
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
@@ -202,160 +235,117 @@ class SortedVirtualSkmerList {
             }
             else { valid_overlaps = candidate_overlaps;}
             
-            std::cout << "VALID OVERLAPS: {";
-            for (auto overlap: valid_overlaps){
-                std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            }
-            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+            // std::cout << "VALID OVERLAPS: {";
+            // for (auto overlap: valid_overlaps){
+            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            // }
+            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
             // 4 - reconcile kmers by merging columns
-            std::cout << "merge_LList_column" << std::endl;
-            merge_LList_column(skmer_enumeration, m_vskmer_list, window.right(), valid_overlaps, right_column_position);
+            // std::cout << "merge_LList_column" << std::endl;
+            merge_LList_column(skmer_enumeration, vskmer_list, window.right(), valid_overlaps, right_column_position);
             
             // go to next iteration
             left_column_position = right_column_position;
             right_column_position++;
         }
-        m_skmer_list.reserve(m_vskmer_list.size());
-        for(km::sortedlist::Virtual_skmer<kuint>& vskmer: m_vskmer_list){
+
+        m_skmer_list.reserve(vskmer_list.size());
+
+        for(km::sortedlist::Virtual_skmer<kuint>& vskmer: vskmer_list){
             m_skmer_list.emplace_back(std::move(vskmer.skmer));
         }
 
     }
 
-    std::vector<uint64_t> searchable_positions(
-        uint64_t mean, 
-        const std::vector<bool> & to_be_searched, 
-        const std::vector<std::pair<int64_t,int64_t>> & binary_search_positions) const
-    {
-        std::vector<uint64_t> searchable;
-        searchable.reserve(to_be_searched.size());
-
-        for(uint64_t position {0}; position < to_be_searched.size(); position++){
-            if (to_be_searched[position]){
-                if (!(mean < binary_search_positions[position].first || mean > binary_search_positions[position].second)){
-                    searchable.push_back(position);
-                }
-            }
-        }
-        return searchable;
-    }
-
-    template<typename T>
-    void print_vector(const std::vector<T>& my_v) const {
-        std::cout << " {";
-        bool first = true;
-        for(const T& el: my_v){
-            if (!first) std::cout << ", ";
-            std::cout << el;
-            first = false;
-        }
-        std::cout << "}\n";
-    }
-
-    std::vector<bool> query_skmer(Skmer<kuint> query) const{
-        if (m_skmer_list.size() == 0) return std::vector<bool>();
+    std::vector<bool> query_skmer(const Skmer<kuint> query) const{
         // 1 CHECK BOUNDARIES SKMER TO EVALUATE WHICH KMERS INSIDE TO QUERY
         auto [query_start_position, query_end_position] = m_manip.get_valid_kmer_bounds(query);
 
-        // PREPARE PARAMETERS FOR SEARCH
         const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
-        if (tot_num_kmers_to_search <= 0) return std::vector<bool>();
-        int mean {0};
-        uint64_t current_priority_offset {0};
-        uint64_t num_kmers_to_search {tot_num_kmers_to_search};
-        std::vector<bool> result(tot_num_kmers_to_search,false); // to be returned
-        std::vector<bool> to_search(tot_num_kmers_to_search,true); // to keep track which element I need to keep looking for
-        std::vector<std::pair<int64_t,int64_t>> binary_search_boundaries(tot_num_kmers_to_search,{0,m_skmer_list.size()-1}); // to store if the kmer is less than or equal to the one I am looking for now.
 
+        // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST IS EMPTY)
+        if (tot_num_kmers_to_search <= 0 || m_skmer_list.empty()){
+            return std::vector<bool>(std::max(0UL, tot_num_kmers_to_search), false);
+        }
+
+        // PREPARE PARAMETERS FOR SEARCH
+        uint64_t current_priority_offset {0};
+        uint64_t searchable_position_count {tot_num_kmers_to_search};
+        uint64_t num_kmers_to_search {tot_num_kmers_to_search};
+        uint64_t current_searched_position_in_skmer;
+        int64_t mean;
+
+        // USING SMALL STACK ALLOCATED ARRAYS FOR FAST QUERY
+        uint8_t result[util::MAX_POSSIBLE_KMERS] = {0}; //'bool' to be returned
+        uint8_t keep_searching[util::MAX_POSSIBLE_KMERS]; // keep track of which k-mers have been searched yet
+        std::pair<int64_t,int64_t> binary_search_boundaries[util::MAX_POSSIBLE_KMERS];
+        uint64_t positions_to_search[util::MAX_POSSIBLE_KMERS];
+        
+        // ARRAYS INITIALIZATION
+        const int64_t list_size = m_skmer_list.size();
+        std::fill_n(keep_searching, tot_num_kmers_to_search, 1);
+        std::fill_n(binary_search_boundaries, tot_num_kmers_to_search, 
+            std::make_pair(0LL, static_cast<int64_t>(list_size - 1)));
+        for(size_t i {0}; i < tot_num_kmers_to_search; i++){
+            positions_to_search[i] = i;
+        }
 
         // 2 START BINARY SEARCH
         while(num_kmers_to_search > 0){
-
-            // CASE 1 - I CANNOT FIND IN THE LIST THE KMER OF CURRENT_PRIORIY_OFFSET. I SET IT TO FALSE AND CONTINUE WITH ANOTHER IF POSSIBLE
-            if (binary_search_boundaries[current_priority_offset].first > binary_search_boundaries[current_priority_offset].second){
-                result[current_priority_offset] = false;
-                to_search[current_priority_offset] = false;
-                num_kmers_to_search--;
-                if (num_kmers_to_search > 0){
-                    for (uint64_t i {current_priority_offset}; i < to_search.size(); i++){
-                        if (to_search[i]){
-                            current_priority_offset = i;
-                        }
-                    }
-                }
-                else return result;
+            // VERIFY THAT THE CURRENT PRIORITY_POSITION IS STILL VALID AND UPDATE
+            if (keep_searching[current_priority_offset] == 0) {
+                current_priority_offset = util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
             }
 
             // UPDATE MEAN
-            mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) / 2;
+            mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
 
             // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
-            auto sp = searchable_positions(mean, to_search, binary_search_boundaries);
+            searchable_position_count = util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
 
-            // PRINT DEBUG
-            std::cout << "MEAN: " << mean << "; NUM_ELEMENTS_TO_SEARCH: " << num_kmers_to_search << std::endl;
-            std::cout << "SEARCHABLE POSITIONS: ";
-            print_vector(sp);
-            std::cout << "RESULT: ";
-            print_vector(result);
+            auto [queried_start_position, queried_end_position] = m_manip.get_valid_kmer_bounds(m_skmer_list[mean]);
 
-            // IF NO POSITION FOR BINARY SEARCH I AM DONE, RETURN
-            // if (sp.size() == 0){
-            //     return result;
-            // }
+            for(const uint64_t offset: positions_to_search){
+                current_searched_position_in_skmer = query_start_position + offset;
+                if(current_searched_position_in_skmer >= queried_start_position && current_searched_position_in_skmer <= queried_end_position){
 
-            for(const uint64_t valid_offset: sp){
-                uint64_t position {query_start_position + valid_offset};
-                if (m_manip.has_valid_kmer(query,position)){
-
-                    // IF THE ELEMENT IS FOUND
-                    if (m_manip.kmer_equals_to_kmer(query, m_skmer_list[mean], position)){
-                        std::cout << "ELEMENT AT POS " << position << " FOUND." << std::endl;
-                        result[valid_offset] = true;
-                        to_search[valid_offset] = false;
+                    const int kmer_comparison {m_manip.kmer_compare(query, m_skmer_list[mean], current_searched_position_in_skmer)};
+                    if (kmer_comparison == 0){
+                        // FOUND. SET RESULT TO TRUE, KEEP_SEARCHING TO FALSE, UPDATE PRIORITY POSITION IF NECESSARY
+                        util::setTrue(result[offset]);
+                        util::setFalse(keep_searching[offset]);
                         num_kmers_to_search--;
-                        // IF IT WAS THE ONE AT PRIORITY, GIVE PRIORITY TO NEXT
-                        if(valid_offset == current_priority_offset){
-                            for (uint64_t i {valid_offset}; i < to_search.size(); i++){
-                                if (to_search[i]){
-                                    current_priority_offset = i;
-                                }
-                            }
+                        if (current_searched_position_in_skmer == current_priority_offset){
+                            current_priority_offset = util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
                         }
+                        continue;
                     }
-                    // UPDATING THE MAXIMUM
-                    else if (m_manip.kmer_less_than_kmer(query, m_skmer_list[mean], position)){
-                        //update values of binary_search_boundaries.second
-                        std::cout << "UPDATING UPPER BOUND OF ELEMENT AT binary_search_boundaries OF " << valid_offset << " TO " << mean << std::endl;
-                        binary_search_boundaries[valid_offset].second = mean - 1;
+                    else if (kmer_comparison < 0){
+                        // UPDATE BINARY SEARCH UPPER BOUNDARY FOR THIS POSITION
+                        binary_search_boundaries[offset].second = mean - 1;
                     }
-                    // UPDATING THE MINIMUM
                     else{
-                        //update values of binary_search_boundaries.first
-                        std::cout << "UPDATING LOWER BOUND OF ELEMENT AT binary_search_boundaries OF " << valid_offset << " TO " << mean << std::endl;
-                        binary_search_boundaries[valid_offset].first = mean + 1;
+                        // UPDATE BINARY SEARCH LOWER BOUNDARY FOR THIS POSITION
+                        binary_search_boundaries[offset].first = mean + 1;
+                    }
+                    if (binary_search_boundaries[offset].first >= binary_search_boundaries[offset].second) {
+                        util::setFalse(keep_searching[offset]);
+                        num_kmers_to_search--;
                     }
                 }
             }
         }
-        std::cout << "END" << std::endl;
-        // NOW FOR EACH ROUND OF BINARY SEARCH
-        // TAKE A SKMER FROM THE SORTED LIST
-        // FOR EVERY KMER I NEED TO QUERY IN SEARCH,
-        // FOR ALL KMERS THAT HAVE SAME DIRECTION (NEED TO UNDERSTAND HOW TO STATE THIS)
-        // CHECK IF IT HAS A VALID SKMER AND THEN TO <
-        // UPDATE DIRECTION
-        // UPDATE SEARCH
-        // UPDATE RESULT
- 
-        // WHEN NO MORE SKMERS TO QUERY (search is all false)
-        // RETURN 
-        return result;
+
+        return std::vector<bool>(result, result + tot_num_kmers_to_search);;
     }
 
-    // std::vector<std::vector<uint64_t>> query_enumerated_skmers(std::vector<Skmer<kuint>>){
+    std::vector<std::vector<bool>> query_skmer_enumeration(std::vector<Skmer<kuint>> query_skmers) const{
+        std::vector<std::vector<bool>> result(query_skmers.size());
 
-    // }
+        std::transform(std::execution::par, query_skmers.begin(), query_skmers.end(), result.begin(), [this](const Skmer<kuint>&  queried_skmer){ return this->query_skmer(queried_skmer); });
+
+        return result;
+    }
     
     void add_list(std::vector<Skmer<kuint>>&  list){
         m_skmer_list = list;
@@ -391,6 +381,7 @@ class SortedVirtualSkmerList {
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SortingColumnNoValidKmer4);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSorting);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSorting2);
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSortingAndUnique);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, SingleKmerSortingReversed);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, ThreeKmerSorting);
 
@@ -416,6 +407,8 @@ class SortedVirtualSkmerList {
 
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
+
+    private:
 
     /** Sorts skmer ids based on the kmers they contain at a given positon.
      * @param start start_position in the skmer generator
@@ -445,13 +438,17 @@ class SortedVirtualSkmerList {
         // For every skmer that has a kmer in that column
         std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), 
             [this, kmer_pos, start](uint64_t id1, uint64_t id2){
-                return m_manip.kmer_less_than_kmer(*(start + id1), *(start + id2), kmer_pos);
+                return m_manip.kmer_compare(*(start + id1), *(start + id2), kmer_pos) < 0;
             });
-        std::cout << "SORTED COLUMN: {" << std::endl;
-        for (const uint64_t el: valid_skmer_ids){
-            std::cout << "{" << el << "," << (start + el)->m_pair << "}\t";
-        }
-        std::cout << "}" << std::endl;
+
+        // 3rd pass, remove k-mer duplicates
+        auto last_value = std::unique(valid_skmer_ids.begin(), valid_skmer_ids.end(),
+            [this, kmer_pos, start](uint64_t id1, uint64_t id2){
+                return m_manip.kmer_compare(*(start + id1), *(start+id2), kmer_pos) == 0;
+            });
+
+        valid_skmer_ids.erase(last_value, valid_skmer_ids.end());
+
         return valid_skmer_ids;
     }
 
@@ -618,6 +615,7 @@ class SortedVirtualSkmerList {
 }; // end of my class
 
 
+// VIRTUAL SUPERKMER LIST SERIALIZER
 template<typename kuint>
 class VirtualSkmerSerializer {
 public:
@@ -630,7 +628,7 @@ public:
         }
 
         // ENDIANESS CHECKING INTEGER
-        outFile.write(reinterpret_cast<const char*>(&ENDINANESS_SANITY_INTEGER), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&util::ENDINANESS_SANITY_INTEGER), sizeof(uint64_t));
         
         // Write k and m
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.k), sizeof(uint64_t));
@@ -677,9 +675,9 @@ public:
         }
         
         // Check endianness
-        if (read_endianess_int != ENDINANESS_SANITY_INTEGER) {
-            uint64_t swapped_endianess_int = swap_endian(read_endianess_int);
-            if (swapped_endianess_int == ENDINANESS_SANITY_INTEGER) {
+        if (read_endianess_int != util::ENDINANESS_SANITY_INTEGER) {
+            uint64_t swapped_endianess_int = util::swap_endian(read_endianess_int);
+            if (swapped_endianess_int == util::ENDINANESS_SANITY_INTEGER) {
                 throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
             } else {
                 throw std::runtime_error("Invalid file format - ENDINANESS_SANITY_INTEGER mismatch");

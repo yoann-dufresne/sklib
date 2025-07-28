@@ -387,6 +387,29 @@ namespace km
             ASSERT_EQ(ordered_kmers, expected_order);
         }
 
+        TEST_F(SortedVirtualSkmerListPrivateTest, SingleKmerSortingAndUnique)
+        {
+            using kuint = uint16_t;
+            using kpair = km::Skmer<kuint>::pair;
+
+            constexpr uint64_t k{5};
+            constexpr uint64_t m{2};
+
+            //                 Prefix:          A   T   _   _             A   _   _   _
+            //                 Suffix:        A   C   C   C             C   C   C   C
+            const kpair input_skmers[3]{{0b0000011001110111U, 0}, {0b0100011101110111U, 0},{0b0000011001110111U, 0},};
+            const uint64_t position{3};
+
+            std::vector<km::Skmer<kuint>> skmer_vector{km::Skmer<kuint>(input_skmers[0], 2, 4), km::Skmer<kuint>(input_skmers[1], 1, 4), km::Skmer<kuint>(input_skmers[0], 2, 4)};
+            std::vector<uint64_t> expected_order{0, 1};
+
+            km::sortedlist::SortedVirtualSkmerList<kuint> m_list(k, m);
+
+            // std::vector<uint64_t> ordered_kmers = km::sorting::sort_column(skmer_vector.begin(), skmer_vector.end(), position, manip);
+            std::vector<uint64_t> ordered_kmers = m_list.sort_column(skmer_vector.begin(), skmer_vector.end(), position);
+            ASSERT_EQ(ordered_kmers, expected_order);
+        }
+
         TEST_F(SortedVirtualSkmerListPrivateTest, SingleKmerSortingReversed)
         {
             using kuint = uint16_t;
@@ -1475,22 +1498,17 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
 // QUERY TESTS
 TEST(QueryTest, SearchablePositions)
 {   
-    using kuint = uint16_t;
-    using kpair = km::Skmer<kuint>::pair;
-
-    constexpr uint64_t k{4};
-    constexpr uint64_t m{2};
-
-    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
-
     uint64_t num_of_elements {6};
-    uint64_t mean {3};
-    std::vector<bool> search_slots(num_of_elements,true);
+    int64_t mean {3};
+    constexpr uint64_t max_array {32};
+    uint8_t search_slots[max_array];
+    std::fill_n(search_slots,num_of_elements,1);
+
     uint64_t no_search_slots[1] {1};
     for (const uint64_t el: no_search_slots){
-        search_slots[el] = false;
+        search_slots[el] = 0;
     } 
-    std::vector<std::pair<int64_t,int64_t>> binary_positions(num_of_elements);
+    std::pair<int64_t,int64_t> binary_positions[max_array];
     binary_positions[0].first = 5;
     binary_positions[0].second = 10;
     binary_positions[1].first = 0;
@@ -1506,11 +1524,13 @@ TEST(QueryTest, SearchablePositions)
 
 
 
-    const std::vector<uint64_t> computed_searchable_positions = list.searchable_positions(mean, search_slots, binary_positions);
+    uint64_t computed_searchable_positions[max_array];
+    uint64_t num_searchable_positions {num_of_elements};
+    num_searchable_positions = km::sortedlist::util::update_searchable_positions(mean, search_slots, binary_positions, computed_searchable_positions, num_of_elements);
 
     const std::vector<uint64_t> expected_result {3, 5};
 
-    ASSERT_EQ(computed_searchable_positions.size(), expected_result.size());
+    ASSERT_EQ(num_searchable_positions, expected_result.size());
     for(size_t i {0}; i < expected_result.size(); i++){
         ASSERT_EQ(computed_searchable_positions[i], expected_result[i]);
     }
