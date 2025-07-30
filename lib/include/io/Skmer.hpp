@@ -15,7 +15,7 @@ namespace km
 
 /** This superkmer class represents a full size superkmer (ie 2*k-m nucleotides). It is stored in a interleavec way:
  * It means the the most significant nucleotide in the middle one in the superkmer. For example if you have a superkmer
- * ABCDE, its representation here will be CDBEA. We made this choice as the more a nucleotide is "central" in the 
+ * ABCDE, its representation here will be CDBEA. We made this choice as the more a nucleotide is "central" in the
  * superkmer, the most it is shared by the kmers from the superkmers.
  **/
 template<typename kuint>
@@ -50,17 +50,17 @@ public:
     { m_pair = other.m_pair; m_pref_size = other.m_pref_size; m_suff_size = other.m_suff_size; return *this; }
 
     bool operator<(const Skmer<kuint>& other) const
-    { 
+    {
         return m_pair < other.m_pair;
     }
 
     bool operator<=(const Skmer<kuint>& other) const
-    { 
+    {
         return m_pair <= other.m_pair;
     }
 
     bool operator==(const Skmer<kuint>& other) const
-    { 
+    {
         return (m_pair == other.m_pair && m_pref_size == other.m_pref_size && m_suff_size == other.m_suff_size) ;
     }
 
@@ -84,7 +84,7 @@ public:
         {}
         pair(kuint single) : m_value({single, 0})
         {}
-        pair(const kuint& less_significant, const kuint& most_significant) 
+        pair(const kuint& less_significant, const kuint& most_significant)
                                         : m_value({less_significant, most_significant})
         {}
         pair(const pair& other) : m_value({other.m_value[0], other.m_value[1]})
@@ -99,7 +99,7 @@ public:
         }
 
         bool operator<(const pair& other) const
-        { 
+        {
             if (m_value[1] == other.m_value[1])
                 return m_value[0] < other.m_value[0];
             else
@@ -135,7 +135,7 @@ public:
                 const kuint transfer_mask {static_cast<kuint>((~static_cast<kuint>(0)) >> (sizeof(kuint) * 8 - shift))};
                 const kuint transfer_slice {static_cast<kuint>(m_value[1] & transfer_mask)};
                 m_value[1] >>= shift;
-                
+
                 // Less significant kuint
                 const uint64_t shift_transfered {sizeof(kuint) * 8 - shift};
                 m_value[0] >>= shift;
@@ -165,7 +165,7 @@ public:
                 const kuint transfer_mask {static_cast<kuint>((~static_cast<kuint>(0)) << (sizeof(kuint) * 8 - shift))};
                 const kuint transfer_slice {static_cast<kuint>(m_value[0] & transfer_mask)};
                 m_value[0] <<= shift;
-                
+
                 // Most significant kuint
                 const uint64_t shift_transfered {sizeof(kuint) * 8 - shift};
                 m_value[1] <<= shift;
@@ -224,13 +224,13 @@ public:
             m_value[0] |= value;
             return *this;
         }
-        
+
         operator uint64_t()
         {
             return m_value[0];
         }
 
-        
+
         friend std::ostream& operator<<(std::ostream& os, const typename Skmer<kuint>::pair& p)
         {
             // [kuint 1] Prints the bits one at a time from the most significant to the less significant
@@ -320,7 +320,7 @@ public:
     const uint64_t k;
     const uint64_t m;
     const uint64_t sk_size;
-    
+
     Skmer<kuint> m_fwd;
     Skmer<kuint> m_rev;
 
@@ -331,7 +331,7 @@ protected:
     // as for superkmers: they do not take into account the minimizer size.
     uint64_t m_suff_size;
     uint64_t m_pref_size;
-    
+
     bool m_current_orientation;
 
     Skmer<kuint>::pair m_fwd_suffix_buff;
@@ -350,12 +350,12 @@ protected:
     std::vector<kpair > prefix_suffix_mask;
     std::vector<kpair > kmer_masks;
     std::vector<kpair > nucleotide_masks;
- 
+
     // // The amount of bit shifts needed to reach the 4 most significant bits of a kuint
     // static constexpr uint64_t uints_middle_shift {sizeof(kuint) * 8 - 4};
 
 public:
-    SkmerManipulator(const uint64_t k, const uint64_t m) 
+    SkmerManipulator(const uint64_t k, const uint64_t m)
         : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
         , max_pair_value(static_cast<kuint>(~static_cast<kuint>(0)), static_cast<kuint>(~static_cast<kuint>(0)))
@@ -524,7 +524,7 @@ public:
             m_current_orientation = reverse_c;
             return m_rev;
         }
-        else 
+        else
         {
             m_current_orientation = forward_c;
             return m_fwd;
@@ -580,7 +580,7 @@ public:
         uint64_t const mask_size {std::max(first_missing_nucl, second_missing_nucl)};
 
         // 2 - Compare masked kmers
-        // check if first skmer shifted right of mask is < second skmer shifted right of mask 
+        // check if first skmer shifted right of mask is < second skmer shifted right of mask
         const auto first_kmer {first_skmer.m_pair >> (2 * mask_size)};
         const auto second_kmer {second_skmer.m_pair >> (2 * mask_size)};
 
@@ -588,7 +588,7 @@ public:
             std::cout << "KPAIR DIFFERENT: " << first_kmer << std::endl << "KPAIR DIFFERENT: " << second_kmer << std::endl;
             return first_kmer < second_kmer;
         }
-        
+
         // 4 - If equals => true if second skmer is the first one to miss a nucleotide (left based)
         else if (first_missing_nucl != second_missing_nucl){
             std::cout << "first_missing_nucl: " << first_missing_nucl << "; second_missing_nucl: " << second_missing_nucl << std::endl;
@@ -642,7 +642,7 @@ public:
      * @param kmer_pos Position of the start of the kmer
      * @return true if the skmer has a valid kmer at the given position, false otherwise
      **/
-    bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const { 
+    bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const {
         assert(kmer_pos <= this->k - this->m);
         if ((skmer.m_pref_size >= m_pref_size - kmer_pos) && (skmer.m_suff_size >= k - m_pref_size + kmer_pos)){
             return true;
@@ -669,7 +669,7 @@ public:
 
         // Prefix size: how many nucleotides are in the first half of the skmer
         uint16_t prefix_size = m_pref_size - kmer_pos;
-        
+
         // Suffix size: how many nucleotides nucleotides are in the second half of the skmer
         uint16_t suffix_size = (this->k - prefix_size);
 
@@ -677,7 +677,7 @@ public:
         kpair kmer = extract_kmer(given_skmer, kmer_pos); // extracting the kpair from the kmer
 
         kpair mmask = this->m_mask;
-        
+
         // std::cerr << "K: " << this->k << std::endl;
         // std::cerr << "M: " << this->m << std::endl;
         // std::cerr << "GIVEN KMER: " << given_skmer << std::endl;
@@ -691,7 +691,7 @@ public:
         kmer |= (~kmer_masks[kmer_pos] & mmask); // setting to 1s the positions not used in the skmer
         // std::cerr << "OUT_SKMER: " << kmer << std::endl;
         Skmer<kuint> new_sorted_skmer(kmer, prefix_size, suffix_size);
-    
+
         return new_sorted_skmer;
     }
 
@@ -725,7 +725,7 @@ public:
         }
 
         std::vector<kpair > masks(k - m + 2);
-        
+
         for (int64_t position {static_cast<int64_t>(k - m + 1)}; position >= 0; position -= 1){
             //filling the array
             masks[position] = m_fwd.m_pair;
@@ -748,7 +748,7 @@ public:
         }
 
         std::vector<kpair > masks(k - m + 1);
-        
+
         for (int64_t position {static_cast<int64_t>(k - m)}; position >= 0; position -= 1){
             //filling the array
             masks[position] = m_fwd.m_pair;
@@ -768,9 +768,9 @@ public:
         const kuint discard_nucl = 0b00U;
 
         add_nucleotide(keep_nucl);
-        
+
         std::vector<kpair > masks(2 * k - m);
-        
+
         for (int64_t position {static_cast<int64_t>(2 * k - m - 1)}; position >= 0; position -= 1){
             //filling the array
             masks[position] = m_fwd.m_pair;
@@ -781,13 +781,13 @@ public:
         // return the vector
         return masks;
     }
-    
+
     /** Returns the (k-1)-mer (prefix/suffix) starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param start_pos Position of the start of the kmer
      * @return the k_pair associated to the k-1 mer
      **/
-    kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos) { 
+    kpair extract_prefix_suffix(const Skmer<kuint>& skmer, const uint64_t start_pos) {
         return skmer.m_pair & prefix_suffix_mask[start_pos];
     }
 
@@ -796,7 +796,7 @@ public:
      * @param start_pos Position of the start of the kmer
      * @return the k_pair associated to the k-1 mer
      **/
-    kpair extract_kmer(const Skmer<kuint>& skmer, const uint64_t start_pos) { 
+    kpair extract_kmer(const Skmer<kuint>& skmer, const uint64_t start_pos) {
         assert(start_pos <= this->k - this->m);
         return skmer.m_pair & kmer_masks[start_pos];
     }
@@ -827,10 +827,10 @@ template<typename T>
 std::ostream& operator<<(std::ostream& os, SkmerManipulator<T>& manip)
 {
     static const char nucleotides[] = {'A', 'C', 'T', 'G'};
-    
+
     // cout << manip.m_fwd_suffix_buff << endl;
     // cout << manip.m_fwd_prefix_buff << endl;
-    
+
     os << "[not interleaved: ";
 
     // Forward prefix

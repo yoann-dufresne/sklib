@@ -2,7 +2,7 @@
 #include <unordered_map>
 #include <cassert>
 #include <algorithm>
-
+#include <stdint.h>
 
 #ifndef COLINEARCHAINING_H
 #define COLINEARCHAINING_H

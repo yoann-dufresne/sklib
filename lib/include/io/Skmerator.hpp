@@ -27,7 +27,7 @@ class SeqSkmerator
 {
 protected:
     std::string empty_str{};
-    
+
     SkmerManipulator<kuint>& m_manip;
     std::string& m_seq;
     Skmer<kuint> m_yielded_skmer;
@@ -38,7 +38,7 @@ public:
         : m_manip(skmer_manipulator), m_seq(sequence)
     {};
 
-    SeqSkmerator(SkmerManipulator<kuint>& skmer_manipulator) 
+    SeqSkmerator(SkmerManipulator<kuint>& skmer_manipulator)
         : SeqSkmerator(skmer_manipulator, empty_str)
     {};
 
@@ -120,7 +120,7 @@ public:
             m_remaining_nucleotides = other.m_remaining_nucleotides;
             m_consumed = other.m_consumed;
             m_current_minimizer = other.m_current_minimizer;
-            
+
             m_buffer_size = other.m_buffer_size;
             m_skmer_buffer_array = std::vector(other.m_skmer_buffer_array);
 
@@ -194,17 +194,17 @@ public:
             {
                 // -- Save the skmer to eventually yield
                 m_rator.m_yielded_skmer = m_skmer_buffer_array[(m_ptr_current + 1) % m_buffer_size];
-                
+
                 // -- On out of context minimizer
                 if (m_ptr_current - m_ptr_min >= k - m)
                 {
                     this->solve_out_of_context();
                 }
-                
+
                 // Get the next candidate skmer
                 Skmer<kuint>& candidate {compute_new_candidate_skmer()};
                 auto const candidate_orient {m_skmer_orientation[m_ptr_current % m_buffer_size]};
-                
+
                 // Get the minimizer
                 const kuint candidate_minimizer {m_manip.minimizer(candidate)};
 
@@ -245,7 +245,7 @@ public:
             }
 
             // this->debug_print_buffer();
-            
+
             m_ptr_last_round = m_ptr_current;
             // Recursive call to return the already computed skmer array
             return this->operator++();
@@ -280,7 +280,7 @@ public:
                 update_skmer_right_size(predecessor, pred_orient, std::min(right_size
                                                   , static_cast<uint16_t>(k - m - idx - 1)));
             }
-            
+
             // 4 - save the new current minimal skmer and minimizer
             m_ptr_min = m_ptr_current;
             m_current_minimizer = minimizer;
@@ -298,13 +298,13 @@ public:
 
             const kuint nucl {
                     m_remaining_nucleotides >= 0 ?(static_cast<kuint>((m_seq[m_ptr_current] >> 1) & 0b11U)) : static_cast<kuint>(0b11U)};
-            
+
             m_skmer_buffer_array[ m_ptr_current % m_buffer_size ] = (m_remaining_nucleotides >= 0) ? m_manip.add_nucleotide(nucl) : m_manip.add_empty_nucleotide();
             m_skmer_orientation[ m_ptr_current % m_buffer_size ] = m_manip.is_forward();
 
             Skmer<kuint> & skmer = m_skmer_buffer_array[ m_ptr_current % m_buffer_size ];
             orientation_t const orient = m_skmer_orientation[ m_ptr_current % m_buffer_size ];
-            
+
             // Sequence left extremity limitation
             if (m_seq.length() - m_remaining_nucleotides >= 2 * k - m)
                 update_skmer_left_size(skmer, orient, k-m);
@@ -340,7 +340,7 @@ public:
 
             // 1 - Scan all the kmer shared between the 2 skmers to decide where is the limit between the 2 skmers
             for (uint64_t i{start} ; i<=stop ; i++)
-            {  
+            {
                 uint64_t const prev_skmer_km_pos {prev_orient == forward_c ? i : k - m - i};
                 uint64_t const curr_skmer_km_pos {curr_orient == forward_c
                                                         ? i - pos_diff
@@ -365,7 +365,7 @@ public:
             // Close the previous skmer
             update_skmer_right_size(prev_skmer, prev_orient, first_index_in_new_skmer - 1);
             update_skmer_left_size(current_skmer, curr_orient, k-m+pos_diff-first_index_in_new_skmer);
-        
+
             m_ptr_min = ptr_equivalent;
         }
 
@@ -382,7 +382,7 @@ public:
             m_ptr_min = buff_start;
             uint64_t first_equal_mini {m_ptr_min};
             uint64_t last_equal_mini {m_ptr_min};
-            
+
             // 1 - Compute the minimizer in the window
             for (uint64_t idx{buff_start+1} ; idx<=buff_stop ; idx++)
             {
@@ -404,7 +404,7 @@ public:
             for (uint64_t idx{buff_start} ; idx<=buff_stop ; idx++)
             {
                 Skmer<kuint>& candidate = m_skmer_buffer_array[idx % m_buffer_size];
-                
+
                 // Before the last equivalent minimizer we can detroy the candidate skmers with larger minimizers
                 if (idx < first_equal_mini)
                 {
@@ -532,7 +532,7 @@ public:
         klibpp::KSeq m_record;
         // skmer sequence enumerator
         SeqSkmerator<kuint> m_seq_rator;
-        SeqSkmerator<kuint>::Iterator m_skmer_iterator;
+        typename SeqSkmerator<kuint>::Iterator m_skmer_iterator;
 
     protected:
         // Construct an iterator without control on the file stream
@@ -588,7 +588,7 @@ public:
         Iterator& operator++()
         {
             m_skmer_iterator.operator++();
-            
+
             // File already consumed
             if (m_ptr == nullptr)
                 return *this;
@@ -597,7 +597,7 @@ public:
             if (m_skmer_iterator.consumed())
             {
                 this->init_record();
-                
+
                 // reached the end of the file while looking for the next sequence
                 if (m_ptr == nullptr)
                     return *this;
@@ -606,14 +606,13 @@ public:
             return *this;
         }
 
-
         bool operator==(const Iterator& it) const
         {
             return m_rator.m_filename == it.m_rator.m_filename and m_ptr == it.m_ptr;
         }
 
     };
-    
+
 
     Iterator begin() { return Iterator(*this); }
     Iterator end() { return Iterator(*this, nullptr); }
@@ -621,4 +620,4 @@ public:
 
 
 }
-#endif 
+#endif
