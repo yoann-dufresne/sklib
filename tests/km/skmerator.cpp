@@ -14,7 +14,7 @@ TEST(Skmerator, update_equal_mini_fwd_fwd)
 {
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
-    
+
     const uint64_t k{5};
     const uint64_t m{2};
 
@@ -22,10 +22,10 @@ TEST(Skmerator, update_equal_mini_fwd_fwd)
     std::string seq{"CCCCCC"};
     km::SeqSkmerator<kuint> skmerator {manip, seq};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
-    
 
-    //                         Prefix:         C   C   _   _             C   C   _   _   
-    //                         Suffix:       C   C   C   _             C   C   C   _     
+
+    //                         Prefix:         C   C   _   _             C   C   _   _
+    //                         Suffix:       C   C   C   _             C   C   C   _
     const kuint expected_values[][2] { {0, 0b0101010101111111U}, {0, 0b0101010101111111U} };
     const uint64_t expected_prefixes[2] {1, 1};
     const uint64_t expected_suffixes[2] {2, 2};
@@ -40,7 +40,7 @@ TEST(Skmerator, update_equal_mini_fwd_fwd)
         ASSERT_EQ(expected_pair, skmer.m_pair);
         ASSERT_EQ(expected_prefixes[nb_skmer], skmer.m_pref_size);
         ASSERT_EQ(expected_suffixes[nb_skmer], skmer.m_suff_size);
-        
+
         nb_skmer += 1;
     }
 
@@ -52,7 +52,7 @@ TEST(Skmerator, update_equal_mini_rev_rev)
 {
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
-    
+
     const uint64_t k{5};
     const uint64_t m{2};
 
@@ -60,10 +60,10 @@ TEST(Skmerator, update_equal_mini_rev_rev)
     std::string seq{"GGGGGG"};
     km::SeqSkmerator<kuint> skmerator {manip, seq};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
-    
 
-    //                         Prefix:         C   C   _   _             C   C   _   _   
-    //                         Suffix:       C   C   C   _             C   C   C   _     
+
+    //                         Prefix:         C   C   _   _             C   C   _   _
+    //                         Suffix:       C   C   C   _             C   C   C   _
     const kuint expected_values[][2] { {0, 0b0101010101111111U}, {0, 0b0101010101111111U} };
     const uint64_t expected_prefixes[2] {1, 1};
     const uint64_t expected_suffixes[2] {2, 2};
@@ -78,20 +78,18 @@ TEST(Skmerator, update_equal_mini_rev_rev)
         ASSERT_EQ(expected_pair, skmer.m_pair);
         ASSERT_EQ(expected_prefixes[nb_skmer], skmer.m_pref_size);
         ASSERT_EQ(expected_suffixes[nb_skmer], skmer.m_suff_size);
-        
+
         nb_skmer += 1;
     }
 
     EXPECT_EQ(nb_skmer, 2);
 }
 
-
-
 TEST(Skmerator, decreasing_minimizer)
 {
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
-    
+
     const uint64_t k{5};
     const uint64_t m{2};
 
@@ -99,9 +97,9 @@ TEST(Skmerator, decreasing_minimizer)
     std::string seq{"CCCCAAAAA"};
     km::SeqSkmerator<kuint> skmerator {manip, seq};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
-    
 
-    //                         Prefix:         C   C   C   C             A   C   C   C             A   A   C   _  
+
+    //                         Prefix:         C   C   C   C             A   C   C   C             A   A   C   _
     //                         Suffix:       A   _   _   _             A    A   _   _             A   A   A   _
     const kuint expected_values[][2] { {0, 0b0001110111011101U}, {0, 0b0000000111011101U}, {0, 0b0000000000011111U}
     };
@@ -115,7 +113,7 @@ TEST(Skmerator, decreasing_minimizer)
         //                            Less significant             Most significant
         const kpair expected_pair{expected_values[nb_skmer][1], expected_values[nb_skmer][0]};
         ASSERT_EQ(expected_pair, skmer.m_pair);
-        
+
         nb_skmer += 1;
     }
     EXPECT_EQ(nb_skmer, 3);
@@ -126,7 +124,7 @@ TEST(Skmerator, increasing_minimizer)
 {
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
-    
+
     const uint64_t k{5};
     const uint64_t m{2};
 
@@ -134,10 +132,10 @@ TEST(Skmerator, increasing_minimizer)
     std::string seq{"AACCCC"};
     km::SeqSkmerator<kuint> skmerator {manip, seq};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
-    
 
-    //                         Prefix:         A   _   _   _             A   _   _   _   
-    //                         Suffix:       A   C   C   C             C   C   C   C     
+
+    //                         Prefix:         A   _   _   _             A   _   _   _
+    //                         Suffix:       A   C   C   C             C   C   C   C
     const kuint expected_values[][2] { {0, 0b0000011101110111U}, {0, 0b0100011101110111U}
     };
 
@@ -152,7 +150,7 @@ TEST(Skmerator, increasing_minimizer)
         //                            Less significant             Most significant
         const kpair expected_pair{expected_values[nb_skmer][1], expected_values[nb_skmer][0]};
         ASSERT_EQ(expected_pair, skmer.m_pair);
-        
+
         nb_skmer += 1;
     }
 
@@ -164,7 +162,7 @@ TEST(Skmerator, outofcontext_minimizer)
 {
     using kuint = uint16_t;
     using kpair = km::Skmer<kuint>::pair;
-    
+
     const uint64_t k{8};
     const uint64_t m{2};
 
@@ -173,9 +171,9 @@ TEST(Skmerator, outofcontext_minimizer)
     // cout << seq << endl;
     km::SeqSkmerator<kuint> skmerator {manip, seq};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
-    
 
-    //                         Prefix:      A   _   _        _   _   _   _          A   C   A       _   _   _   _   
+
+    //                         Prefix:      A   _   _        _   _   _   _          A   C   A       _   _   _   _
     //                         Suffix:    A   C   A        A   T   A   A          A   T   A       A   G   G   G
     const kuint expected_values[][2] { {0b000001110011U, 0b0011101100110011U}, {0b000010010000U, 0b0011111111111111U}
         // Prefix:     A   T   A        _   _   _   _          C   C   C       _   _   _   _
@@ -194,7 +192,7 @@ TEST(Skmerator, outofcontext_minimizer)
         //                            Less significant             Most significant
         const kpair expected_pair{expected_values[nb_skmer][1], expected_values[nb_skmer][0]};
         ASSERT_EQ(expected_pair, skmer.m_pair);
-        
+
         nb_skmer += 1;
     }
 
@@ -205,7 +203,7 @@ TEST(Skmerator, outofcontext_minimizer)
 TEST(Skmerator, file_vs_seq)
 {
     using kuint = uint16_t;
-    
+
     const uint64_t k{5};
     const uint64_t m{2};
     km::SkmerPrettyPrinter<kuint> pp {k, m};
@@ -230,7 +228,7 @@ TEST(Skmerator, file_vs_seq)
     std::vector<km::Skmer<kuint> > file_skmers {};
     for (km::Skmer<kuint> skmer : file_skmerator)
         file_skmers.push_back(skmer);
-    
+
     // Comparison of size
     if (seq_skmers.size() != file_skmers.size())
     {

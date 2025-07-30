@@ -5,6 +5,7 @@
 #include <forward_list>
 #include <execution>
 #include <future>
+#include <chrono>
 
 
 #include <algorithms/ColinearChaining.hpp>
@@ -121,12 +122,15 @@ inline uint64_t get_new_priority_value(
 
 void print_query_results(const std::vector<std::vector<uint8_t>> & result_vector, std::ostream & os = std::cout){
     std::cerr << "PRINTING RESULT" << std::endl;
-    if(result_vector.size() == 0) return;
+    if(result_vector.size() == 0){
+        std::cout << "EMPTY RESULT VECTOR!" << std::endl;
+        return;
+    }
     for (const std::vector<uint8_t> & skmer_result: result_vector){
         if (skmer_result.size() == 0) continue;
-        os << skmer_result[0];
+        os << (bool)skmer_result[0];
         for (size_t i {1}; i < skmer_result.size(); i++){
-            os << "," << skmer_result[i];
+            os << "," << (bool)skmer_result[i];
         }
         os << std::endl;
     }
@@ -281,7 +285,7 @@ class SortedVirtualSkmerList {
         pp << query;
         std::cerr << pp << " ";
         std::cerr << "skmer properties[ PREFIX:" << query.m_pref_size << "; SUFFIX: " << query.m_suff_size << "; PAIR: " << query.m_pair << std::endl;
-        std::cerr << "query_start_position: " << query_start_position << "query_end_position: " << query_end_position << std::endl;
+        std::cerr << "query_start_position: " << query_start_position << "; query_end_position: " << query_end_position << std::endl;
 
         if(query_end_position < query_start_position) {
             std::cerr << "RETURNING EMPTY" << std::endl;
@@ -328,8 +332,8 @@ class SortedVirtualSkmerList {
             const int64_t old_mean {mean};
             mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
             if (mean == old_mean){
-              if (old_mean > binary_search_boundaries[current_priority_offset].first) mean++;
-              else if (old_mean < binary_search_boundaries[current_priority_offset].second) mean--;
+              if (old_mean > binary_search_boundaries[current_priority_offset].first) mean--;
+              else if (old_mean < binary_search_boundaries[current_priority_offset].second) mean++;
               else {
                 km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
                 num_kmers_to_search--;
@@ -341,8 +345,15 @@ class SortedVirtualSkmerList {
             searchable_position_count = km::sortedlist::util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
 
             auto [queried_start_position, queried_end_position] = m_manip.get_valid_kmer_bounds(m_skmer_list[mean]);
-            std::cout << "ITERATING OVER " << searchable_position_count << " POSITIONS TO SEARCH [mean: " << mean << "]" << std::endl;
+            std::cout << "searchable_position_count: " << searchable_position_count << "; num_kmers_to_search: " << num_kmers_to_search << std::endl;
+            std::cout << "mean: " << mean << "; old_mean: " << old_mean << std::endl;
+            std::cout << "current_priority_offset: " << current_priority_offset << std::endl;
             std::cout << "QUERIED KMER START POSITION: " << queried_start_position << "; QUERIED KMER END POSITION: " << queried_end_position << std::endl;
+            for(size_t i {0}; i < tot_num_kmers_to_search; i++){
+                std::cout << "[" << binary_search_boundaries[i].first << "," << binary_search_boundaries[i].second << "] - ";
+            }
+            std::cout << std::endl;
+
             for(uint64_t i {0}; i < searchable_position_count; i++){
                 const uint64_t offset {positions_to_search[i]};
                 current_searched_position_in_skmer = query_start_position + offset;
@@ -381,10 +392,14 @@ class SortedVirtualSkmerList {
     }
 
     std::vector<std::vector<uint8_t>> query_skmer_batch(std::vector<Skmer<kuint>> query_skmers) const{
-        std::vector<std::vector<uint8_t>> result(query_skmers.size());
-
+        const size_t size_query {query_skmers.size()};
+        std::vector<std::vector<uint8_t>> result(size_query);
+        auto start = std::chrono::high_resolution_clock::now();
         std::transform(std::execution::par, query_skmers.begin(), query_skmers.end(), result.begin(), [this](const Skmer<kuint>&  queried_skmer){ return this->query_skmer(queried_skmer); });
-
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+        auto duration_s = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+        std::cerr << "[BATCHED QUERIES]:: Processed " << size_query << " elements in " << duration_s << " (" <<  duration_ns/size_query << " per element)" << std::endl;
         return result;
     }
 

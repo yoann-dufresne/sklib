@@ -585,19 +585,19 @@ public:
         const auto second_kmer {second_skmer.m_pair >> (2 * mask_size)};
 
         if (first_kmer != second_kmer){
-            std::cout << "KPAIR DIFFERENT: " << first_kmer << std::endl << "KPAIR DIFFERENT: " << second_kmer << std::endl;
+            // std::cout << "KPAIR DIFFERENT: " << first_kmer << std::endl << "KPAIR DIFFERENT: " << second_kmer << std::endl;
             return first_kmer < second_kmer;
         }
 
         // 4 - If equals => true if second skmer is the first one to miss a nucleotide (left based)
         else if (first_missing_nucl != second_missing_nucl){
-            std::cout << "first_missing_nucl: " << first_missing_nucl << "; second_missing_nucl: " << second_missing_nucl << std::endl;
+            // std::cout << "first_missing_nucl: " << first_missing_nucl << "; second_missing_nucl: " << second_missing_nucl << std::endl;
             return first_missing_nucl < second_missing_nucl;
         }
 
         // 5 - If have the same position, I must compare them on all their nucleotides
         else{
-            std::cout << "same kpair, same position. " << std::endl;
+            // std::cout << "same kpair, same position. " << std::endl;
             return kmer_compare(first_skmer, second_skmer, first_kmer_pos) < 0;
         }
     }
@@ -644,15 +644,15 @@ public:
      **/
     bool inline has_valid_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const {
         assert(kmer_pos <= this->k - this->m);
-        if ((skmer.m_pref_size >= m_pref_size - kmer_pos) && (skmer.m_suff_size >= k - m_pref_size + kmer_pos)){
+        if ((this->m_pref_size - (this->m + 1)/2 - kmer_pos <= skmer.m_pref_size) && (skmer.m_suff_size >= kmer_pos)){
             return true;
         }
         else return false;
     }
 
     std::pair<uint64_t, uint64_t> get_valid_kmer_bounds(const Skmer<kuint>& skmer) const {
-        uint64_t start_pos {this->m_pref_size - skmer.m_pref_size};
-        uint64_t end_pos {this->k - this->m - this->m_suff_size + skmer.m_suff_size};
+        const uint64_t start_pos {this->m_pref_size - skmer.m_pref_size - (this->m + 1) / 2};
+        const uint64_t end_pos {skmer.m_suff_size}; //this->k - this->m - this->m_suff_size +
         return {start_pos, end_pos};
 
     }
@@ -668,10 +668,10 @@ public:
         // uint64_t const half_size = (2 * this->k - this->m + 1) / 2;
 
         // Prefix size: how many nucleotides are in the first half of the skmer
-        uint16_t prefix_size = m_pref_size - kmer_pos;
+        const uint16_t prefix_size = this->m_pref_size - (this->m + 1)/2 - kmer_pos;
 
         // Suffix size: how many nucleotides nucleotides are in the second half of the skmer
-        uint16_t suffix_size = (this->k - prefix_size);
+        const uint16_t suffix_size = kmer_pos;//(this->k - prefix_size);
 
         // getting the kmer and generating the skmer
         kpair kmer = extract_kmer(given_skmer, kmer_pos); // extracting the kpair from the kmer
@@ -762,7 +762,6 @@ public:
 
     std::vector<kpair > generate_masks_nucleotide()
     {
-        // m_fwd.m_pair = kpair(0,0);
         // generate first empty SKmer
         const kuint keep_nucl = 0b11U;
         const kuint discard_nucl = 0b00U;
