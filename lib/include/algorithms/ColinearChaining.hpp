@@ -2,6 +2,7 @@
 #include <unordered_map>
 #include <cassert>
 #include <algorithm>
+#include <cstdint>
 
 
 #ifndef COLINEARCHAINING_H
@@ -47,6 +48,14 @@ private:
     uint64_t m_depth;
 
     std::unordered_map<overlap, uint64_t> m_indexes;
+
+    /** Get the index of the first leaf node inside of the vector representing the tree.
+     * @return the index of the first leaf node
+     **/
+    uint64_t first_leaf_index() const {
+        // There is the number of leaves - 1 internal nodes, so the first leaf is at index m_num_leaves - 1
+        return m_num_leaves - 1;
+    }
 
 public:
 
@@ -97,6 +106,12 @@ public:
         using pointer = const RMQnode*;
         using reference = const RMQnode&;
 
+        /** Constructor of the MaxValueIterator
+         * 
+         * @param tree The RMQtree to iterate on
+         * @param score The score to consider for the enumeration
+         * @param right_boundary Last right value from the leaves to consider
+         **/
         MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary);
         MaxValueIterator(MaxValueIterator const& other);
 
@@ -121,13 +136,20 @@ public:
         void next_valid_max();
     };
 
+    /** Get the first iterator for the enumeration of max compatible overlaps
+     * 
+     * @param score The score to consider for the enumeration
+     * @param right_boundary First element of the leaves to exclude from the enumeration
+     * @return An iterator to the first max compatible overlap
+     **/
     MaxValueIterator begin(uint64_t score, uint64_t right_boundary) const {
-        // std::cout << "begin()" << std::endl;
+        
+        // return RMQtree::MaxValueIterator(*this, score, idx);
         return RMQtree::MaxValueIterator(*this, score, right_boundary);
     }
     MaxValueIterator end() const {
         // std::cout << "end()" << std::endl;
-        return RMQtree::MaxValueIterator(*this, 0, this->m_num_leaves);
+        return RMQtree::MaxValueIterator(*this, 0, UINT64_MAX);
     }
 
     /** Get the nodes of the tree. Function mostly used for testing.

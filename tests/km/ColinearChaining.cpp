@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <utility>
 #include <iostream>
+#include <cstdint>
 
 #include <algorithms/ColinearChaining.hpp>
 
@@ -174,9 +175,9 @@ TEST(ColinearChaining, parallel_overlap2)
     vector<overlap> expected {overlap(0, 0), overlap(3, 3)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
-        for(const overlap& el: chaining ){
-        std::cout << "(" << el.first << "," << el.second << ")" << std::endl;
-    }
+    // for(const overlap& el: chaining ){
+    //     std::cout << "(" << el.first << "," << el.second << ")" << std::endl;
+    // }
 
     ASSERT_EQ(chaining.size(), 2);
 
@@ -190,9 +191,9 @@ TEST(ColinearChaining, parallel_overlap3)
     vector<overlap> expected {overlap(1, 1), overlap(3, 3)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
-    for(const overlap& el: chaining ){
-        std::cout << "(" << el.first << "," << el.second << ")" << std::endl;
-    }
+    // for(const overlap& el: chaining ){
+    //     std::cout << "(" << el.first << "," << el.second << ")" << std::endl;
+    // }
     ASSERT_EQ(chaining.size(), 2);
 
     ASSERT_EQ(chaining[0], expected[0]);
@@ -231,9 +232,10 @@ TEST(ColinearChaining, parallel_overlap6)
     vector<overlap> expected {overlap(1, 1), overlap(3, 3), overlap(4, 4), overlap(5, 5)};
     
     auto chaining = colinear_chaining(overlaps.begin(), overlaps.end());
-    for(const overlap& el: chaining ){
-        std::cout << "(" << el.first << "," << el.second << ")" << std::endl;
-    }
+    // for(const overlap& el: chaining ){
+    //     std::cout << "(" << el.first << "," << el.second << ")" << " -> ";
+    // }
+    // std::cout << std::endl;
 
     ASSERT_EQ(chaining.size(), 4);
 
