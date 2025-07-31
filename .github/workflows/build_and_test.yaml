@@ -23,13 +23,13 @@ jobs:
         if: matrix.arch == 'arm64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++-aarch64-linux-gnu gcc-aarch64-linux-gnu qemu-user  libtbb-dev
+          sudo apt-get install -y cmake g++-aarch64-linux-gnu gcc-aarch64-linux-gnu qemu-user  libtbb-dev libbz2-dev
 
       - name: Setup environment x86_64 (intel and amd)
         if: matrix.arch == 'amd64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libtbb-dev
+          sudo apt-get install -y cmake g++ libtbb-dev libbz2-dev
 
       - name: Install Google Test x86_64
         if: matrix.arch == 'amd64'
