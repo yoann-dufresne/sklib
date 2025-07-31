@@ -19,8 +19,8 @@ set(CMAKE_CXX_STANDARD 20)
 add_library(build_type_flags INTERFACE)
 target_compile_options(build_type_flags INTERFACE
   $<$<CONFIG:Debug>:-O -g>
-  $<$<CONFIG:Release>:-O3 -DNDEBUG>
-  $<$<CONFIG:Profile>:-O3 -ggdb3 -DNDEBUG -fno-inline>
+  $<$<CONFIG:Release>:-O3 -ltbb -DNDEBUG>
+  $<$<CONFIG:Profile>:-O3 -ggdb3 -ltbb -DNDEBUG -fno-inline>
   $<$<CONFIG:Coverage>:-O0 -g --coverage>
   $<IF:$<BOOL:${PORTABLE_BUILD}>,-march=x86-64,-march=native>
 )
