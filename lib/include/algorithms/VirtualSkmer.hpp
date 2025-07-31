@@ -217,36 +217,36 @@ class SortedVirtualSkmerList {
         vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
             vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
-            // std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
+            std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
-            // std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
+            std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
-            // std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
+            std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
 
-            // std::cout << "LEFT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.left()){
-            //     std::cout << "L: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
-            // std::cout << "RIGHT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.right()){
-            //     std::cout << "R: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
+            std::cout << "LEFT COLUMN:" << std::endl;
+            for (const uint64_t el: window.left()){
+                std::cout << "L: " << el << ";\t";
+            }
+            std::cout << std::endl;
+            std::cout << "RIGHT COLUMN:" << std::endl;
+            for (const uint64_t el: window.right()){
+                std::cout << "R: " << el << ";\t";
+            }
+            std::cout << std::endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            // std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
+            std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
 
             // 3 - get valid overlaps using colinear chaining
-            // std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
-            // for (auto overlap: candidate_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
-            // }
+            std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
+            for (auto overlap: candidate_overlaps){
+                std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
+            }
 
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
@@ -254,13 +254,24 @@ class SortedVirtualSkmerList {
             }
             else { valid_overlaps = candidate_overlaps;}
 
-            // std::cout << "VALID OVERLAPS: {";
-            // for (auto overlap: valid_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            // }
-            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+            std::cout << "OUT OF COLINEAR CHAINING: {";
+            for (auto overlap: valid_overlaps){
+                std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            }
+            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+            // 3 - 1/2 Return to skmer id from position
+            for(size_t i {0}; i < valid_overlaps.size(); i++){
+                valid_overlaps[i].first = window.left()[valid_overlaps[i].first];
+                valid_overlaps[i].second = window.right()[valid_overlaps[i].second];
+            }
+            std::cout << "TRASFORMED INTO: {";
+            for (auto overlap: valid_overlaps){
+                std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            }
+            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+
             // 4 - reconcile kmers by merging columns
-            // std::cout << "merge_LList_column" << std::endl;
+            std::cout << "merge_LList_column" << std::endl;
             merge_LList_column(skmer_enumeration, vskmer_list, window.right(), valid_overlaps, right_column_position);
 
             // go to next iteration
@@ -584,25 +595,29 @@ class SortedVirtualSkmerList {
         std::vector<std::pair<uint64_t,uint64_t> > candidate_overlaps;
         typename std::unordered_map< kpair, std::vector<uint64_t>, kpairhash >::const_iterator matching_prefix;
         // First, there should be a function that extracts the k-1 prefix of the right column
+        uint64_t prefix_pos {0};
         for (auto& skmer_id : right_column) {
             // std::cout << "pref" << std::endl;
             assert(skmer_id < skmer_enumeration.size());
             assert(skmer_id >= 0);
             prefix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
-            prefixes[prefix].push_back(skmer_id);
+            prefixes[prefix].push_back(prefix_pos);
+            prefix_pos++;
         }
 
         // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
+        uint64_t suffix_pos {0};
         for (auto& skmer_id : left_column) {
             // std::cout << "suff" << std::endl;
             suffix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
 
-            matching_prefix = prefixes.find (suffix);
+            matching_prefix = prefixes.find(suffix);
             if (matching_prefix != prefixes.end()){
                 for (auto& pref_sk_id: matching_prefix->second){
-                    candidate_overlaps.emplace_back(skmer_id,pref_sk_id);
+                    candidate_overlaps.emplace_back(suffix_pos,pref_sk_id);
                 }
             }
+            suffix_pos++;
         }
         return candidate_overlaps;
     }
