@@ -1,0 +1,83 @@
+name: CI Linux
+
+on:
+  push:
+    branches: ["main","dev", "io"]
+  pull_request:
+    branches: ["main", "dev"]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment arm64
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake g++-aarch64-linux-gnu qemu-user
+
+      - name: Setup environment x86_64 (intel and amd)
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake g++
+
+      - name: Install Google Test
+        run: |
+          sudo apt-get install -y libgtest-dev
+          cd /usr/src/gtest
+          sudo cmake .
+          sudo make
+          sudo cp *.a /usr/local/lib
+
+      - name: Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache
+          key: ${{ runner.os }}-${{ matrix.arch }}-dependencies-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-dependencies-
+
+      - name: Build arm64
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_TOOLCHAIN_FILE=/usr/share/cmake-3.16/Modules/Platform/Linux-GNU-aarch64.cmake ..
+          make - j
+
+      - name: Build x86_64 (intel and arm)
+        run: |
+          mkdir -p build
+          cd build
+          cmake ..
+          make -j
+
+      - name: Cache Build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-${{ matrix.arch }}-build-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-build-
+
+      - name: Run GTest on arm64
+        if: matrix.arch == 'arm64'
+        run: |
+          cd build
+          qemu-aarch64 -L /usr/aarch64-linux-gnu ./tests/dbglib-tests
+
+      - name: Run GTest on x86_64 (intel and arm)
+        if: matrix.arch == 'amd64'
+        run: |
+          cd build
+          ./tests/dbglib-tests
+
