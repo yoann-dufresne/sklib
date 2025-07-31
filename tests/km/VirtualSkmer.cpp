@@ -517,7 +517,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0};
             std::vector<uint64_t> right_column_order{1};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 1)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -549,7 +549,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0};
             std::vector<uint64_t> right_column_order{1, 2};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 1), std::pair<uint64_t, uint64_t>(0, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 0), std::pair<uint64_t, uint64_t>(0, 1)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -581,7 +581,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 2), std::pair<uint64_t, uint64_t>(1, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 0), std::pair<uint64_t, uint64_t>(1, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -618,7 +618,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2, 3};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 2), std::pair<uint64_t, uint64_t>(1, 3)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 0), std::pair<uint64_t, uint64_t>(1, 1)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -655,7 +655,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2, 3};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 3), std::pair<uint64_t, uint64_t>(1, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 1), std::pair<uint64_t, uint64_t>(1, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -692,7 +692,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2, 3};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(1, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(1, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -726,7 +726,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2, 3};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 3), std::pair<uint64_t, uint64_t>(1, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 1), std::pair<uint64_t, uint64_t>(1, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -760,7 +760,7 @@ namespace km
             std::vector<uint64_t> left_column_order{0, 1};
             std::vector<uint64_t> right_column_order{2, 3};
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
-            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 3), std::pair<uint64_t, uint64_t>(1, 2)};
+            std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{std::pair<uint64_t, uint64_t>(0, 1), std::pair<uint64_t, uint64_t>(1, 0)};
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
@@ -1423,7 +1423,7 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers3)
         {0b000011010101U, 0},
     // P:    C   G   A
     // S:  A   C   _
-        {0b000101111101U, 0},
+        {0b000101111100U, 0},
     // P:    C   _   _
     // S:  A   T   A
         {0b000110110011U, 0},
