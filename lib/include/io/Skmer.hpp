@@ -681,12 +681,12 @@ public:
         // std::cerr << "K: " << this->k << std::endl;
         // std::cerr << "M: " << this->m << std::endl;
         // std::cerr << "GIVEN KMER: " << given_skmer << std::endl;
-        std::cerr << "[get_skmer_of_kmer] KMER POS: " << kmer_pos << std::endl;
+        // std::cerr << "[get_skmer_of_kmer] KMER POS: " << kmer_pos << std::endl;
         // std::cerr << "EXTRACTED KMER: " << kmer << std::endl;
         // std::cerr << " M_MASK: " << mmask << std::endl;
         // std::cerr << " ~KMER_MASK: " << ~kmer_masks[kmer_pos] << std::endl;
-        std::cerr << "[get_skmer_of_kmer] PREFIX SIZE: " << prefix_size << std::endl;
-        std::cerr << "[get_skmer_of_kmer] SUFFIX SIZE: " << suffix_size << std::endl;
+        // std::cerr << "[get_skmer_of_kmer] PREFIX SIZE: " << prefix_size << std::endl;
+        // std::cerr << "[get_skmer_of_kmer] SUFFIX SIZE: " << suffix_size << std::endl;
 
         kmer |= (~kmer_masks[kmer_pos] & mmask); // setting to 1s the positions not used in the skmer
         // std::cerr << "OUT_SKMER: " << kmer << std::endl;
@@ -864,6 +864,5 @@ std::ostream& operator<<(std::ostream& os, SkmerManipulator<T>& manip)
 }
 
 };
-
 
 #endif

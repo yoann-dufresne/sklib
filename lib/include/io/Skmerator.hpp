@@ -565,6 +565,7 @@ public:
 
                     m_seq_rator = SeqSkmerator<kuint>(m_rator.m_manip, m_record.seq);
                     m_skmer_iterator = m_seq_rator.begin();
+
                 }
                 else
                 {

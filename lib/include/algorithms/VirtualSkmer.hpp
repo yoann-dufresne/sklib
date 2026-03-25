@@ -217,36 +217,36 @@ class SortedVirtualSkmerList {
         vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
             vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
-            std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
+            // std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
-            std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
+            // std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
-            std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
+            // std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
 
-            std::cout << "LEFT COLUMN:" << std::endl;
-            for (const uint64_t el: window.left()){
-                std::cout << "L: " << el << ";\t";
-            }
-            std::cout << std::endl;
-            std::cout << "RIGHT COLUMN:" << std::endl;
-            for (const uint64_t el: window.right()){
-                std::cout << "R: " << el << ";\t";
-            }
-            std::cout << std::endl;
+            // std::cout << "LEFT COLUMN:" << std::endl;
+            // for (const uint64_t el: window.left()){
+            //     std::cout << "L: " << el << ";\t";
+            // }
+            // std::cout << std::endl;
+            // std::cout << "RIGHT COLUMN:" << std::endl;
+            // for (const uint64_t el: window.right()){
+            //     std::cout << "R: " << el << ";\t";
+            // }
+            // std::cout << std::endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
+            // std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
 
             // 3 - get valid overlaps using colinear chaining
-            std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
-            for (auto overlap: candidate_overlaps){
-                std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
-            }
+            // // std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
+            // for (auto overlap: candidate_overlaps){
+            //     std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
+            // }
 
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
@@ -254,25 +254,25 @@ class SortedVirtualSkmerList {
             }
             else { valid_overlaps = candidate_overlaps;}
 
-            std::cout << "OUT OF COLINEAR CHAINING: {";
-            for (auto overlap: valid_overlaps){
-                std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            }
-            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
-            // 3 - 1/2 Return to skmer id from position
-            for(size_t i {0}; i < valid_overlaps.size(); i++){
-                valid_overlaps[i].first = window.left()[valid_overlaps[i].first];
-                valid_overlaps[i].second = window.right()[valid_overlaps[i].second];
-            }
-            std::cout << "TRASFORMED INTO: {";
-            for (auto overlap: valid_overlaps){
-                std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            }
-            std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+            // // std::cout << "OUT OF COLINEAR CHAINING: {";
+            // for (auto overlap: valid_overlaps){
+            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            // }
+            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
+            // // 3 - 1/2 Return to skmer id from position
+            // for(size_t i {0}; i < valid_overlaps.size(); i++){
+            //     valid_overlaps[i].first = window.left()[valid_overlaps[i].first];
+            //     valid_overlaps[i].second = window.right()[valid_overlaps[i].second];
+            // }
+            // std::cout << "TRASFORMED INTO: {";
+            // for (auto overlap: valid_overlaps){
+            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
+            // }
+            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
 
             // 4 - reconcile kmers by merging columns
-            std::cout << "merge_LList_column" << std::endl;
-            merge_LList_column(skmer_enumeration, vskmer_list, window.right(), valid_overlaps, right_column_position);
+            // std::cout << "merge_LList_column" << std::endl;
+            merge_LList_column(skmer_enumeration, vskmer_list, window.left(), window.right(), valid_overlaps, right_column_position);
 
             // go to next iteration
             left_column_position = right_column_position;
@@ -314,7 +314,7 @@ class SortedVirtualSkmerList {
         uint64_t searchable_position_count {tot_num_kmers_to_search};
         uint64_t num_kmers_to_search {tot_num_kmers_to_search};
         uint64_t current_searched_position_in_skmer;
-        int64_t mean;
+        int64_t mean {0};
 
         // USING SMALL STACK ALLOCATED ARRAYS FOR FAST QUERY
         uint8_t result[km::sortedlist::util::MAX_POSSIBLE_KMERS] = {0};//'bool' to be returned
@@ -343,13 +343,15 @@ class SortedVirtualSkmerList {
             const int64_t old_mean {mean};
             mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
             if (mean == old_mean){
-              if (old_mean > binary_search_boundaries[current_priority_offset].first) mean--;
-              else if (old_mean < binary_search_boundaries[current_priority_offset].second) mean++;
-              else {
-                km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
-                num_kmers_to_search--;
-                continue;
-              }
+                int64_t new_pos = find_closest_valid_skmer(mean, binary_search_boundaries[current_priority_offset].first, binary_search_boundaries[current_priority_offset].second, query_start_position + current_priority_offset);
+                std::cout << "new_pos: " << new_pos << std::endl;
+                if (new_pos < 0){
+                    // there are no positions left, flag as not found and continue
+                    km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
+                    num_kmers_to_search--;
+                    continue;
+                }
+                mean = (uint64_t)new_pos;
             }
 
             // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
@@ -435,8 +437,8 @@ class SortedVirtualSkmerList {
         std::cerr << "END OF INITIALIZATION" << std::endl;
         while(it != file_skmerator.end())
         {
-          cur->push_back(*it);
           ++it;
+          cur->push_back(*it);
           //when 1000 skmers have been loaded, dispatch query_skmer_batch
           if (cur->size() == MAX_INGESTED_SKMER){
 
@@ -622,6 +624,16 @@ class SortedVirtualSkmerList {
         return candidate_overlaps;
     }
 
+    int64_t find_closest_valid_skmer(const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum, const uint64_t kmer_position_in_skmer) const{
+        for (uint64_t i {position_in_list}; i >= minimum; i--){
+            if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;
+        }
+        for (uint64_t i {position_in_list}; i <= maximum; i++){
+            if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;
+        }
+        return -1UL;
+    }
+
     // Take a pair of Virtual skmer columns (their position), the valid overlaps from the colinear chaining, the skmers in input. It outputs a linked-list of Virtual skmers
 
     /** Returns the linked list resulting in the merging of the 2 columns
@@ -634,6 +646,7 @@ class SortedVirtualSkmerList {
      **/
     void merge_LList_column(std::vector<Skmer<kuint>> const & skmer_enumeration,
                        std::vector<Virtual_skmer<kuint>>& list,
+                       std::vector<uint64_t> const & left_column,
                        std::vector<uint64_t> const & column,
                        std::vector<overlap> const & valid_overlaps,
                        uint64_t const column_pos)
@@ -651,8 +664,8 @@ class SortedVirtualSkmerList {
     while (list_idx < list.size() && col_idx < column.size() &&
            overlap_idx < valid_overlaps.size()) {
 
-        bool is_left = (list[list_idx].last_id == valid_overlaps[overlap_idx].first);
-        bool is_right = (column[col_idx] == valid_overlaps[overlap_idx].second);
+        bool is_left = (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
+        bool is_right = (column[col_idx] == column[valid_overlaps[overlap_idx].second] );
 
         if (is_left && is_right) {
             // CASE A: Both elements are in overlap - merge

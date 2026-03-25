@@ -252,3 +252,62 @@ TEST(Skmerator, file_vs_seq)
     for (uint64_t i{0} ; i<file_skmers.size() ; i++)
         ASSERT_TRUE(seq_manip.skmer_equals(seq_skmers[i], file_skmers[i]));
 }
+
+TEST(Skmerator, file_vs_seq1)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    // --- Sequence ---
+    std::string seq{"ATCGACTGTGTACACT"};
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    km::SeqSkmerator<kuint> seq_skmerator {seq_manip, seq};
+
+    // Enumerates the superkmers from the sequence
+    std::vector<km::Skmer<kuint> > seq_skmers {};
+    for (km::Skmer<kuint> skmer : seq_skmerator)
+        seq_skmers.push_back(skmer);
+
+    // std::string seq1 = "ACAACACTTACTAGGA";
+    // km::SeqSkmerator<kuint> seq_skmerator1 {seq_manip, seq1};
+    // for (km::Skmer<kuint> skmer : seq_skmerator1)
+    //     seq_skmers.push_back(skmer);
+
+
+    // --- File ---
+    std::string filename{"../tests/data/fasta00.fa"};
+    km::SkmerManipulator<kuint> file_manip {k, m};
+    km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers {};
+    for (km::Skmer<kuint> skmer : file_skmerator)
+        file_skmers.push_back(skmer);
+
+    // Comparison of size
+    if (seq_skmers.size() != file_skmers.size())
+    {
+        std::cerr << "from sequence" << std::endl;
+        for (const auto& skmer : seq_skmers)
+        {
+            pp << skmer;
+            std::cerr << pp << " ";
+        } std::cerr << std::endl;
+
+        std::cerr << "from file" << std::endl;
+        for (const auto& skmer : file_skmers)
+        {
+            pp << skmer;
+            std::cerr << pp << " ";
+        } std::cerr << std::endl;
+    }
+    ASSERT_EQ(seq_skmers.size(), file_skmers.size());
+
+    // Compare skmers one by one
+    for (uint64_t i{0} ; i<file_skmers.size() ; i++)
+        ASSERT_TRUE(seq_manip.skmer_equals(seq_skmers[i], file_skmers[i]));
+}
