@@ -166,7 +166,7 @@ public:
             // km::SkmerPrettyPrinter<kuint> pp {k, m};
 
             // End of the sequence => final yieldings
-            if (m_remaining_nucleotides + k - m == 0)
+            if (m_remaining_nucleotides + k - m <= 0)
             {
                 // Yield the stored but not returned skmers while sequence is already over
                 do
@@ -179,8 +179,12 @@ public:
                     if (skmer.m_pref_size + skmer.m_suff_size >= k - m)
                     {
                         m_rator.m_yielded_skmer = skmer;
-
                         m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
+
+                        // Avoid jumping around the final condition of the do-while
+                        if ((m_ptr_last_round % m_buffer_size) == (m_ptr_current % m_buffer_size))
+                            m_consumed = true;
+
                         return *this;
                     }
                 }
@@ -233,8 +237,6 @@ public:
                     return *this;
                 }
 
-                // this->debug_print_buffer();
-                // cout << endl;
             } // End of the while over the sequence
 
             // Update the last skmers that are not selected to remove their right part.
@@ -439,7 +441,7 @@ public:
 
 
         // Warning: This function suppose that we are comparing iterator over the same sequence.
-        bool operator==(Iterator& it) const
+        bool operator==(const Iterator& it) const
         {
             if (m_consumed and it.m_consumed)
                 return true;
@@ -553,7 +555,6 @@ public:
 
         void init_record()
         {
-            // cout << "init_record" << endl;
             do
             {
                 if ((*m_ptr) >> m_record)

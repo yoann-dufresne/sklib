@@ -1222,7 +1222,7 @@ TEST(SortedVirtualSkmerListTest, SortKmerSameColumn)
     ASSERT_EQ(m_output_list.size(), expected_skmer.size());
     for (size_t i{0}; i < skmer_enumeration.size(); i++)
     {
-        std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Checking skmer #" << i << std::endl;
         ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
         ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
@@ -1278,7 +1278,7 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers1)
     ASSERT_EQ(m_output_list.size(), expected_skmer.size());
     for (size_t i{0}; i < expected_skmer.size(); i++)
     {
-        std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Checking skmer #" << i << std::endl;
         ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
         ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
@@ -1332,8 +1332,8 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers2)
 
     for (size_t i{0}; i < expected_skmer.size(); i++)
     {
-        std::cout << "Checking skmer #" << i << std::endl;
-        std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        // std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
         ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
         ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
@@ -1406,8 +1406,8 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers3)
 
     for (size_t i{0}; i < expected_skmer.size(); i++)
     {
-        std::cout << "Checking skmer #" << i << std::endl;
-        std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        // std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
         ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
         ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
@@ -1460,8 +1460,8 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
 
     for (size_t i{0}; i < expected_skmer.size(); i++)
     {
-        std::cout << "Checking skmer #" << i << std::endl;
-        std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        // std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
         ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
         ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
         ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
@@ -1722,7 +1722,6 @@ TEST(QueryTest, QueryOutputWorking)
     list.add_list(skmer_enumeration);
 
     std::string filename{"../tests/data/seq2.fa"};
-    std::cerr << "QUERY----------------------------" << std::endl;
     list.query(filename);
 
 }
