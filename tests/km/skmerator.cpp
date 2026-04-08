@@ -100,7 +100,7 @@ TEST(Skmerator, decreasing_minimizer)
 
 
     //                         Prefix:         C   C   C   C             A   C   C   C             A   A   C   _
-    //                         Suffix:       A   _   _   _             A    A   _   _             A   A   A   _
+    //                         Suffix:       A   _   _   _             A   A   _   _             A   A   A   _
     const kuint expected_values[][2] { {0, 0b0001110111011101U}, {0, 0b0000000111011101U}, {0, 0b0000000000011111U}
     };
 
@@ -200,6 +200,38 @@ TEST(Skmerator, outofcontext_minimizer)
 }
 
 
+TEST(Skmerator, seq_test_5_2)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    // --- Sequence ---
+    std::string seq{"ATCGACTGTGTACACT"};
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    uint64_t const expected_skmers[] = {1,2,2,3,3,4,4,4,4,5,5,5};
+    
+    for (uint seq_size{k} ; seq_size<=seq.length() ; seq_size++) {
+        // cout << "seq_size: " << seq_size << " ---" << endl;
+        std::string sub{seq.substr(0, seq_size)};
+        // cout << sub << endl;
+        km::SeqSkmerator<kuint> seq_skmerator {seq_manip, sub};
+
+        // Enumerates the superkmers from the sequence
+        std::vector<km::Skmer<kuint> > seq_skmers {};
+        for (km::Skmer<kuint> const skmer : seq_skmerator) {
+            // pp << skmer;
+            // cout << pp << endl;
+            seq_skmers.emplace_back(skmer);
+        }
+
+        ASSERT_EQ(seq_skmers.size(), expected_skmers[seq_size-k]);
+    }
+}
+
+
 TEST(Skmerator, file_vs_seq)
 {
     using kuint = uint16_t;
@@ -268,14 +300,8 @@ TEST(Skmerator, file_vs_seq1)
 
     // Enumerates the superkmers from the sequence
     std::vector<km::Skmer<kuint> > seq_skmers {};
-    for (km::Skmer<kuint> skmer : seq_skmerator)
-        seq_skmers.push_back(skmer);
-
-    // std::string seq1 = "ACAACACTTACTAGGA";
-    // km::SeqSkmerator<kuint> seq_skmerator1 {seq_manip, seq1};
-    // for (km::Skmer<kuint> skmer : seq_skmerator1)
-    //     seq_skmers.push_back(skmer);
-
+    for (km::Skmer<kuint> const skmer : seq_skmerator)
+        seq_skmers.emplace_back(skmer);
 
     // --- File ---
     std::string filename{"../tests/data/fasta00.fa"};
@@ -285,8 +311,9 @@ TEST(Skmerator, file_vs_seq1)
 
     // Enumerates the superkmers from the file
     std::vector<km::Skmer<kuint> > file_skmers {};
-    for (km::Skmer<kuint> skmer : file_skmerator)
-        file_skmers.push_back(skmer);
+    for (km::Skmer<kuint> const skmer : file_skmerator) {
+        file_skmers.emplace_back(skmer);
+    }
 
     // Comparison of size
     if (seq_skmers.size() != file_skmers.size())

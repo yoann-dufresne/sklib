@@ -65,6 +65,7 @@ public:
         std::string& m_seq;
         int64_t m_remaining_nucleotides;
         bool m_consumed;
+        bool m_isend;
 
         // Manipulator to compute interleaved along the sequence
         SkmerManipulator<kuint>& m_manip;
@@ -82,14 +83,14 @@ public:
 
         bool consumed() const
         {
-            return m_consumed;
+            return m_isend;
         }
 
     protected:
         // Construct an iterator without control on the file stream
         Iterator(SeqSkmerator& skmerator, std::string& sequence)
             : m_rator(skmerator), m_seq(sequence), m_remaining_nucleotides(sequence.length())
-            , m_consumed(false)
+            , m_consumed(false), m_isend(false)
             , m_manip(skmerator.m_manip), m_current_minimizer(~static_cast<kuint>(0))
             , m_buffer_size(2 * skmerator.m_manip.k - skmerator.m_manip.m)
             , m_skmer_buffer_array(std::vector<Skmer<kuint> >(m_buffer_size))
@@ -101,6 +102,7 @@ public:
             if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
             {
                 m_consumed = true;
+                m_isend = true;
                 return;
             }
 
@@ -119,6 +121,7 @@ public:
             m_seq = other.m_seq;
             m_remaining_nucleotides = other.m_remaining_nucleotides;
             m_consumed = other.m_consumed;
+            m_isend = other.m_isend;
             m_current_minimizer = other.m_current_minimizer;
 
             m_buffer_size = other.m_buffer_size;
@@ -161,6 +164,13 @@ public:
 
         Iterator& operator++()
         {
+            // cout << "operator++" << endl;
+            if (m_consumed) {
+                m_isend = true;
+                // debug_print_buffer();
+                return *this;
+            }
+
             const uint64_t k {m_manip.k};
             const uint64_t m {m_manip.m};
             // km::SkmerPrettyPrinter<kuint> pp {k, m};
@@ -172,6 +182,9 @@ public:
                 do
                 {
                     m_ptr_last_round += 1;
+                    // cout << "m_ptr_last_round " << (m_ptr_last_round % m_buffer_size);
+                    // cout << " m_ptr_current " << (m_ptr_current % m_buffer_size) << endl;
+
                     // Get yielding candidate
                     Skmer<kuint>& skmer {m_skmer_buffer_array[m_ptr_last_round % m_buffer_size]};
 
@@ -190,14 +203,21 @@ public:
                 }
                 while ((m_ptr_last_round % m_buffer_size) != (m_ptr_current % m_buffer_size));
 
+                // debug_print_buffer();
                 m_consumed = true;
+                m_isend = true;
                 return *this;
             }
 
+            bool yield_needed{false};
+            // km::SkmerPrettyPrinter<kuint> pp {k, m};
             while (m_remaining_nucleotides + k - m > 0)
             {
                 // -- Save the skmer to eventually yield
                 m_rator.m_yielded_skmer = m_skmer_buffer_array[(m_ptr_current + 1) % m_buffer_size];
+                // pp << m_rator.m_yielded_skmer;
+                // cout << pp << " " << ((m_ptr_current + 1) % m_buffer_size);
+                // cout << " remaining " << m_remaining_nucleotides << endl;
 
                 // -- On out of context minimizer
                 if (m_ptr_current - m_ptr_min >= k - m)
@@ -234,6 +254,10 @@ public:
                 if (m_rator.m_yielded_skmer.m_pref_size + m_rator.m_yielded_skmer.m_suff_size >= k - m)
                 {
                     m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
+                    if ((m_remaining_nucleotides + k - m) == 0) {
+                        yield_needed = true;
+                        break;
+                    }
                     return *this;
                 }
 
@@ -246,11 +270,12 @@ public:
                 unused_skmer.m_pref_size = unused_skmer.m_suff_size = 0;
             }
 
-            // this->debug_print_buffer();
-
             m_ptr_last_round = m_ptr_current;
             // Recursive call to return the already computed skmer array
-            return this->operator++();
+            if (yield_needed)
+                return *this;
+            else
+                return this->operator++();
         }
 
         void solve_out_of_context()
@@ -443,9 +468,11 @@ public:
         // Warning: This function suppose that we are comparing iterator over the same sequence.
         bool operator==(const Iterator& it) const
         {
-            if (m_consumed and it.m_consumed)
+            if (m_isend and it.m_isend)
                 return true;
-
+            else if (m_isend != it.m_isend)
+                return false;
+                
             return m_remaining_nucleotides == it.m_remaining_nucleotides;
         }
 
