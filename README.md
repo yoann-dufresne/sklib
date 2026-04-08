@@ -1,5 +1,10 @@
 # De Bruijn Graph library
 
+## Dependencies
+
+* zlib : https://zlib.net/ (apt install zlib1g-dev)
+* bzip2 : https://sourceware.org/bzip2/ (apt install zlib-dev)
+
 ## Compilation
 
 ```bash
