@@ -1468,7 +1468,101 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
     }
 }
 
+TEST(SortedVirtualSkmerListTest, EmptyInput)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{};
+
+    //EXPECTED EMPTY LIST OUT
+
+    list.generate_sorted_list_from_enumeration(skmer_enumeration);
+
+    std::vector<km::Skmer<kuint>> m_output_list = list.get_list();
+
+    ASSERT_EQ(m_output_list.size(),0);
+}
+
+//TEST(SortedVirtualSkmerListTest, AllKmersInvalid){}
+
+// Giving as input the same k-mer twice, checking eforcement of uniqueness
+TEST(SortedVirtualSkmerListTest, DuplicateKmers){
+using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+
+    //INPUT
+    const kpair input_skmers[4]{
+    // P:    C   G   A
+    // S:  A   _   _
+        {0b000111111100U, 0},
+    // P:    A   C   C
+    // S:  A   _   _
+        {0b000011011101U, 0},
+    // P:    A   C   C
+    // S:  A   _   _
+        {0b000011011101U, 0},
+    // P:    C   G   A
+    // S:  A   _   _
+        {0b000111111100U, 0},
+    };
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_skmers[0], 2, 0),
+        km::Skmer<kuint>(input_skmers[1], 2, 0),
+        km::Skmer<kuint>(input_skmers[0], 2, 0),
+        km::Skmer<kuint>(input_skmers[1], 2, 0),
+    };
+
+    //EXPECTED
+    const kpair expected_pairs[2]{
+    // P:    A   C   C
+    // S:  A   _   _
+        {0b000011011101U, 0},
+    // P:    C   G   A
+    // S:  A   _   _
+        {0b000111111100U, 0},
+    };
+    std::vector<km::Skmer<kuint>> expected_skmer{
+        km::Skmer<kuint>(expected_pairs[0], 2, 0),
+        km::Skmer<kuint>(expected_pairs[1], 2, 0),
+    };
+
+    list.generate_sorted_list_from_enumeration(skmer_enumeration);
+
+    std::vector<km::Skmer<kuint>> m_output_list = list.get_list();
+
+    ASSERT_EQ(m_output_list.size(), expected_skmer.size());
+
+    for (size_t i{0}; i < expected_skmer.size(); i++)
+    {
+        // std::cout << "Checking skmer #" << i << std::endl;
+        // std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        ASSERT_EQ(expected_skmer[i].m_pair, m_output_list[i].m_pair);
+        ASSERT_EQ(expected_skmer[i].m_pref_size, m_output_list[i].m_pref_size);
+        ASSERT_EQ(expected_skmer[i].m_suff_size, m_output_list[i].m_suff_size);
+    }
+}
+// TEST(SortedVirtualSkmerListTest, MaximumKmerPosition)
+// TEST(SortedVirtualSkmerListTest, MinimumKmerPosition)
+
 // QUERY TESTS
+// TEST(QueryTest, QueryEmptyList)
+// TEST(QueryTest, QueryNotFound)
+// TEST(QueryTest, QueryMultipleMatches)
+// TEST(QueryTest, QueryBoundaryPositions)
+// TEST(QueryTest, QueryBatchEmpty)
+// TEST(QueryTest, QueryInvalidKmer)
 TEST(QueryTest, SearchablePositions)
 {
     uint64_t num_of_elements {6};
@@ -1726,11 +1820,19 @@ TEST(QueryTest, QueryOutputWorking)
 
 }
 
-
 // SET OPERATION TESTS
 
 // INTERSECTION TESTS
+// TEST(SetOperationTest, IntersectionBasic)
+// TEST(SetOperationTest, IntersectionEmpty)
+// TEST(SetOperationTest, IntersectionDisjoint)
+
 
 // UNION TESTS
+/// TEST(SetOperationTest, UnionBasic)
+// TEST(SetOperationTest, UnionEmpty)
 
 // DIFF TESTS
+// TEST(SetOperationTest, DifferenceBasic)
+// TEST(SetOperationTest, DifferenceEmpty)
+// TEST(SetOperationTest, DifferenceIdentical)
