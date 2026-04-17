@@ -7,6 +7,12 @@ set(EXT_INSTALL_DIR ${CMAKE_BINARY_DIR}/ext-install)
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/ext-src")
 
+FetchContent_Declare(
+  cli11
+  URL https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.6.2.tar.gz
+)
+FetchContent_MakeAvailable(cli11)
+
 include(GNUInstallDirs)
 
 

@@ -5,6 +5,8 @@ set(PROJECT_DESCRIPTION "dbglib")
 
 # set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 
+cmake_policy(SET CMP0135 NEW)
+
 option(PORTABLE_BUILD "Generic x86_64 build" OFF)
 option(WITH_APP "Compile kmindex cli" ON)
 option(WITH_TESTS "Compile tests" ON)
