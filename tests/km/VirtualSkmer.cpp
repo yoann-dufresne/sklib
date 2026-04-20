@@ -1471,7 +1471,7 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
 TEST(SortedVirtualSkmerListTest, EmptyInput)
 {
     using kuint = uint16_t;
-    using kpair = km::Skmer<kuint>::pair;
+    // using kpair = km::Skmer<kuint>::pair;
 
     constexpr uint64_t k{4};
     constexpr uint64_t m{2};
@@ -1557,12 +1557,6 @@ using kuint = uint16_t;
 // TEST(SortedVirtualSkmerListTest, MinimumKmerPosition)
 
 // QUERY TESTS
-// TEST(QueryTest, QueryEmptyList)
-// TEST(QueryTest, QueryNotFound)
-// TEST(QueryTest, QueryMultipleMatches)
-// TEST(QueryTest, QueryBoundaryPositions)
-// TEST(QueryTest, QueryBatchEmpty)
-// TEST(QueryTest, QueryInvalidKmer)
 TEST(QueryTest, SearchablePositions)
 {
     uint64_t num_of_elements {6};
@@ -1662,6 +1656,49 @@ TEST(QueryTest, QueryOneKmerinSkmer)
 
     for(size_t i {0}; i < query_skmer.size(); i++){
         ASSERT_EQ(expected_result[i], list.query_skmer(query_skmer[i])[0]);
+    }
+}
+
+TEST(QueryTest, QueryEmptyList)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(skmer_enumeration);
+
+    const kpair query_pairs[4]{
+    // P:    C   G   A
+    // S:  A   _   _
+        {0b000111111100U, 0}, // IS IN
+    // P:    C   G   _
+    // S:  A   T   _
+        {0b000110111111U, 0}, // IS IN
+    // P:    C   _   _
+    // S:  A   G   T
+        {0b000111111011U, 0}, // IS IN
+    // P:    A   A   _
+    // S:  A   A   _
+        {0b000000001111U, 0}, // IS NOT IN
+    };
+
+    std::vector<km::Skmer<kuint>> query_skmer{
+        km::Skmer<kuint>(query_pairs[0], 2, 0),
+        km::Skmer<kuint>(query_pairs[1], 1, 1),
+        km::Skmer<kuint>(query_pairs[2], 0, 2),
+        km::Skmer<kuint>(query_pairs[3], 1, 1),
+    };
+
+    uint8_t expected_result {0};
+
+    for(size_t i {0}; i < query_skmer.size(); i++){
+        ASSERT_EQ(expected_result, list.query_skmer(query_skmer[i])[0]);
     }
 }
 
@@ -1781,6 +1818,49 @@ TEST(QueryTest, QueryMultipleKmersInSkmerBatch)
     }
 }
 
+TEST(QueryTest, QuerEmptyKmersInSkmerBatch)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    const kpair input_pairs[4]{
+    // P:    A   C   C
+    // S:  A   G   C
+        {0b000011010101U, 0},
+    // P:    C   G   A
+    // S:  A   C   _
+        {0b000101111100U, 0},
+    // P:    C   G   _
+    // S:  A   T   A
+        {0b000110110011U, 0},
+    // P:    C   C   _
+    // S:  A   G   T
+        {0b000111011011U, 0},
+    };
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_pairs[0], 2, 2),
+        km::Skmer<kuint>(input_pairs[1], 2, 1),
+        km::Skmer<kuint>(input_pairs[2], 1, 2),
+        km::Skmer<kuint>(input_pairs[3], 1, 2),
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(skmer_enumeration);
+
+
+
+    std::vector<km::Skmer<kuint>> query_skmer{};
+
+    std::vector<std::vector<uint8_t>> expected_result {};
+
+    std::vector<std::vector<uint8_t>> computed_result = list.query_skmer_batch(query_skmer);
+    ASSERT_EQ(expected_result.size(), computed_result.size());
+}
+
 // TOTAL QUERY TEST
 TEST(QueryTest, QueryOutputWorking)
 {
@@ -1818,6 +1898,103 @@ TEST(QueryTest, QueryOutputWorking)
     std::string filename{"../tests/data/seq2.fa"};
     list.query(filename);
 
+}
+
+TEST(QueryTest, seq_query)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+    // ATCGACTGTGTACACT
+    // --- Sequence ---
+    std::string seq{"ATCGAC"};
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    km::SeqSkmerator<kuint> seq_skmerator {seq_manip, seq};
+
+    // Enumerates the superkmers from the sequence
+    std::vector<km::Skmer<kuint> > seq_skmers {};
+    for (km::Skmer<kuint> const skmer : seq_skmerator)
+        seq_skmers.emplace_back(skmer);
+
+    // generating sorted list
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.generate_sorted_list_from_enumeration(seq_skmers);
+
+    // now query seq
+    std::string query_seq{"ATCGA"};
+    km::SkmerManipulator<kuint> query_seq_manip {k, m};
+    km::SeqSkmerator<kuint> query_seq_skmerator {query_seq_manip, query_seq};
+
+    // Enumerates the superkmers from the sequence
+    std::vector<km::Skmer<kuint> > query_seq_skmers {};
+    for (km::Skmer<kuint> const skmer : query_seq_skmerator)
+        query_seq_skmers.emplace_back(skmer);
+
+    std::cout << std::endl;
+    uint8_t expected_result {1};
+    ASSERT_EQ(query_seq_skmers.size(), query_seq.size() - k + 1);
+    for(size_t i {0}; i < query_seq_skmers.size(); i++){
+        ASSERT_EQ(expected_result, list.query_skmer(query_seq_skmers[i])[0]);
+    }
+}
+
+TEST(QueryTest, seq_query_longer)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+    // ATCGACTGTGTACACT
+    // --- Sequence ---
+    std::string seq{"ATCGACTGTGTACACT"};
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    km::SeqSkmerator<kuint> seq_skmerator {seq_manip, seq};
+
+    // Enumerates the superkmers from the sequence
+    std::vector<km::Skmer<kuint> > seq_skmers {};
+    for (km::Skmer<kuint> const skmer : seq_skmerator)
+        seq_skmers.emplace_back(skmer);
+
+    std::cout << "--- inside seq_skmers ---" << std::endl;
+    for(km::Skmer<kuint> const skmer : seq_skmers){
+        pp << skmer;
+        std:: cout << pp << std::endl;
+    }
+
+    // generating sorted list
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.generate_sorted_list_from_enumeration(seq_skmers);
+
+    // now query seq
+    std::string query_seq{"ATCGAT"};
+    km::SkmerManipulator<kuint> query_seq_manip {k, m};
+    km::SeqSkmerator<kuint> query_seq_skmerator {query_seq_manip, query_seq};
+
+    // Enumerates the superkmers from the sequence
+    std::vector<km::Skmer<kuint> > query_seq_skmers {};
+    for (km::Skmer<kuint> const skmer : query_seq_skmerator)
+        query_seq_skmers.emplace_back(skmer);
+
+
+    std::cout << "--- inside query_seq_skmers ---" << std::endl;
+    for(km::Skmer<kuint> const skmer : query_seq_skmers){
+        pp << skmer;
+        std:: cout << pp << std::endl;
+    }
+    std::cout << "--- inside sorted list ---" << std::endl;
+    for(km::Skmer<kuint> const skmer : list.get_list()){
+        pp << skmer;
+        std:: cout << pp << std::endl;
+    }
+    std::cout << list.size() << std::endl;
+    std::vector<std::vector<uint8_t>> expected_result {{1},{0}};
+    ASSERT_EQ(query_seq_skmers.size(), query_seq.size() - k + 1);
+    for(size_t i {0}; i < query_seq_skmers.size(); i++){
+        ASSERT_EQ(expected_result[0], list.query_skmer(query_seq_skmers[0]));
+    }
 }
 
 // SET OPERATION TESTS
