@@ -756,6 +756,42 @@ class SortedVirtualSkmerList {
 
 }; // end of my class
 
+// INTERNAL NAMESPACE FOR HEADER PARSING IN SERIALIZER CLASS
+namespace internal {
+    struct FileHeader { uint64_t k, m, count; };
+
+    template<typename kuint>
+    FileHeader read_and_validate_header(std::ifstream& file, const std::string& filename){
+        FileHeader fh = {0,0,0};
+        // Read and check read_endianess_int
+        uint64_t read_endianess_int;
+        file.read(reinterpret_cast<char*>(&read_endianess_int), sizeof(uint64_t));
+
+        if (file.fail()) {
+            throw std::runtime_error("Error reading magic number from file: " + filename);
+        }
+
+        // Check endianness
+        if (read_endianess_int != km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
+            uint64_t swapped_endianess_int = km::sortedlist::util::swap_endian(read_endianess_int);
+            if (swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
+                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
+            } else {
+                throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
+            }
+        }
+
+        file.read(reinterpret_cast<char*>(&fh.k), sizeof(uint64_t));
+        file.read(reinterpret_cast<char*>(&fh.m), sizeof(uint64_t));
+
+        if (file.fail()) {
+            throw std::runtime_error("Error reading k and m values from file: " + filename);
+        }
+        uint64_t count;
+        file.read(reinterpret_cast<char*>(&fh.count), sizeof(uint64_t));
+        return fh;
+    }
+}
 
 // VIRTUAL SUPERKMER LIST SERIALIZER
 template<typename kuint>
@@ -808,45 +844,15 @@ public:
             throw std::runtime_error("Error opening file for reading: " + filename);
         }
 
-        // Read and check read_endianess_int
-        uint64_t read_endianess_int;
-        inFile.read(reinterpret_cast<char*>(&read_endianess_int), sizeof(uint64_t));
+        // Get header values and check endianess
+        auto header = internal::read_and_validate_header<kuint>(inFile, filename);
 
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading magic number from file: " + filename);
-        }
-
-        // Check endianness
-        if (read_endianess_int != km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
-            uint64_t swapped_endianess_int = km::sortedlist::util::swap_endian(read_endianess_int);
-            if (swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
-                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
-            } else {
-                throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
-            }
-        }
-
-        uint64_t file_k, file_m;
-        inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
-        inFile.read(reinterpret_cast<char*>(&file_m), sizeof(uint64_t));
-
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading k and m values from file: " + filename);
-        }
-
-        SortedVirtualSkmerList<kuint> m_virtual_skmer_list(file_k, file_m);
-
-        uint64_t count;
-        inFile.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
-
-        if (inFile.fail()) {
-            throw std::runtime_error("Error reading count from file: " + filename);
-        }
+        SortedVirtualSkmerList<kuint> m_virtual_skmer_list(header.k, header.m);
 
         // Read the skmer data
-        m_virtual_skmer_list.m_skmer_list.reserve(count);
-        m_virtual_skmer_list.m_skmer_list.resize(count);
-        inFile.read(reinterpret_cast<char*>(m_virtual_skmer_list.m_skmer_list.data()), count * sizeof(Skmer<kuint>));
+        m_virtual_skmer_list.m_skmer_list.reserve(header.count);
+        m_virtual_skmer_list.m_skmer_list.resize(header.count);
+        inFile.read(reinterpret_cast<char*>(m_virtual_skmer_list.m_skmer_list.data()), header.count * sizeof(Skmer<kuint>));
 
         if (inFile.fail()) {
             throw std::runtime_error("Error reading virtual skmer data from file: " + filename);
@@ -855,8 +861,8 @@ public:
         inFile.close();
         return m_virtual_skmer_list;
     }
-};
 
+};
 
 } // namespace sortedlist
 } // namespace km

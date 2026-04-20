@@ -602,27 +602,10 @@ public:
         }
     }
 
-    // /** Compare 2 kmers included in 2 skmers.
-    //  * @param first_skmer First kmer is included in this skmer
-    //  * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
-    //  * @param second_skmer Second kmer is included in this skmer
-    //  * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
-    //  * @return true if the first kmer is less than the second one
-    //  **/
-    // bool inline kmer_less_than_kmer(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
-    // {
-    //     auto first_kmer {first_skmer.m_pair};
-    //     auto second_kmer {second_skmer.m_pair};
-    //     first_kmer &= kmer_masks[kmer_pos];
-    //     second_kmer &= kmer_masks[kmer_pos];
-    //     return first_kmer < second_kmer;
-    // }
-
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer
-     * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.
      * @param second_skmer Second kmer is included in this skmer
-     * @param second_kmer_pos Position of the second kmer in the second skmer. 0 is the kmer that contains the whole prefix.
+     * @param kmer_pos Position of the kmer in the both skmers.
      * @return true if the first kmer is less than the second one
      **/
     inline int kmer_compare(const Skmer<kuint>& first_skmer, const Skmer<kuint>& second_skmer, const uint64_t kmer_pos) const
@@ -631,6 +614,17 @@ public:
         auto second_kmer {second_skmer.m_pair};
         first_kmer &= kmer_masks[kmer_pos];
         second_kmer &= kmer_masks[kmer_pos];
+
+        if (first_kmer < second_kmer) return -1;
+        else if (first_kmer > second_kmer) return 1;
+        else return 0;
+    }
+    inline int kmer_compare(const Skmer<kuint>& first_skmer, const uint64_t first_kmer_pos, const Skmer<kuint>& second_skmer, const uint64_t second_kmer_pos) const
+    {
+        auto first_kmer {first_skmer.m_pair};
+        auto second_kmer {second_skmer.m_pair};
+        first_kmer &= kmer_masks[first_kmer_pos];
+        second_kmer &= kmer_masks[second_kmer_pos];
 
         if (first_kmer < second_kmer) return -1;
         else if (first_kmer > second_kmer) return 1;
