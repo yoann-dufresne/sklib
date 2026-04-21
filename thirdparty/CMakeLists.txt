@@ -65,22 +65,3 @@ add_subdirectory(kseqpp)
 add_library(kseqpp INTERFACE)
 target_include_directories(kseqpp INTERFACE ${THIRD_DIR}/kseqpp/include ${THIRD_DIR}/kseqpp/include/kseq++)
 
-
-# --- parse opt ---
-
-if(NOT EXISTS "${PROJECT_SOURCE_DIR}/thirdparty/cxxopts/CMakeLists.txt")
-    message(FATAL_ERROR "cxxopts submodule not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
-endif()
-
-add_library(cxxopts INTERFACE)
-
-ExternalProject_Add(
-  CXXOPTS
-  PREFIX CXXOPTS
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/thirdparty/cxxopts
-  INSTALL_COMMAND ""
-  LOG_CONFIGURE ON
-  LOG_BUILD ON
-)
-
-target_include_directories(cxxopts INTERFACE ${THIRD_DIR}/cxxopts/include)
