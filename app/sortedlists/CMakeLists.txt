@@ -18,7 +18,7 @@ if (STATIC_BUILD)
     -Wl,--no-whole-archive
   )
 else()
-  target_link_libraries(${EXEC_NAME} PUBLIC pthread cxxopts)
+  target_link_libraries(${EXEC_NAME} PUBLIC pthread CLI11::CLI11)
 endif()
 
 if (ipo_supported)
