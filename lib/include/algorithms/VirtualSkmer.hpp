@@ -15,6 +15,13 @@
 #ifndef VIRTUALSKMER_H
 #define VIRTUALSKMER_H
 
+// FRIEND_TEST is provided by gtest (<gtest/gtest_prod.h>). Non-test
+// translation units that include this header don't pull in gtest, so
+// stub the macro out to a no-op declaration that absorbs the trailing ';'.
+#ifndef FRIEND_TEST
+#define FRIEND_TEST(test_case_name, test_name) static_assert(true, "")
+#endif
+
 namespace km
 {
 namespace sortedlist
@@ -793,6 +800,33 @@ public:
         if(!went_good){
             std::cerr << "Error in the writing of the skmer to disk to file: " << filename << std::endl;
         }
+        return outFile.close();
+    }
+
+    static void save_ascii(const SortedVirtualSkmerList<kuint>& list, const std::string& filename) {
+        std::ofstream outFile(filename);
+
+        if (outFile.fail()) {
+            std::cerr << "Error opening file for writing: " << filename << std::endl;
+            return outFile.close();
+        }
+
+        uint64_t count = list.size();
+        outFile << list.m_manip.k << " " << list.m_manip.m << " " << count << std::endl;
+
+        if (!outFile) {
+            std::cerr << "Error writing header to file: " << filename << std::endl;
+            return;
+        }
+
+        for (uint64_t i = 0; i < count; i++) {
+            const auto& sk = list.m_skmer_list[i];
+            outFile << std::hex << sk.m_pair.m_value[0] << " " << sk.m_pair.m_value[1]
+                    << std::dec << " " << sk.m_pref_size << " " << sk.m_suff_size << std::endl;
+        }
+
+        if (!outFile.good())
+            std::cerr << "Error writing skmers to file: " << filename << std::endl;
         return outFile.close();
     }
 
