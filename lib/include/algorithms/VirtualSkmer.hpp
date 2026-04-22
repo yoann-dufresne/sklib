@@ -811,18 +811,47 @@ public:
             return outFile.close();
         }
 
+        const uint64_t k = list.m_manip.k;
+        const uint64_t m = list.m_manip.m;
+        const uint64_t sk_size = 2 * k - m;
+        const uint64_t flank = k - m;
+        const uint64_t buf_pref = (sk_size + 1) / 2;
+        const uint64_t buf_suff = sk_size / 2;
         uint64_t count = list.size();
-        outFile << list.m_manip.k << " " << list.m_manip.m << " " << count << std::endl;
+        outFile << k << " " << m << " " << count << "\n";
 
         if (!outFile) {
             std::cerr << "Error writing header to file: " << filename << std::endl;
             return;
         }
 
+        static const char nucleotides[] = {'A', 'C', 'T', 'G'};
+
+        // The interleaved layout stores position p of the superkmer as follows:
+        //   p in [0, buf_pref)   -> prefix slot p        at bits [4p+1 : 4p]
+        //   p in [buf_pref, sk_size) -> suffix slot (sk_size-1-p) at bits [4s+3 : 4s+2]
+        // The minimizer positions [flank, flank+m-1] are split across prefix and
+        // suffix slots (not a contiguous bit block), so we iterate slots and the
+        // minimizer nucleotides are interleaved along with the flanks.
         for (uint64_t i = 0; i < count; i++) {
             const auto& sk = list.m_skmer_list[i];
-            outFile << std::hex << sk.m_pair.m_value[0] << " " << sk.m_pair.m_value[1]
-                    << std::dec << " " << sk.m_pref_size << " " << sk.m_suff_size << std::endl;
+
+            // Prefix side: positions [flank - m_pref_size, buf_pref - 1]
+            // (valid prefix flank, then prefix-side minimizer nucleotides)
+            for (uint64_t slot = flank - sk.m_pref_size; slot < buf_pref; slot++)
+                outFile << nucleotides[(sk.m_pair >> (4 * slot)) & 0b11UL];
+
+            // Suffix side: positions (buf_pref, sk_size - 1 - (flank - m_suff_size)]
+            // Iterate slot from (buf_suff - 1) down to (flank - m_suff_size).
+            for (int64_t slot = static_cast<int64_t>(buf_suff) - 1;
+                 slot >= static_cast<int64_t>(flank) - static_cast<int64_t>(sk.m_suff_size);
+                 slot--)
+                outFile << nucleotides[(sk.m_pair >> (4 * slot + 2)) & 0b11UL];
+
+            outFile << " " << sk.m_pref_size << " " << sk.m_suff_size;
+            if (sk.m_pref_size == 0)
+                outFile << " m1=" << std::hex << sk.m_pair.m_value[1] << std::dec;
+            outFile << "\n";
         }
 
         if (!outFile.good())

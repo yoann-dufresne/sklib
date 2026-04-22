@@ -22,3 +22,10 @@ add_test(
 #   TEST dbglib:all
 #   PROPERTY ENVIRONMENT "DBGLIB_TEST_DATA=${CMAKE_SOURCE_DIR}/tests/data"
 # )
+
+
+file(GLOB TEST_SCRIPTS "${CMAKE_SOURCE_DIR}/tests/*.sh")
+
+foreach(script ${TEST_SCRIPTS})
+    configure_file(${script} ${CMAKE_BINARY_DIR} COPYONLY)
+endforeach()

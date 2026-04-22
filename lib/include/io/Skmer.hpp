@@ -196,6 +196,14 @@ public:
             return p;
         }
 
+        pair operator& (const pair& other) const
+        {
+            pair p{*this};
+            p.m_value[0] &= other.m_value[0];
+            p.m_value[1] &= other.m_value[1];
+            return p;
+        }
+
         pair operator| (const pair& other) const
         {
             pair p{*this};
