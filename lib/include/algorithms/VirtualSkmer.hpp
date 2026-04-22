@@ -168,6 +168,12 @@ struct Virtual_skmer {
                 last_id == other.last_id);
     }
 
+    friend std::ostream& operator<<(std::ostream& os, const Virtual_skmer<kuint>& vs)
+    {
+        os << vs.skmer << " last_id:" << vs.last_id;
+        return os;
+    }
+
     void inline add_kmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
         using kpair = typename Skmer<kuint>::pair;
         // Free the nucleotide slot in the skmer to accomodate the nucleotide associated with the kmer
@@ -204,9 +210,6 @@ class SortedVirtualSkmerList {
     }
 
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
-        //initialize the linked lists
-        // std::cout << "INIZIALIZING VALUES" << std::endl;
-
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
@@ -215,75 +218,67 @@ class SortedVirtualSkmerList {
         std::vector<overlap> valid_overlaps;
 
         // 0 - sort the column ids based on kmers of the first column
-        // std::cout << "SLIDING FIRST WINDOW" << std::endl;
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+        cout << "order col " << 0 << "\t";
+        for (const auto& x : window.right())
+            cout << x << ",";
+        cout << endl;
         right_column_position++;
 
         LList vskmer_list;
+        SkmerPrettyPrinter<kuint> pp {5, 2};
 
         vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
             vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
-            // std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
+
+        cout << "VSkmer List " << 0 << endl;
+        for (const Virtual_skmer<kuint>& vskm : vskmer_list){
+                pp << vskm.skmer;
+                cout << pp << endl;
+                // cout << vskm << endl;
+            }
+        cout << endl << endl;
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
-            // std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
-            // std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
-
-            // std::cout << "LEFT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.left()){
-            //     std::cout << "L: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
-            // std::cout << "RIGHT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.right()){
-            //     std::cout << "R: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
+            cout << "order col " << right_column_position << "\t";
+            for (const auto& x : window.right())
+                cout << x << ",";
+            cout << endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            // std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
+            cout << "candidate overlaps for " << right_column_position << "\t";
+            for (const auto& o : candidate_overlaps)
+                cout << "(" << o.first << ";" << o.second << ") , ";
+            cout << endl;
 
             // 3 - get valid overlaps using colinear chaining
-            // // std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
-            // for (auto overlap: candidate_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
-            // }
-
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
                 valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
             else { valid_overlaps = candidate_overlaps;}
 
-            // // std::cout << "OUT OF COLINEAR CHAINING: {";
-            // for (auto overlap: valid_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            // }
-            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
-            // // 3 - 1/2 Return to skmer id from position
-            // for(size_t i {0}; i < valid_overlaps.size(); i++){
-            //     valid_overlaps[i].first = window.left()[valid_overlaps[i].first];
-            //     valid_overlaps[i].second = window.right()[valid_overlaps[i].second];
-            // }
-            // std::cout << "TRASFORMED INTO: {";
-            // for (auto overlap: valid_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            // }
-            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
-
             // 4 - reconcile kmers by merging columns
-            // std::cout << "merge_LList_column" << std::endl;
             merge_LList_column(skmer_enumeration, vskmer_list, window.left(), window.right(), valid_overlaps, right_column_position);
+            cout << "VSkmer List " << right_column_position << endl;
+            for (const Virtual_skmer<kuint>& vskm : vskmer_list) {
+                pp << vskm.skmer;
+                cout << pp << endl;
+                // cout << vskm << endl;
+            }
+            cout << endl;
 
             // go to next iteration
             left_column_position = right_column_position;
             right_column_position++;
+            
+            cout << endl;
         }
 
         m_skmer_list.reserve(vskmer_list.size());
@@ -849,8 +844,6 @@ public:
                 outFile << nucleotides[(sk.m_pair >> (4 * slot + 2)) & 0b11UL];
 
             outFile << " " << sk.m_pref_size << " " << sk.m_suff_size;
-            if (sk.m_pref_size == 0)
-                outFile << " m1=" << std::hex << sk.m_pair.m_value[1] << std::dec;
             outFile << "\n";
         }
 

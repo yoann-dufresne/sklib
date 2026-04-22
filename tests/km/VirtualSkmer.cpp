@@ -1471,7 +1471,7 @@ TEST(SortedVirtualSkmerListTest, SortAndCompactSuperKmers4)
 TEST(SortedVirtualSkmerListTest, EmptyInput)
 {
     using kuint = uint16_t;
-    using kpair = km::Skmer<kuint>::pair;
+    // using kpair = km::Skmer<kuint>::pair;
 
     constexpr uint64_t k{4};
     constexpr uint64_t m{2};
