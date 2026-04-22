@@ -191,8 +191,10 @@ namespace km
               std::vector<Skmer<kuint>> &output,
               OpType op)
           {
-            // k-mer level carved skmer building + generate_sorted_list_from_enumeration
+            // k-mer level carved skmer building + k-mer repacking in skmer
+            // if UNION give the groups to the sorting and feed the result to output
 
+            // else need to compare skmers in the two groups
           }
           // Core merge-scan engine
           template <typename kuint, typename SourceA, typename SourceB>
