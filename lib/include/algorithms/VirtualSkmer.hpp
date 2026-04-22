@@ -150,18 +150,19 @@ template<typename kuint>
 struct Virtual_skmer {
     Skmer<kuint> skmer;
     uint64_t last_id;
+    bool expandable;
 
-    Virtual_skmer() : skmer(), last_id(0) {}
+    Virtual_skmer() : skmer(), last_id(0), expandable(true) {}
 
     Virtual_skmer(km::Skmer<kuint>& passed_skmer, SkmerManipulator<kuint>& m_manip, uint64_t kmer_pos, uint64_t id_value)
         : skmer(m_manip.get_skmer_of_kmer(passed_skmer,kmer_pos)), last_id(id_value) {}
 
     Virtual_skmer(km::Skmer<kuint>::pair kmer, uint16_t prefix, uint16_t suffix, uint64_t id_value)
-        : skmer(kmer, prefix, suffix), last_id(id_value) {}
+        : skmer(kmer, prefix, suffix), last_id(id_value), expandable(true) {}
     Virtual_skmer(km::Skmer<kuint>& passed_skmer, uint64_t id_value)
-        : skmer(passed_skmer), last_id(id_value) {}
+        : skmer(passed_skmer), last_id(id_value), expandable(true) {}
     Virtual_skmer(km::Skmer<kuint>&& passed_skmer, uint64_t id_value)
-        : skmer(passed_skmer), last_id(id_value) {}
+        : skmer(passed_skmer), last_id(id_value), expandable(true) {}
 
     bool operator==(const Virtual_skmer& other) const {
         return (skmer == other.skmer &&
@@ -219,43 +220,43 @@ class SortedVirtualSkmerList {
 
         // 0 - sort the column ids based on kmers of the first column
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
-        cout << "order col " << 0 << "\t";
-        for (const auto& x : window.right())
-            cout << x << ",";
-        cout << endl;
+        // cout << "order col " << 0 << "\t";
+        // for (const auto& x : window.right())
+        //     cout << x << ",";
+        // cout << endl;
         right_column_position++;
 
         LList vskmer_list;
-        SkmerPrettyPrinter<kuint> pp {5, 2};
+        // SkmerPrettyPrinter<kuint> pp {5, 2};
 
         vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
             vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
         }
 
-        cout << "VSkmer List " << 0 << endl;
-        for (const Virtual_skmer<kuint>& vskm : vskmer_list){
-                pp << vskm.skmer;
-                cout << pp << endl;
-                // cout << vskm << endl;
-            }
-        cout << endl << endl;
+        // cout << "VSkmer List " << 0 << endl;
+        // for (const Virtual_skmer<kuint>& vskm : vskmer_list){
+        //         pp << vskm.skmer;
+        //         cout << pp << " last_id:" << vskm.last_id << endl;
+        //         // cout << vskm << endl;
+        //     }
+        // cout << endl << endl;
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
             // 1 - sort the column ids based on kmers
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
-            cout << "order col " << right_column_position << "\t";
-            for (const auto& x : window.right())
-                cout << x << ",";
-            cout << endl;
+            // cout << "order col " << right_column_position << "\t";
+            // for (const auto& x : window.right())
+            //     cout << x << ",";
+            // cout << endl;
 
             // 2 - compute candidate overlaps for a pair of columns
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
-            cout << "candidate overlaps for " << right_column_position << "\t";
-            for (const auto& o : candidate_overlaps)
-                cout << "(" << o.first << ";" << o.second << ") , ";
-            cout << endl;
+            // cout << "candidate overlaps for " << right_column_position << "\t";
+            // for (const auto& o : candidate_overlaps)
+            //     cout << "(" << o.first << ";" << o.second << ") , ";
+            // cout << endl;
 
             // 3 - get valid overlaps using colinear chaining
             std::vector<overlap> valid_overlaps;
@@ -263,22 +264,27 @@ class SortedVirtualSkmerList {
                 valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
             else { valid_overlaps = candidate_overlaps;}
+            // cout << "valid overlaps for " << right_column_position << "\t";
+            // for (const auto& o : valid_overlaps)
+            //     cout << "(" << o.first << ";" << o.second << ") , ";
+            // cout << endl;
+
 
             // 4 - reconcile kmers by merging columns
             merge_LList_column(skmer_enumeration, vskmer_list, window.left(), window.right(), valid_overlaps, right_column_position);
-            cout << "VSkmer List " << right_column_position << endl;
-            for (const Virtual_skmer<kuint>& vskm : vskmer_list) {
-                pp << vskm.skmer;
-                cout << pp << endl;
-                // cout << vskm << endl;
-            }
-            cout << endl;
+            // cout << "VSkmer List " << right_column_position << endl;
+            // for (const Virtual_skmer<kuint>& vskm : vskmer_list) {
+            //     pp << vskm.skmer;
+            //     cout << pp << " last_id:" << vskm.last_id << " expandable: " << vskm.expandable << endl;
+            //     // cout << vskm << endl;
+            // }
+            // cout << endl;
 
             // go to next iteration
             left_column_position = right_column_position;
             right_column_position++;
             
-            cout << endl;
+            // cout << endl;
         }
 
         m_skmer_list.reserve(vskmer_list.size());
@@ -646,7 +652,7 @@ class SortedVirtualSkmerList {
      **/
     void merge_LList_column(std::vector<Skmer<kuint>> const & skmer_enumeration,
                        std::vector<Virtual_skmer<kuint>>& list,
-                       std::vector<uint64_t> const & left_column,
+                       std::vector<uint64_t> const & left_column, // BUG here ? Remaining of old version ?
                        std::vector<uint64_t> const & column,
                        std::vector<overlap> const & valid_overlaps,
                        uint64_t const column_pos)
@@ -664,9 +670,9 @@ class SortedVirtualSkmerList {
     while (list_idx < list.size() && col_idx < column.size() &&
            overlap_idx < valid_overlaps.size()) {
 
-        bool is_left = (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
+        bool is_left = list[list_idx].expandable and (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
         bool is_right = (column[col_idx] == column[valid_overlaps[overlap_idx].second] );
-
+        
         if (is_left && is_right) {
             // CASE A: Both elements are in overlap - merge
             list[list_idx].add_kmer(skmer_enumeration, m_manip, column[col_idx], column_pos);
@@ -692,6 +698,8 @@ class SortedVirtualSkmerList {
         }
         else if (is_right) {
             // CASE C: Only column element in overlap - advance list
+            // Close the skmer
+            list[list_idx].expandable = false;
             list_idx++;
         }
         else {
@@ -701,6 +709,8 @@ class SortedVirtualSkmerList {
                 skmer_enumeration[column[col_idx]], column_pos);
 
             if (list[list_idx].skmer <= col_skmer) {
+                // Close the skmer
+                list[list_idx].expandable = false;
                 list_idx++;
             } else {
                 list.insert(list.begin() + list_idx,
