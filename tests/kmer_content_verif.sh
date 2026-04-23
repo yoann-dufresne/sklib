@@ -2,9 +2,9 @@
 
 set -e
 
-kmc=/home/yoann/bioinfo/kmc/bin/kmc
-kmc_dump=/home/yoann/bioinfo/kmc/bin/kmc_dump
-kmc_tools=/home/yoann/bioinfo/kmc/bin/kmc_tools
+kmc=$(which kmc)       || { echo "kmc not found"; exit 1; }
+kmc_dump=$(which kmc_dump)   || { echo "kmc_dump not found"; exit 1; }
+kmc_tools=$(which kmc_tools) || { echo "kmc_tools not found"; exit 1; }
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <fasta_file> [k] [m]" >&2
