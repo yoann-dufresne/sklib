@@ -10,7 +10,7 @@
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
-#include <SortedVirtualSkmerList.hpp>
+#include <algorithms/VirtualSkmer.hpp>
 
 namespace km
 {
@@ -138,7 +138,7 @@ namespace km
 
         template <typename kuint>
         inline void collect_single_kmers(const std::vector<Skmer<kuint>> &group,
-                                         const SkmerManipulator<kuint> &manip,
+                                        SkmerManipulator<kuint> &manip,
                                          std::vector<Skmer<kuint>> &out)
         {
           for (const auto &sk : group)
@@ -156,7 +156,7 @@ namespace km
         template <typename kuint>
         void merge_partial_skmers(const std::vector<Skmer<kuint>> &group_a,
                                   const std::vector<Skmer<kuint>> &group_b,
-                                  const SkmerManipulator<kuint> &manip,
+                                  SkmerManipulator<kuint> &manip,
                                   std::vector<Skmer<kuint>> &output,
                                   OpType op)
         {
@@ -366,7 +366,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         InMemorySkmerSource<kuint> src_b(b.get_list(), b.get_k(), b.get_m());
-        return internal::merge_set_op(src_a, src_b, OpType::UNION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::UNION);
       }
 
       template <typename kuint>
@@ -375,7 +375,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         InMemorySkmerSource<kuint> src_b(b.get_list(), b.get_k(), b.get_m());
-        return internal::merge_set_op(src_a, src_b, OpType::INTERSECTION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::INTERSECTION);
       }
 
       template <typename kuint>
@@ -384,7 +384,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         InMemorySkmerSource<kuint> src_b(b.get_list(), b.get_k(), b.get_m());
-        return internal::merge_set_op(src_a, src_b, OpType::DIFF);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::DIFF);
       }
 
       // ─────────────────────────────────────────────
@@ -397,7 +397,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op(src_a, src_b, OpType::UNION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::UNION);
       }
 
       template <typename kuint>
@@ -406,7 +406,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op(src_a, src_b, OpType::INTERSECTION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::INTERSECTION);
       }
 
       template <typename kuint>
@@ -415,7 +415,7 @@ namespace km
       {
         InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
         FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op(src_a, src_b, OpType::DIFF);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::DIFF);
       }
 
       // ─────────────────────────────────────────────
@@ -433,7 +433,7 @@ namespace km
         if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
           throw std::invalid_argument("File header k/m does not match requested parameters");
 
-        return internal::merge_set_op(src_a, src_b, OpType::UNION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::UNION);
       }
 
       template <typename kuint>
@@ -447,7 +447,7 @@ namespace km
         if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
           throw std::invalid_argument("File header k/m does not match requested parameters");
 
-        return internal::merge_set_op(src_a, src_b, OpType::INTERSECTION);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::INTERSECTION);
       }
 
       template <typename kuint>
@@ -461,7 +461,7 @@ namespace km
         if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
           throw std::invalid_argument("File header k/m does not match requested parameters");
 
-        return internal::merge_set_op(src_a, src_b, OpType::DIFF);
+        return internal::merge_set_op<kuint>(src_a, src_b, OpType::DIFF);
       }
 
     } // namespace setops
