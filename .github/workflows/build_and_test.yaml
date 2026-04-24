@@ -91,11 +91,11 @@ jobs:
         if: matrix.arch == 'arm64'
         run: |
           cd build
-          qemu-aarch64 -L /usr/aarch64-linux-gnu ./tests/dbglib-tests
+          qemu-aarch64 -L /usr/aarch64-linux-gnu ./tests/sklib-tests
 
       - name: Run GTest on x86_64 (intel and arm)
         if: matrix.arch == 'amd64'
         run: |
           cd build
-          ./tests/dbglib-tests
+          ./tests/sklib-tests
 

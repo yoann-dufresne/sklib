@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.22.0)
-project(dbglib VERSION 0.0.1 LANGUAGES C CXX)
+project(sklib VERSION 0.0.1 LANGUAGES C CXX)
 
-set(PROJECT_DESCRIPTION "dbglib")
+set(PROJECT_DESCRIPTION "Sorted k-mer library — compact sort and query of k-mers")
 
 # set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 
 cmake_policy(SET CMP0135 NEW)
 
 option(PORTABLE_BUILD "Generic x86_64 build" OFF)
-option(WITH_APP "Compile kmindex cli" ON)
+option(WITH_APP "Compile CLI applications" ON)
 option(WITH_TESTS "Compile tests" ON)
 option(STATIC_BUILD "Static build" OFF)
 

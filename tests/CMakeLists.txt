@@ -1,26 +1,26 @@
 
-set(DBGLIB_TEST_DATA "${CMAKE_SOURCE_DIR}/tests/data")
+set(SKLIB_TEST_DATA "${CMAKE_SOURCE_DIR}/tests/data")
 
 file(GLOB_RECURSE TEST_SOURCES "*.cpp")
-# add_library(${DBGLIB_LIB} ${DBGLIB_SOURCES})
-add_executable(dbglib-tests ${TEST_SOURCES})
+# add_library(${SKLIB_LIB} ${SKLIB_SOURCES})
+add_executable(sklib-tests ${TEST_SOURCES})
 
-target_link_libraries(dbglib-tests PUBLIC gtest gtest_main zlib kseqpp pthread dbglib)
+target_link_libraries(sklib-tests PUBLIC gtest gtest_main zlib kseqpp pthread sklib)
 
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0.0)
-    target_link_libraries(dbglib-tests PUBLIC stdc++fs)
+    target_link_libraries(sklib-tests PUBLIC stdc++fs)
 endif()
 
 
 add_test(
-    NAME dbglib:all
-    COMMAND dbglib-tests
+    NAME sklib:all
+    COMMAND sklib-tests
 )
 
 # TODO: Why this is not working ?
 # set_property(
-#   TEST dbglib:all
-#   PROPERTY ENVIRONMENT "DBGLIB_TEST_DATA=${CMAKE_SOURCE_DIR}/tests/data"
+#   TEST sklib:all
+#   PROPERTY ENVIRONMENT "SKLIB_TEST_DATA=${CMAKE_SOURCE_DIR}/tests/data"
 # )
 
 
