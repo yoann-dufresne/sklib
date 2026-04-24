@@ -313,7 +313,8 @@ void RMQtree::MaxValueIterator::next_valid_max() {
     // 4 - If score is not the right one, recursive call
     if (tree.m_tree[current_idx].score != m_score)
     {
-        if (current_idx == tree.m_num_leaves)
+        m_leaf_index = current_idx - tree.first_leaf_index() + 1; // advance past current leaf
+        if (m_leaf_index >= tree.m_num_leaves)                    // past last leaf → end
         {
             // If we are at the last leaf, set the iterator to the end
             m_right_boundary = UINT64_MAX;
@@ -323,6 +324,7 @@ void RMQtree::MaxValueIterator::next_valid_max() {
         // std::cout << "current_idx: " << current_idx << " " << tree.m_num_leaves << std::endl;
         // std::cout << "score not matching, recursive call" << std::endl;
         next_valid_max();
+        return;
     }
     
     m_leaf_index = current_idx - tree.m_num_leaves + 1;

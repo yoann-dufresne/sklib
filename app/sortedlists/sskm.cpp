@@ -113,7 +113,7 @@ CLIResult parse_cli(int argc, char** argv) {
 
 
 int run_construct(const ConstructOptions& opts) {
-    using kuint = uint64_t;
+    using kuint = uint32_t;
 
     const uint64_t k = static_cast<uint64_t>(opts.k);
     const uint64_t m = static_cast<uint64_t>(opts.m);
@@ -128,11 +128,9 @@ int run_construct(const ConstructOptions& opts) {
 
     std::vector<km::Skmer<kuint>> skmer_enumeration;
     for (const km::Skmer<kuint> & skmer : file_skmerator) {
-        pp << skmer;
-        cout << pp << endl;
         skmer_enumeration.push_back(skmer);
     }
-    cout << "Initial enumeration over" << endl << endl;
+    // exit(0);
 
     km::sortedlist::SortedVirtualSkmerList<kuint> sorted_list(k, m);
     sorted_list.generate_sorted_list_from_enumeration(skmer_enumeration);
