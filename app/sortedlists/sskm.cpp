@@ -113,7 +113,7 @@ CLIResult parse_cli(int argc, char** argv) {
 
 
 int run_construct(const ConstructOptions& opts) {
-    using kuint = uint32_t;
+    using kuint = uint64_t;
 
     const uint64_t k = static_cast<uint64_t>(opts.k);
     const uint64_t m = static_cast<uint64_t>(opts.m);
