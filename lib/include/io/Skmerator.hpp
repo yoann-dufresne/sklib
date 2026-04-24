@@ -126,6 +126,7 @@ public:
 
             m_buffer_size = other.m_buffer_size;
             m_skmer_buffer_array = std::vector(other.m_skmer_buffer_array);
+            m_skmer_orientation = std::vector<bool>(other.m_skmer_orientation);
 
             m_ptr_current = other.m_ptr_current;
             m_ptr_min = other.m_ptr_min;
