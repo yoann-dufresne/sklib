@@ -478,6 +478,12 @@ class SortedVirtualSkmerList {
         m_skmer_list = list;
     }
 
+    void add_list(std::vector<Skmer<kuint>>&& list) { m_skmer_list = std::move(list); }
+    std::vector<Skmer<kuint>> steal_list() { return std::move(m_skmer_list); }
+
+    uint64_t get_k() const noexcept { return m_manip.k; }
+    uint64_t get_m() const noexcept { return m_manip.m; }
+
     // Getter for the list
     const std::vector<Skmer<kuint>>& get_list() const {
         return m_skmer_list;
@@ -787,7 +793,7 @@ namespace internal {
         if (file.fail()) {
             throw std::runtime_error("Error reading k and m values from file: " + filename);
         }
-        uint64_t count;
+        // uint64_t count;
         file.read(reinterpret_cast<char*>(&fh.count), sizeof(uint64_t));
         return fh;
     }
