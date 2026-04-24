@@ -338,3 +338,282 @@ TEST(Skmerator, file_vs_seq1)
     for (uint64_t i{0} ; i<file_skmers.size() ; i++)
         ASSERT_TRUE(seq_manip.skmer_equals(seq_skmers[i], file_skmers[i]));
 }
+
+
+// ------------------------- BOUNDARY LENGTH TESTS -------------------------
+
+TEST(Skmerator, empty_sequence)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{""};
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for ([[maybe_unused]] km::Skmer<kuint> skmer : skmerator)
+        nb_skmer += 1;
+
+    EXPECT_EQ(nb_skmer, 0U);
+
+    auto it = skmerator.begin();
+    EXPECT_TRUE(it.consumed());
+    EXPECT_TRUE(it == skmerator.end());
+}
+
+
+TEST(Skmerator, seq_shorter_than_k)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"AC"};
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for ([[maybe_unused]] km::Skmer<kuint> skmer : skmerator)
+        nb_skmer += 1;
+
+    EXPECT_EQ(nb_skmer, 0U);
+    EXPECT_TRUE(skmerator.begin().consumed());
+}
+
+
+TEST(Skmerator, seq_length_k_minus_one)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"ACGT"};  // length = k - 1
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for ([[maybe_unused]] km::Skmer<kuint> skmer : skmerator)
+        nb_skmer += 1;
+
+    EXPECT_EQ(nb_skmer, 0U);
+    EXPECT_TRUE(skmerator.begin().consumed());
+}
+
+
+TEST(Skmerator, seq_length_exactly_k)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"ACGTA"};  // length = k
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for ([[maybe_unused]] km::Skmer<kuint> skmer : skmerator)
+        nb_skmer += 1;
+
+    EXPECT_EQ(nb_skmer, 1U);
+}
+
+
+// ------------------------- HOMOPOLYMER TESTS -------------------------
+
+TEST(Skmerator, all_A_homopolymer)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"AAAAAA"};
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for (km::Skmer<kuint> skmer : skmerator)
+    {
+        // Minimizer of an all-A window is AA = 0b0000 = 0 (forward canonical).
+        ASSERT_EQ(manip.minimizer(skmer), static_cast<kuint>(0));
+        // Same skmer shape as the CCCCCC / GGGGGG reference tests.
+        ASSERT_EQ(skmer.m_pref_size, 1U);
+        ASSERT_EQ(skmer.m_suff_size, 2U);
+
+        nb_skmer += 1;
+    }
+
+    EXPECT_EQ(nb_skmer, 2U);
+}
+
+
+TEST(Skmerator, all_T_homopolymer)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"TTTTTT"};
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    uint64_t nb_skmer {0};
+    for (km::Skmer<kuint> skmer : skmerator)
+    {
+        // Reverse-complement of TT is AA => canonical minimizer is 0.
+        ASSERT_EQ(manip.minimizer(skmer), static_cast<kuint>(0));
+        ASSERT_EQ(skmer.m_pref_size, 1U);
+        ASSERT_EQ(skmer.m_suff_size, 2U);
+
+        nb_skmer += 1;
+    }
+
+    EXPECT_EQ(nb_skmer, 2U);
+}
+
+
+TEST(Skmerator, all_A_equals_all_T_skmers)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip_a {k, m};
+    std::string seq_a{"AAAAAA"};
+    km::SeqSkmerator<kuint> skmerator_a {manip_a, seq_a};
+    std::vector<km::Skmer<kuint> > skmers_a;
+    for (km::Skmer<kuint> skmer : skmerator_a)
+        skmers_a.emplace_back(skmer);
+
+    km::SkmerManipulator<kuint> manip_t {k, m};
+    std::string seq_t{"TTTTTT"};
+    km::SeqSkmerator<kuint> skmerator_t {manip_t, seq_t};
+    std::vector<km::Skmer<kuint> > skmers_t;
+    for (km::Skmer<kuint> skmer : skmerator_t)
+        skmers_t.emplace_back(skmer);
+
+    // AAAAAA and TTTTTT are reverse-complements of each other, and both map to
+    // the same canonical form at every sliding window. Their yielded skmer
+    // streams must therefore be pairwise equal.
+    ASSERT_EQ(skmers_a.size(), skmers_t.size());
+    for (uint64_t i{0} ; i<skmers_a.size() ; i++)
+        ASSERT_TRUE(manip_a.skmer_equals(skmers_a[i], skmers_t[i]));
+}
+
+
+// ------------------------- ITERATOR STATE TESTS -------------------------
+
+TEST(Skmerator, iterator_idempotent_after_end)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip {k, m};
+    std::string seq{"ATCGACTGTGTACACT"};
+    km::SeqSkmerator<kuint> skmerator {manip, seq};
+
+    auto it = skmerator.begin();
+    auto end = skmerator.end();
+
+    while (not (it == end))
+        ++it;
+
+    EXPECT_TRUE(it.consumed());
+    EXPECT_TRUE(it == end);
+
+    // Extra increments on an already consumed iterator must be no-ops.
+    for (int i{0} ; i<5 ; i++)
+    {
+        ++it;
+        EXPECT_TRUE(it.consumed());
+        EXPECT_TRUE(it == end);
+    }
+}
+
+
+// ------------------------- FILE ITERATOR TESTS -------------------------
+
+TEST(Skmerator, file_multiple_sequences)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    // fasta0.fa contains two records:
+    //   >seq1  ATCGACTGTGTACACT
+    //   >seq2  ACAACACTTACTAGGA
+    std::string seq1{"ATCGACTGTGTACACT"};
+    std::string seq2{"ACAACACTTACTAGGA"};
+
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    std::vector<km::Skmer<kuint> > expected;
+
+    km::SeqSkmerator<kuint> seq1_skmerator {seq_manip, seq1};
+    for (km::Skmer<kuint> skmer : seq1_skmerator)
+        expected.emplace_back(skmer);
+
+    km::SeqSkmerator<kuint> seq2_skmerator {seq_manip, seq2};
+    for (km::Skmer<kuint> skmer : seq2_skmerator)
+        expected.emplace_back(skmer);
+
+    std::string filename{"../tests/data/fasta0.fa"};
+    km::SkmerManipulator<kuint> file_manip {k, m};
+    km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
+
+    std::vector<km::Skmer<kuint> > file_skmers;
+    for (km::Skmer<kuint> skmer : file_skmerator)
+        file_skmers.emplace_back(skmer);
+
+    ASSERT_EQ(expected.size(), file_skmers.size());
+    for (uint64_t i{0} ; i<expected.size() ; i++)
+        ASSERT_TRUE(file_manip.skmer_equals(expected[i], file_skmers[i]));
+}
+
+
+TEST(Skmerator, file_skips_short_sequences)
+{
+    using kuint = uint16_t;
+
+    const uint64_t k{5};
+    const uint64_t m{2};
+
+    // short_skip.fa interleaves records whose length is below k with records
+    // long enough to produce skmers. The file iterator must silently skip the
+    // short ones and concatenate the skmer streams of the remaining records.
+    std::string long1{"ATCGACTGTGTACACT"};
+    std::string long2{"CCCCAAAAA"};
+
+    km::SkmerManipulator<kuint> seq_manip {k, m};
+    std::vector<km::Skmer<kuint> > expected;
+
+    km::SeqSkmerator<kuint> long1_skmerator {seq_manip, long1};
+    for (km::Skmer<kuint> skmer : long1_skmerator)
+        expected.emplace_back(skmer);
+
+    km::SeqSkmerator<kuint> long2_skmerator {seq_manip, long2};
+    for (km::Skmer<kuint> skmer : long2_skmerator)
+        expected.emplace_back(skmer);
+
+    std::string filename{"../tests/data/short_skip.fa"};
+    km::SkmerManipulator<kuint> file_manip {k, m};
+    km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
+
+    std::vector<km::Skmer<kuint> > file_skmers;
+    for (km::Skmer<kuint> skmer : file_skmerator)
+        file_skmers.emplace_back(skmer);
+
+    ASSERT_EQ(expected.size(), file_skmers.size());
+    for (uint64_t i{0} ; i<expected.size() ; i++)
+        ASSERT_TRUE(file_manip.skmer_equals(expected[i], file_skmers[i]));
+}
