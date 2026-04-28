@@ -659,8 +659,9 @@ class SortedVirtualSkmerList {
 {
     assert(column_pos <= (m_manip.k - m_manip.m));
 
-    // Pre-reserve space to avoid reallocations
-    list.reserve(list.size() + column.size());
+    // Merge into a fresh buffer to avoid O(n) shifts from mid-vector inserts.
+    LList merged;
+    merged.reserve(list.size() + column.size());
 
     size_t list_idx = 0;
     size_t col_idx = 0;
@@ -672,38 +673,38 @@ class SortedVirtualSkmerList {
 
         bool is_left = list[list_idx].expandable and (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
         bool is_right = (column[col_idx] == column[valid_overlaps[overlap_idx].second] );
-        
+
         if (is_left && is_right) {
             // CASE A: Both elements are in overlap - merge
             list[list_idx].add_kmer(skmer_enumeration, m_manip, column[col_idx], column_pos);
             list[list_idx].last_id = column[col_idx];
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
             col_idx++;
             overlap_idx++;
         }
         else if (is_left) {
-            // CASE B: Only list element in overlap - insert from column
+            // CASE B: Only list element in overlap - emit column element,
+            // keep list element pending against the same overlap entry.
             assert(column[col_idx] < skmer_enumeration.size());
             auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
-            list.insert(list.begin() + list_idx,
-                Virtual_skmer<kuint>(
-                    skmer.m_pair,
-                    skmer.m_pref_size,
-                    skmer.m_suff_size,
-                    column[col_idx]
-                )
+            merged.emplace_back(
+                skmer.m_pair,
+                skmer.m_pref_size,
+                skmer.m_suff_size,
+                column[col_idx]
             );
-            list_idx++; // Skip the newly inserted element
             col_idx++;
         }
         else if (is_right) {
             // CASE C: Only column element in overlap - advance list
             // Close the skmer
             list[list_idx].expandable = false;
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
         }
         else {
-            // CASE D: Neither in overlap - compare and insert smaller
+            // CASE D: Neither in overlap - compare and emit smaller
             assert(column[col_idx] < skmer_enumeration.size());
             auto col_skmer = m_manip.get_skmer_of_kmer(
                 skmer_enumeration[column[col_idx]], column_pos);
@@ -711,17 +712,15 @@ class SortedVirtualSkmerList {
             if (list[list_idx].skmer <= col_skmer) {
                 // Close the skmer
                 list[list_idx].expandable = false;
+                merged.push_back(std::move(list[list_idx]));
                 list_idx++;
             } else {
-                list.insert(list.begin() + list_idx,
-                    Virtual_skmer<kuint>(
-                        col_skmer.m_pair,
-                        col_skmer.m_pref_size,
-                        col_skmer.m_suff_size,
-                        column[col_idx]
-                    )
+                merged.emplace_back(
+                    col_skmer.m_pair,
+                    col_skmer.m_pref_size,
+                    col_skmer.m_suff_size,
+                    column[col_idx]
                 );
-                list_idx++;
                 col_idx++;
             }
         }
@@ -734,27 +733,24 @@ class SortedVirtualSkmerList {
             skmer_enumeration[column[col_idx]], column_pos);
 
         if (list[list_idx].skmer <= col_skmer) {
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
         } else {
-            list.insert(list.begin() + list_idx,
-                Virtual_skmer<kuint>(
-                    col_skmer.m_pair,
-                    col_skmer.m_pref_size,
-                    col_skmer.m_suff_size,
-                    column[col_idx]
-                )
+            merged.emplace_back(
+                col_skmer.m_pair,
+                col_skmer.m_pref_size,
+                col_skmer.m_suff_size,
+                column[col_idx]
             );
-            list_idx++;
             col_idx++;
         }
     }
 
     // Append any remaining column elements
-    // This handles the case where list is initially empty or we've reached the end
     while (col_idx < column.size()) {
         assert(column[col_idx] < skmer_enumeration.size());
         auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
-        list.emplace_back(
+        merged.emplace_back(
             skmer.m_pair,
             skmer.m_pref_size,
             skmer.m_suff_size,
@@ -763,7 +759,13 @@ class SortedVirtualSkmerList {
         col_idx++;
     }
 
-    // If list has remaining elements and column is exhausted, they're already in place - nothing to do
+    // Append any remaining list elements
+    while (list_idx < list.size()) {
+        merged.push_back(std::move(list[list_idx]));
+        list_idx++;
+    }
+
+    list = std::move(merged);
 }
 
 }; // end of my class
