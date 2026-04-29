@@ -135,22 +135,6 @@ namespace km
 
       namespace internal
       {
-
-        template <typename kuint>
-        inline void collect_single_kmers(const std::vector<Skmer<kuint>> &group,
-                                        SkmerManipulator<kuint> &manip,
-                                         std::vector<Skmer<kuint>> &out)
-        {
-          for (const auto &sk : group)
-          {
-            auto [start, end] = manip.get_valid_kmer_bounds(sk);
-            if (end < start)
-              continue;
-            for (uint64_t pos = start; pos <= end; ++pos)
-              out.emplace_back(manip.get_skmer_of_kmer(sk, pos));
-          }
-        }
-
         // Handles the partial overlap (same minimizer, different pref/suff extent)
         // between two skmers at k-mer granularity
         template <typename kuint>
@@ -162,7 +146,7 @@ namespace km
         {
           if (op == OpType::UNION)
           {
-            // Fast path: combined raw groups → VirtualSkmerList sorts/dedups/recompacts.
+            // By reusing generate_sorted_list_from_enumeration we ensure unicity. It does not use much the sorting property though
             std::vector<Skmer<kuint>> combined;
             combined.reserve(group_a.size() + group_b.size());
             for (const auto &sk : group_a)
@@ -182,8 +166,8 @@ namespace km
           {
             // INTERSECTION or DIFF: explode to singletons, filter, rebuild.
             std::vector<Skmer<kuint>> survivors;
-            const uint64_t max_pos = manip.k - manip.m; // inclusive
-
+            const uint64_t max_pos = manip.k - manip.m;
+            // For every k-mer position I scan through the two lists and insert in a "survivors" group only the k-mers to be retained for new sorted virtual skmer list generation, based on diff or intersection.
             for (uint64_t p = 0; p <= max_pos; ++p)
             {
               size_t ia = 0, ib = 0;
