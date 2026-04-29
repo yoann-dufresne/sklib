@@ -301,6 +301,7 @@ namespace km
 
           while (source_a.has_next() && source_b.has_next())
           {
+            std::cout << "merge_loop" << std::endl;
             const Skmer<kuint> &sk_a = source_a.current();
             const Skmer<kuint> &sk_b = source_b.current();
 
@@ -309,12 +310,14 @@ namespace km
 
             if (min_a < min_b)
             {
+              std::cout << "min_sk_a < min_sk_b" << std::endl;
               if (op != OpType::INTERSECTION)
                 output.push_back(sk_a);
               source_a.advance();
             }
             else if (min_a > min_b)
             {
+              std::cout << "min_sk_a > min_sk_b" << std::endl;
               if (op == OpType::UNION)
                 output.push_back(sk_b);
               source_b.advance();
@@ -322,6 +325,7 @@ namespace km
             else
             {
               // Same minimizer: collect entire runs from both sides
+              std::cout << "min_sk_a == min_sk_b" << std::endl;
               auto current_min = min_a;
               group_a.clear();
               group_b.clear();
@@ -344,10 +348,15 @@ namespace km
           }
 
           // Drain whatever remains
-          if (op == OpType::UNION || op == OpType::DIFF)
+          if (op == OpType::UNION || op == OpType::DIFF){
+            std::cout << "UNION/DIFF, draining A" << std::endl;
             drain_source(source_a, output);
-          if (op == OpType::UNION)
+          }
+          if (op == OpType::UNION){
+            std::cout << "union, draining B" << std::endl;
             drain_source(source_b, output);
+          }
+
 
           SortedVirtualSkmerList<kuint> result(k, m);
           result.add_list(std::move(output));
@@ -388,82 +397,66 @@ namespace km
       }
 
       // ─────────────────────────────────────────────
-      //  PUBLIC API  — one in memory, one from file
+      //  PUBLIC API  — in-memory / file
       // ─────────────────────────────────────────────
 
       template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_union(const SortedVirtualSkmerList<kuint> &a,
-                                              const std::string &filepath_b)
+      SortedVirtualSkmerList<kuint> set_union(const SortedVirtualSkmerList<kuint> &mem,
+                                              const std::string &filepath)
       {
-        InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
-        FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::UNION);
+        FileSkmerSource<kuint> src(filepath);
+        if (mem.get_k() != src.k() || mem.get_m() != src.m())
+          throw std::invalid_argument("In-memory list k/m mismatch with file header");
+
+        InMemorySkmerSource<kuint> mem_src(mem.get_list(), mem.get_k(), mem.get_m());
+        return internal::merge_set_op<kuint>(mem_src, src, OpType::UNION);
       }
 
       template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_intersection(const SortedVirtualSkmerList<kuint> &a,
-                                                     const std::string &filepath_b)
+      SortedVirtualSkmerList<kuint> set_union(const std::string &filepath,
+                                              const SortedVirtualSkmerList<kuint> &mem)
+      { return set_union(mem, filepath); }
+
+      template <typename kuint>
+      SortedVirtualSkmerList<kuint> set_intersection(const SortedVirtualSkmerList<kuint> &mem,
+                                                     const std::string &filepath)
       {
-        InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
-        FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::INTERSECTION);
+        FileSkmerSource<kuint> src(filepath);
+        if (mem.get_k() != src.k() || mem.get_m() != src.m())
+          throw std::invalid_argument("In-memory list k/m mismatch with file header");
+
+        InMemorySkmerSource<kuint> mem_src(mem.get_list(), mem.get_k(), mem.get_m());
+        return internal::merge_set_op<kuint>(mem_src, src, OpType::INTERSECTION);
       }
 
       template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_diff(const SortedVirtualSkmerList<kuint> &a,
-                                             const std::string &filepath_b)
-      {
-        InMemorySkmerSource<kuint> src_a(a.get_list(), a.get_k(), a.get_m());
-        FileSkmerSource<kuint> src_b(filepath_b);
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::DIFF);
-      }
-
-      // ─────────────────────────────────────────────
-      //  PUBLIC API  — both from file
-      // ─────────────────────────────────────────────
+      SortedVirtualSkmerList<kuint> set_intersection(const std::string &filepath,
+                                                     const SortedVirtualSkmerList<kuint> &mem)
+      { return set_intersection(mem, filepath); }
 
       template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_union(const std::string &filepath_a,
-                                              const std::string &filepath_b,
-                                              uint64_t k, uint64_t m)
+      SortedVirtualSkmerList<kuint> set_diff(const SortedVirtualSkmerList<kuint> &mem,
+                                             const std::string &filepath)
       {
-        FileSkmerSource<kuint> src_a(filepath_a);
-        FileSkmerSource<kuint> src_b(filepath_b);
+        FileSkmerSource<kuint> src(filepath);
+        if (mem.get_k() != src.k() || mem.get_m() != src.m())
+          throw std::invalid_argument("In-memory list k/m mismatch with file header");
 
-        if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
-          throw std::invalid_argument("File header k/m does not match requested parameters");
-
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::UNION);
+        InMemorySkmerSource<kuint> mem_src(mem.get_list(), mem.get_k(), mem.get_m());
+        return internal::merge_set_op<kuint>(mem_src, src, OpType::DIFF);
       }
 
       template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_intersection(const std::string &filepath_a,
-                                                     const std::string &filepath_b,
-                                                     uint64_t k, uint64_t m)
+      SortedVirtualSkmerList<kuint> set_diff(const std::string &filepath,
+                                             const SortedVirtualSkmerList<kuint> &mem)
       {
-        FileSkmerSource<kuint> src_a(filepath_a);
-        FileSkmerSource<kuint> src_b(filepath_b);
+        FileSkmerSource<kuint> src(filepath);
+        if (mem.get_k() != src.k() || mem.get_m() != src.m())
+          throw std::invalid_argument("In-memory list k/m mismatch with file header");
 
-        if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
-          throw std::invalid_argument("File header k/m does not match requested parameters");
-
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::INTERSECTION);
+        InMemorySkmerSource<kuint> mem_src(mem.get_list(), mem.get_k(), mem.get_m());
+        return internal::merge_set_op<kuint>(src, mem_src, OpType::DIFF); // file LHS, mem RHS
       }
-
-      template <typename kuint>
-      SortedVirtualSkmerList<kuint> set_diff(const std::string &filepath_a,
-                                             const std::string &filepath_b,
-                                             uint64_t k, uint64_t m)
-      {
-        FileSkmerSource<kuint> src_a(filepath_a);
-        FileSkmerSource<kuint> src_b(filepath_b);
-
-        if (src_a.k() != k || src_a.m() != m || src_b.k() != k || src_b.m() != m)
-          throw std::invalid_argument("File header k/m does not match requested parameters");
-
-        return internal::merge_set_op<kuint>(src_a, src_b, OpType::DIFF);
-      }
-
     } // namespace setops
   } // namespace sortedlist
 } // namespace km

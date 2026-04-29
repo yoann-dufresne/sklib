@@ -485,7 +485,7 @@ class SortedVirtualSkmerList {
     uint64_t get_m() const noexcept { return m_manip.m; }
 
     // Getter for the list
-    const std::vector<Skmer<kuint>>& get_list() const {
+    const std::vector<Skmer<kuint>>& get_list() const noexcept {
         return m_skmer_list;
     }
 
