@@ -57,6 +57,38 @@ RMQtree::RMQtree(std::vector<overlap>::iterator begin, std::vector<overlap>::ite
     {
         m_tree[i].key.second = m_tree[2 * i + 2].key.second;
     }
+
+    // Build the parallel tree sorted by key.second (ties broken by key.first).
+    // Its internal nodes hold the max key.second of their subtree, which lets
+    // rmq_right descend in O(log n) even when the primary tree's leaves have
+    // non-monotonic key.second.
+    std::vector<overlap> by_second;
+    by_second.reserve(m_num_overlaps);
+    for (uint64_t i = 0; i < m_num_overlaps; i++)
+        by_second.push_back(m_tree[first_leaf_index() + i].key);
+    std::sort(by_second.begin(), by_second.end(),
+              [](overlap const& a, overlap const& b) {
+                  if (a.second != b.second) return a.second < b.second;
+                  return a.first < b.first;
+              });
+
+    m_second_tree.resize(2 * m_num_leaves - 1);
+    for (uint64_t i = 0; i < m_num_leaves; i++)
+    {
+        if (i < m_num_overlaps)
+        {
+            m_second_tree[m_num_leaves - 1 + i].key = by_second[i];
+            m_second_indexes[by_second[i]] = i;
+        }
+        else
+        {
+            m_second_tree[m_num_leaves - 1 + i].key = null_overlap;
+        }
+    }
+    for (int64_t i = m_num_leaves - 2; i >= 0; i--)
+    {
+        m_second_tree[i].key.second = m_second_tree[2 * i + 2].key.second;
+    }
 }
 
 /** Update the score of a given overlap of the tree
@@ -66,15 +98,22 @@ RMQtree::RMQtree(std::vector<overlap>::iterator begin, std::vector<overlap>::ite
  */
 void RMQtree::update(overlap o, int64_t score)
 {
-    //                 ( internal nodes )
+    // Update the primary (key.first-sorted) tree.
     uint64_t node_idx = this->first_leaf_index() + m_indexes[o];
     m_tree[node_idx].score = score;
-
-    // Update the parent nodes
     while (node_idx > 0)
     {
         node_idx = (node_idx - 1) / 2;
         m_tree[node_idx].score = std::max(m_tree[2 * node_idx + 1].score, m_tree[2 * node_idx + 2].score);
+    }
+
+    // Mirror the update into the key.second-sorted tree.
+    node_idx = this->first_leaf_index() + m_second_indexes[o];
+    m_second_tree[node_idx].score = score;
+    while (node_idx > 0)
+    {
+        node_idx = (node_idx - 1) / 2;
+        m_second_tree[node_idx].score = std::max(m_second_tree[2 * node_idx + 1].score, m_second_tree[2 * node_idx + 2].score);
     }
 }
 
@@ -112,41 +151,43 @@ overlap RMQtree::get_max_overlap() const
  */
 uint64_t RMQtree::rmq_right(uint64_t second_coord) const
 {
-    // Go down to the leftmost non-compatible leaf
+    if (m_num_overlaps == 0)
+        return 0;
+
+    // Descend the key.second-sorted tree to the boundary leaf, then walk back
+    // up accumulating the max of every fully-included left subtree. O(log n).
     uint64_t current_idx = 0;
-    for (uint64_t lvl{0} ; lvl<m_depth ; lvl++)
+    for (uint64_t lvl{0}; lvl < m_depth; lvl++)
     {
         auto left_idx = 2 * current_idx + 1;
         auto right_idx = 2 * current_idx + 2;
 
-        RMQnode const& left_child = m_tree[left_idx];
+        RMQnode const& left_child = m_second_tree[left_idx];
 
-        if (second_coord < left_child.key.second) {
+        if (second_coord < left_child.key.second)
             current_idx = left_idx;
-        } else {
+        else
             current_idx = right_idx;
-        }
     }
-    
-    // Take the first compatible leaf
-    if (second_coord < m_tree[current_idx].key.second)
+
+    // Back off one leaf if we overshot the boundary.
+    if (second_coord < m_second_tree[current_idx].key.second)
     {
         if (current_idx == m_num_leaves - 1)
             return 0;
         current_idx -= 1;
     }
 
-    // Go up to the root and get the max score
-    uint64_t max_score = m_tree[current_idx].score;
+    uint64_t max_score = m_second_tree[current_idx].score;
     while (current_idx > 0)
     {
         auto parent_idx = (current_idx - 1) / 2;
         bool is_right = (current_idx == 2 * parent_idx + 2);
-        
+
         if (is_right)
         {
-            RMQnode const& left_child = m_tree[current_idx - 1];
-            max_score = std::max(max_score, left_child.score);
+            RMQnode const& left_sibling = m_second_tree[current_idx - 1];
+            max_score = std::max(max_score, left_sibling.score);
         }
 
         current_idx = parent_idx;
@@ -160,32 +201,18 @@ uint64_t RMQtree::rmq_right(uint64_t second_coord) const
 
 RMQtree::MaxValueIterator::MaxValueIterator(const RMQtree& tree, uint64_t score, uint64_t right_boundary)
     : tree(tree), m_score(score), m_right_boundary(right_boundary), m_leaf_index(UINT64_MAX) {
-    // std::cout << "MaxValueIterator(" << score << ", " << right_boundary << ")" << std::endl;
-    
-    // Skip construction if end()
+
     if (right_boundary == UINT64_MAX)
-    {
-        // std::cout << "End iterator" << std::endl;
         return;
-    }
-    // std::cout << "Start iterator" << std::endl;
 
     assert(score <= tree.m_tree[0].score);
-    // Setup the first leaf
+
+    // Try the first leaf; if it doesn't match on score or lies past the
+    // right boundary, let next_valid_max() descend the tree to the next one.
     m_leaf_index = 0;
-    uint64_t const vect_idx = tree.m_num_leaves - 1;
-    // std::cout << "score: " << score << " right_boundary: " << right_boundary << std::endl;
-
-    // std::cout << "m_leaf_index before: " << m_leaf_index << std::endl;
-    // Find the first leaf with the right score
-    if (tree.m_tree[vect_idx].score != score)
+    RMQnode const& first_leaf = tree.m_tree[tree.first_leaf_index()];
+    if (first_leaf.score != score || first_leaf.key.second > right_boundary)
         next_valid_max();
-    // std::cout << "m_leaf_index after: " << m_leaf_index << std::endl;
-
-    // Verify the score
-    assert(tree.m_tree[tree.first_leaf_index() + m_leaf_index].score == score);
-
-    // std::cout << "end constructor" << std::endl;
 }
 
 RMQtree::MaxValueIterator::MaxValueIterator(MaxValueIterator const& other)
@@ -251,44 +278,37 @@ std::string RMQtree::toDot() const
 
 // --- Find the next valid max scored overlap ---
 void RMQtree::MaxValueIterator::next_valid_max() {
-    uint64_t current_idx = tree.first_leaf_index() + m_leaf_index;
-    // std::cout << "next_valid_max() " << m_score << " " << m_right_boundary << " " << m_leaf_index << std::endl;
-    // std::cout << tree.toDot() << std::endl;
     assert(m_right_boundary != UINT64_MAX);
+    uint64_t current_idx = tree.first_leaf_index() + m_leaf_index;
 
-    // cout << "current_idx: " << current_idx << endl;
-    // 1 - Go up the tree until we find a right sibling with the same score
+    // 1 - Go up until we find a right sibling whose subtree might contain a
+    //     leaf with score >= m_score.
     while (current_idx > 0)
     {
-        // std::cout << "\tcurrent_idx: " << current_idx << " m_score: " << m_score;
         auto parent_idx = (current_idx - 1) / 2;
         bool is_left = (current_idx == 2 * parent_idx + 1);
-        // std::cout << " parent_idx: " << parent_idx << " is_left: " << is_left;
-        
+
         if (is_left)
         {
             RMQnode const& right_child = tree.m_tree[current_idx + 1];
             if (right_child.score >= m_score)
             {
                 current_idx = current_idx + 1;
-                // std::cout << current_idx << std::endl;
                 break;
             }
         }
 
         current_idx = parent_idx;
-        // std::cout << current_idx << std::endl;
     }
-    // std::cout << "after up: " << current_idx << std::endl;
 
-    // 1 bis - If we are at the root, set the iterator to the end
+    // 1 bis - Reaching the root means there is no further candidate.
     if (current_idx == 0)
     {
         m_right_boundary = UINT64_MAX;
         return;
     }
-    
-    // 2 - Go down the tree to the leftmost leaf with a score >= to the current score
+
+    // 2 - Descend to the leftmost leaf of that subtree with score >= m_score.
     while (current_idx < tree.m_num_leaves - 1)
     {
         auto left_idx = 2 * current_idx + 1;
@@ -301,32 +321,25 @@ void RMQtree::MaxValueIterator::next_valid_max() {
         else
             current_idx = left_idx;
     }
-    // std::cout << "after down: " << current_idx << std::endl;
 
-    // 3 - If current leaf is outside of the right boundary, set the iterator to the end
-    if (tree.m_tree[current_idx].key.second > m_right_boundary)
+    // 3 - If the leaf fails the score or boundary test, advance past it and
+    //     keep searching.  Do NOT conclude "end of iteration" from a single
+    //     out-of-range leaf: leaves are sorted by key.first, so later leaves
+    //     may still satisfy key.second <= right_boundary.
+    RMQnode const& leaf = tree.m_tree[current_idx];
+    if (leaf.score != m_score || leaf.key.second > m_right_boundary)
     {
-        m_right_boundary = UINT64_MAX;
-        return;
-    }
-
-    // 4 - If score is not the right one, recursive call
-    if (tree.m_tree[current_idx].score != m_score)
-    {
-        if (current_idx == tree.m_num_leaves)
+        m_leaf_index = current_idx - tree.first_leaf_index() + 1;
+        if (m_leaf_index >= tree.m_num_leaves)
         {
-            // If we are at the last leaf, set the iterator to the end
             m_right_boundary = UINT64_MAX;
             return;
         }
-
-        // std::cout << "current_idx: " << current_idx << " " << tree.m_num_leaves << std::endl;
-        // std::cout << "score not matching, recursive call" << std::endl;
         next_valid_max();
+        return;
     }
-    
-    m_leaf_index = current_idx - tree.m_num_leaves + 1;
-    // std::cout << "end next_valid_max() -> " << m_leaf_index << std::endl << std::endl;
+
+    m_leaf_index = current_idx - tree.first_leaf_index();
 }
 
 

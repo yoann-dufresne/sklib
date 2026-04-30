@@ -1,2 +1,6 @@
 build/
+build-profile/
 .vscode/
+CLAUDE.md
+thirdparty/FlameGraph/
+scripts/out/

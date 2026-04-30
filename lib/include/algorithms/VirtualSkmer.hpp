@@ -15,6 +15,13 @@
 #ifndef VIRTUALSKMER_H
 #define VIRTUALSKMER_H
 
+// FRIEND_TEST is provided by gtest (<gtest/gtest_prod.h>). Non-test
+// translation units that include this header don't pull in gtest, so
+// stub the macro out to a no-op declaration that absorbs the trailing ';'.
+#ifndef FRIEND_TEST
+#define FRIEND_TEST(test_case_name, test_name) static_assert(true, "")
+#endif
+
 namespace km
 {
 namespace sortedlist
@@ -143,22 +150,29 @@ template<typename kuint>
 struct Virtual_skmer {
     Skmer<kuint> skmer;
     uint64_t last_id;
+    bool expandable;
 
-    Virtual_skmer() : skmer(), last_id(0) {}
+    Virtual_skmer() : skmer(), last_id(0), expandable(true) {}
 
     Virtual_skmer(km::Skmer<kuint>& passed_skmer, SkmerManipulator<kuint>& m_manip, uint64_t kmer_pos, uint64_t id_value)
         : skmer(m_manip.get_skmer_of_kmer(passed_skmer,kmer_pos)), last_id(id_value) {}
 
     Virtual_skmer(km::Skmer<kuint>::pair kmer, uint16_t prefix, uint16_t suffix, uint64_t id_value)
-        : skmer(kmer, prefix, suffix), last_id(id_value) {}
+        : skmer(kmer, prefix, suffix), last_id(id_value), expandable(true) {}
     Virtual_skmer(km::Skmer<kuint>& passed_skmer, uint64_t id_value)
-        : skmer(passed_skmer), last_id(id_value) {}
+        : skmer(passed_skmer), last_id(id_value), expandable(true) {}
     Virtual_skmer(km::Skmer<kuint>&& passed_skmer, uint64_t id_value)
-        : skmer(passed_skmer), last_id(id_value) {}
+        : skmer(passed_skmer), last_id(id_value), expandable(true) {}
 
     bool operator==(const Virtual_skmer& other) const {
         return (skmer == other.skmer &&
                 last_id == other.last_id);
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const Virtual_skmer<kuint>& vs)
+    {
+        os << vs.skmer << " last_id:" << vs.last_id;
+        return os;
     }
 
     void inline add_kmer(std::vector<Skmer<kuint> > const & skmer_enumeration, SkmerManipulator<kuint>& m_manip, uint64_t skmer_id, uint64_t kmer_pos){
@@ -197,9 +211,6 @@ class SortedVirtualSkmerList {
     }
 
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
-        //initialize the linked lists
-        // std::cout << "INIZIALIZING VALUES" << std::endl;
-
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
@@ -208,75 +219,72 @@ class SortedVirtualSkmerList {
         std::vector<overlap> valid_overlaps;
 
         // 0 - sort the column ids based on kmers of the first column
-        // std::cout << "SLIDING FIRST WINDOW" << std::endl;
         window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+        // cout << "order col " << 0 << "\t";
+        // for (const auto& x : window.right())
+        //     cout << x << ",";
+        // cout << endl;
         right_column_position++;
 
         LList vskmer_list;
+        // SkmerPrettyPrinter<kuint> pp {5, 2};
 
         vskmer_list.reserve(window.right().size());
         for(const uint64_t el: window.right()){
             vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
-            // std::cerr << "GET_SKMER_OF_KMER HAS PREFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_pref_size << " AND SUFFIX: " << m_manip.get_skmer_of_kmer(skmer_enumeration[el],0).m_suff_size << std::endl;
         }
+
+        // cout << "VSkmer List " << 0 << endl;
+        // for (const Virtual_skmer<kuint>& vskm : vskmer_list){
+        //         pp << vskm.skmer;
+        //         cout << pp << " last_id:" << vskm.last_id << endl;
+        //         // cout << vskm << endl;
+        //     }
+        // cout << endl << endl;
 
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
-            // std::cerr << "COL POSITION: " << right_column_position << " OUT OF " << m_manip.k - m_manip.m << std::endl;
             // 1 - sort the column ids based on kmers
-            // std::cout << "SLIDING WINDOW IN " << right_column_position << " ITERATION." << std::endl;
             window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
-
-            // std::cout << "LEFT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.left()){
-            //     std::cout << "L: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
-            // std::cout << "RIGHT COLUMN:" << std::endl;
-            // for (const uint64_t el: window.right()){
-            //     std::cout << "R: " << el << ";\t";
-            // }
-            // std::cout << std::endl;
+            // cout << "order col " << right_column_position << "\t";
+            // for (const auto& x : window.right())
+            //     cout << x << ",";
+            // cout << endl;
 
             // 2 - compute candidate overlaps for a pair of columns
-            // std::cout << "get_candidate_overlaps. Left column size: " << window.left().size() << "; Right column size: " << window.right().size() << std::endl;
             candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
+            // cout << "candidate overlaps for " << right_column_position << "\t";
+            // for (const auto& o : candidate_overlaps)
+            //     cout << "(" << o.first << ";" << o.second << ") , ";
+            // cout << endl;
 
             // 3 - get valid overlaps using colinear chaining
-            // // std::cout << "colinear_chaining with colinear size of " << candidate_overlaps.size() <<  std::endl;
-            // for (auto overlap: candidate_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "}" << std::endl;
-            // }
-
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
                 valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
             else { valid_overlaps = candidate_overlaps;}
+            // cout << "valid overlaps for " << right_column_position << "\t";
+            // for (const auto& o : valid_overlaps)
+            //     cout << "(" << o.first << ";" << o.second << ") , ";
+            // cout << endl;
 
-            // // std::cout << "OUT OF COLINEAR CHAINING: {";
-            // for (auto overlap: valid_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            // }
-            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
-            // // 3 - 1/2 Return to skmer id from position
-            // for(size_t i {0}; i < valid_overlaps.size(); i++){
-            //     valid_overlaps[i].first = window.left()[valid_overlaps[i].first];
-            //     valid_overlaps[i].second = window.right()[valid_overlaps[i].second];
-            // }
-            // std::cout << "TRASFORMED INTO: {";
-            // for (auto overlap: valid_overlaps){
-            //     std::cout << "{" << overlap.first << "," << overlap.second << "},";
-            // }
-            // std::cout << "}. size: " << valid_overlaps.size() << std::endl;
 
             // 4 - reconcile kmers by merging columns
-            // std::cout << "merge_LList_column" << std::endl;
             merge_LList_column(skmer_enumeration, vskmer_list, window.left(), window.right(), valid_overlaps, right_column_position);
+            // cout << "VSkmer List " << right_column_position << endl;
+            // for (const Virtual_skmer<kuint>& vskm : vskmer_list) {
+            //     pp << vskm.skmer;
+            //     cout << pp << " last_id:" << vskm.last_id << " expandable: " << vskm.expandable << endl;
+            //     // cout << vskm << endl;
+            // }
+            // cout << endl;
 
             // go to next iteration
             left_column_position = right_column_position;
             right_column_position++;
+            
+            // cout << endl;
         }
 
         m_skmer_list.reserve(vskmer_list.size());
@@ -650,15 +658,16 @@ class SortedVirtualSkmerList {
      **/
     void merge_LList_column(std::vector<Skmer<kuint>> const & skmer_enumeration,
                        std::vector<Virtual_skmer<kuint>>& list,
-                       std::vector<uint64_t> const & left_column,
+                       std::vector<uint64_t> const & left_column, // BUG here ? Remaining of old version ?
                        std::vector<uint64_t> const & column,
                        std::vector<overlap> const & valid_overlaps,
                        uint64_t const column_pos)
 {
     assert(column_pos <= (m_manip.k - m_manip.m));
 
-    // Pre-reserve space to avoid reallocations
-    list.reserve(list.size() + column.size());
+    // Merge into a fresh buffer to avoid O(n) shifts from mid-vector inserts.
+    LList merged;
+    merged.reserve(list.size() + column.size());
 
     size_t list_idx = 0;
     size_t col_idx = 0;
@@ -668,54 +677,56 @@ class SortedVirtualSkmerList {
     while (list_idx < list.size() && col_idx < column.size() &&
            overlap_idx < valid_overlaps.size()) {
 
-        bool is_left = (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
+        bool is_left = list[list_idx].expandable and (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
         bool is_right = (column[col_idx] == column[valid_overlaps[overlap_idx].second] );
 
         if (is_left && is_right) {
             // CASE A: Both elements are in overlap - merge
             list[list_idx].add_kmer(skmer_enumeration, m_manip, column[col_idx], column_pos);
             list[list_idx].last_id = column[col_idx];
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
             col_idx++;
             overlap_idx++;
         }
         else if (is_left) {
-            // CASE B: Only list element in overlap - insert from column
+            // CASE B: Only list element in overlap - emit column element,
+            // keep list element pending against the same overlap entry.
             assert(column[col_idx] < skmer_enumeration.size());
             auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
-            list.insert(list.begin() + list_idx,
-                Virtual_skmer<kuint>(
-                    skmer.m_pair,
-                    skmer.m_pref_size,
-                    skmer.m_suff_size,
-                    column[col_idx]
-                )
+            merged.emplace_back(
+                skmer.m_pair,
+                skmer.m_pref_size,
+                skmer.m_suff_size,
+                column[col_idx]
             );
-            list_idx++; // Skip the newly inserted element
             col_idx++;
         }
         else if (is_right) {
             // CASE C: Only column element in overlap - advance list
+            // Close the skmer
+            list[list_idx].expandable = false;
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
         }
         else {
-            // CASE D: Neither in overlap - compare and insert smaller
+            // CASE D: Neither in overlap - compare and emit smaller
             assert(column[col_idx] < skmer_enumeration.size());
             auto col_skmer = m_manip.get_skmer_of_kmer(
                 skmer_enumeration[column[col_idx]], column_pos);
 
             if (list[list_idx].skmer <= col_skmer) {
+                // Close the skmer
+                list[list_idx].expandable = false;
+                merged.push_back(std::move(list[list_idx]));
                 list_idx++;
             } else {
-                list.insert(list.begin() + list_idx,
-                    Virtual_skmer<kuint>(
-                        col_skmer.m_pair,
-                        col_skmer.m_pref_size,
-                        col_skmer.m_suff_size,
-                        column[col_idx]
-                    )
+                merged.emplace_back(
+                    col_skmer.m_pair,
+                    col_skmer.m_pref_size,
+                    col_skmer.m_suff_size,
+                    column[col_idx]
                 );
-                list_idx++;
                 col_idx++;
             }
         }
@@ -728,27 +739,24 @@ class SortedVirtualSkmerList {
             skmer_enumeration[column[col_idx]], column_pos);
 
         if (list[list_idx].skmer <= col_skmer) {
+            merged.push_back(std::move(list[list_idx]));
             list_idx++;
         } else {
-            list.insert(list.begin() + list_idx,
-                Virtual_skmer<kuint>(
-                    col_skmer.m_pair,
-                    col_skmer.m_pref_size,
-                    col_skmer.m_suff_size,
-                    column[col_idx]
-                )
+            merged.emplace_back(
+                col_skmer.m_pair,
+                col_skmer.m_pref_size,
+                col_skmer.m_suff_size,
+                column[col_idx]
             );
-            list_idx++;
             col_idx++;
         }
     }
 
     // Append any remaining column elements
-    // This handles the case where list is initially empty or we've reached the end
     while (col_idx < column.size()) {
         assert(column[col_idx] < skmer_enumeration.size());
         auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
-        list.emplace_back(
+        merged.emplace_back(
             skmer.m_pair,
             skmer.m_pref_size,
             skmer.m_suff_size,
@@ -757,7 +765,13 @@ class SortedVirtualSkmerList {
         col_idx++;
     }
 
-    // If list has remaining elements and column is exhausted, they're already in place - nothing to do
+    // Append any remaining list elements
+    while (list_idx < list.size()) {
+        merged.push_back(std::move(list[list_idx]));
+        list_idx++;
+    }
+
+    list = std::move(merged);
 }
 
 }; // end of my class
@@ -835,6 +849,60 @@ public:
         if(!went_good){
             std::cerr << "Error in the writing of the skmer to disk to file: " << filename << std::endl;
         }
+        return outFile.close();
+    }
+
+    static void save_ascii(const SortedVirtualSkmerList<kuint>& list, const std::string& filename) {
+        std::ofstream outFile(filename);
+
+        if (outFile.fail()) {
+            std::cerr << "Error opening file for writing: " << filename << std::endl;
+            return outFile.close();
+        }
+
+        const uint64_t k = list.m_manip.k;
+        const uint64_t m = list.m_manip.m;
+        const uint64_t sk_size = 2 * k - m;
+        const uint64_t flank = k - m;
+        const uint64_t buf_pref = (sk_size + 1) / 2;
+        const uint64_t buf_suff = sk_size / 2;
+        uint64_t count = list.size();
+        outFile << k << " " << m << " " << count << "\n";
+
+        if (!outFile) {
+            std::cerr << "Error writing header to file: " << filename << std::endl;
+            return;
+        }
+
+        static const char nucleotides[] = {'A', 'C', 'T', 'G'};
+
+        // The interleaved layout stores position p of the superkmer as follows:
+        //   p in [0, buf_pref)   -> prefix slot p        at bits [4p+1 : 4p]
+        //   p in [buf_pref, sk_size) -> suffix slot (sk_size-1-p) at bits [4s+3 : 4s+2]
+        // The minimizer positions [flank, flank+m-1] are split across prefix and
+        // suffix slots (not a contiguous bit block), so we iterate slots and the
+        // minimizer nucleotides are interleaved along with the flanks.
+        for (uint64_t i = 0; i < count; i++) {
+            const auto& sk = list.m_skmer_list[i];
+
+            // Prefix side: positions [flank - m_pref_size, buf_pref - 1]
+            // (valid prefix flank, then prefix-side minimizer nucleotides)
+            for (uint64_t slot = flank - sk.m_pref_size; slot < buf_pref; slot++)
+                outFile << nucleotides[(sk.m_pair >> (4 * slot)) & 0b11UL];
+
+            // Suffix side: positions (buf_pref, sk_size - 1 - (flank - m_suff_size)]
+            // Iterate slot from (buf_suff - 1) down to (flank - m_suff_size).
+            for (int64_t slot = static_cast<int64_t>(buf_suff) - 1;
+                 slot >= static_cast<int64_t>(flank) - static_cast<int64_t>(sk.m_suff_size);
+                 slot--)
+                outFile << nucleotides[(sk.m_pair >> (4 * slot + 2)) & 0b11UL];
+
+            outFile << " " << sk.m_pref_size << " " << sk.m_suff_size;
+            outFile << "\n";
+        }
+
+        if (!outFile.good())
+            std::cerr << "Error writing skmers to file: " << filename << std::endl;
         return outFile.close();
     }
 

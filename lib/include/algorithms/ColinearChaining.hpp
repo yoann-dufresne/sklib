@@ -42,11 +42,15 @@ class RMQtree
 {
 private:
     std::vector<RMQnode> m_tree;
+    // Parallel tree whose leaves are sorted by key.second so that rmq_right
+    // can be answered by the same O(log n) descent the original code used.
+    std::vector<RMQnode> m_second_tree;
     uint64_t m_num_overlaps;
     uint64_t m_num_leaves;
     uint64_t m_depth;
 
     std::unordered_map<overlap, uint64_t> m_indexes;
+    std::unordered_map<overlap, uint64_t> m_second_indexes;
 
     /** Get the index of the first leaf node inside of the vector representing the tree.
      * @return the index of the first leaf node

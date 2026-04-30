@@ -722,3 +722,491 @@ TEST(SkmerManipulator, KmerEqualsKmer3)
 
     ASSERT_EQ(expected_result, manip.kmer_compare(skmer_vector[0], skmer_vector[1], position) < 0);
 }
+
+
+// -------------------------------------------------------------------
+//                     Skmer::pair bitwise operations
+// -------------------------------------------------------------------
+
+TEST(SkmerPair, ShiftRightWithinKuint)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    // Bits 16..47 all set; shift right 16 should land them at 0..31.
+    kpair p{0xFFFF0000u, 0x0000FFFFu};
+    p >>= 16;
+    EXPECT_EQ(p.m_value[0], 0xFFFFFFFFu);
+    EXPECT_EQ(p.m_value[1], 0x00000000u);
+}
+
+TEST(SkmerPair, ShiftRightAtKuintBoundary)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    p >>= 32;
+    EXPECT_EQ(p.m_value[0], 0xCAFEBABEu);
+    EXPECT_EQ(p.m_value[1], 0x00000000u);
+}
+
+TEST(SkmerPair, ShiftRightBeyondKuintBoundary)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    p >>= 40;
+    EXPECT_EQ(p.m_value[0], 0x00CAFEBAu);
+    EXPECT_EQ(p.m_value[1], 0x00000000u);
+}
+
+TEST(SkmerPair, ShiftRightByZeroIsIdentity)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    p >>= 0;
+    EXPECT_EQ(p.m_value[0], 0xDEADBEEFu);
+    EXPECT_EQ(p.m_value[1], 0xCAFEBABEu);
+}
+
+TEST(SkmerPair, ShiftLeftWithinKuint)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    // Top nibble of m_value[0] should cross into m_value[1] after a 4-bit left shift.
+    kpair p{0xA0000000u, 0x00000000u};
+    p <<= 4;
+    EXPECT_EQ(p.m_value[0], 0x00000000u);
+    EXPECT_EQ(p.m_value[1], 0x0000000Au);
+}
+
+TEST(SkmerPair, ShiftLeftAtKuintBoundary)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    p <<= 32;
+    EXPECT_EQ(p.m_value[0], 0x00000000u);
+    EXPECT_EQ(p.m_value[1], 0xDEADBEEFu);
+}
+
+TEST(SkmerPair, ShiftLeftBeyondKuintBoundary)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x000000DEu, 0x00000000u};
+    p <<= 40;
+    EXPECT_EQ(p.m_value[0], 0x00000000u);
+    EXPECT_EQ(p.m_value[1], 0x0000DE00u);
+}
+
+TEST(SkmerPair, ShiftLeftByZeroIsIdentity)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    p <<= 0;
+    EXPECT_EQ(p.m_value[0], 0xDEADBEEFu);
+    EXPECT_EQ(p.m_value[1], 0xCAFEBABEu);
+}
+
+TEST(SkmerPair, BitwiseNot)
+{
+    using kuint = uint8_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{static_cast<kuint>(0b10101010u), static_cast<kuint>(0b01010101u)};
+    kpair q = ~p;
+    EXPECT_EQ(q.m_value[0], static_cast<kuint>(0b01010101u));
+    EXPECT_EQ(q.m_value[1], static_cast<kuint>(0b10101010u));
+}
+
+TEST(SkmerPair, AndWithUint64WipesHighHalf)
+{
+    // Pin documented behavior: operator& (uint64_t) forces m_value[1] to 0.
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xFFFFFFFFu, 0xFFFFFFFFu};
+    kpair q = p & static_cast<uint64_t>(0xFFu);
+    EXPECT_EQ(q.m_value[0], 0xFFu);
+    EXPECT_EQ(q.m_value[1], 0x0u);
+}
+
+TEST(SkmerPair, AndWithPairKeepsBothHalves)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xFFFFFFFFu, 0xFFFFFFFFu};
+    kpair mask{0x000000FFu, 0x0000FF00u};
+    kpair r = p & mask;
+    EXPECT_EQ(r.m_value[0], 0x000000FFu);
+    EXPECT_EQ(r.m_value[1], 0x0000FF00u);
+}
+
+TEST(SkmerPair, OrAssignKuintOnlyTouchesLowHalf)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x0u, 0x0u};
+    kuint v = 0xDEADBEEFu;
+    p |= v;
+    EXPECT_EQ(p.m_value[0], 0xDEADBEEFu);
+    EXPECT_EQ(p.m_value[1], 0x0u);
+}
+
+TEST(SkmerPair, ImplicitConversionToUint64DropsHighHalf)
+{
+    using kuint = uint32_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0xDEADBEEFu, 0xCAFEBABEu};
+    uint64_t v = static_cast<uint64_t>(p);
+    EXPECT_EQ(v, static_cast<uint64_t>(0xDEADBEEFu));
+}
+
+TEST(SkmerPair, LessEqualSameHighPath)
+{
+    using kuint = uint8_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair a{static_cast<kuint>(0x10u), static_cast<kuint>(0x05u)};
+    kpair b{static_cast<kuint>(0x10u), static_cast<kuint>(0x05u)};
+    EXPECT_TRUE(a <= b);
+    EXPECT_TRUE(b <= a);
+}
+
+TEST(SkmerPair, LessEqualDifferentHighPath)
+{
+    using kuint = uint8_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair a{static_cast<kuint>(0xFFu), static_cast<kuint>(0x03u)};
+    kpair b{static_cast<kuint>(0x00u), static_cast<kuint>(0x05u)};
+    EXPECT_TRUE(a <= b);
+    EXPECT_FALSE(b <= a);
+}
+
+TEST(SkmerPair, HasherIsDeterministic)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    km::Skmer<kuint>::pair_hasher h{};
+    kpair p{0x1234u, 0x5678u};
+    kpair q{0x1234u, 0x5678u};
+    EXPECT_EQ(h(p), h(q));
+}
+
+
+// -------------------------------------------------------------------
+//                            Skmer class
+// -------------------------------------------------------------------
+
+TEST(Skmer, CopyConstructorPreservesSizes)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x1234u, 0};
+    km::Skmer<kuint> original(p, 3, 5);
+    km::Skmer<kuint> copy(original);
+    EXPECT_EQ(copy.m_pair, p);
+    EXPECT_EQ(copy.m_pref_size, 3);
+    EXPECT_EQ(copy.m_suff_size, 5);
+}
+
+TEST(Skmer, MoveConstructorPreservesSizes)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x1234u, 0};
+    km::Skmer<kuint> original(p, 3, 5);
+    km::Skmer<kuint> moved(std::move(original));
+    EXPECT_EQ(moved.m_pair, p);
+    EXPECT_EQ(moved.m_pref_size, 3);
+    EXPECT_EQ(moved.m_suff_size, 5);
+}
+
+TEST(Skmer, CopyAssignmentPreservesSizes)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x1234u, 0};
+    km::Skmer<kuint> original(p, 3, 5);
+    km::Skmer<kuint> assigned{};
+    assigned = original;
+    EXPECT_EQ(assigned.m_pair, p);
+    EXPECT_EQ(assigned.m_pref_size, 3);
+    EXPECT_EQ(assigned.m_suff_size, 5);
+}
+
+TEST(Skmer, EqualityRequiresBothSizesMatch)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x1234u, 0};
+    km::Skmer<kuint> a(p, 3, 5);
+    km::Skmer<kuint> b(p, 3, 5);
+    km::Skmer<kuint> c(p, 4, 5);
+    km::Skmer<kuint> d(p, 3, 4);
+    EXPECT_TRUE(a == b);
+    EXPECT_FALSE(a == c);
+    EXPECT_FALSE(a == d);
+}
+
+TEST(Skmer, LessThanIgnoresSizes)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    kpair p{0x1234u, 0};
+    km::Skmer<kuint> a(p, 3, 5);
+    km::Skmer<kuint> b(p, 0, 0);
+    EXPECT_FALSE(a < b);
+    EXPECT_FALSE(b < a);
+}
+
+TEST(Skmer, StreamOutput)
+{
+    using kuint = uint8_t;
+    using kpair = km::Skmer<kuint>::pair;
+    km::Skmer<kuint> s{kpair{static_cast<kuint>(0b00001111u), static_cast<kuint>(0b11110000u)}, 2, 3};
+    stringstream ss;
+    ss << s;
+    EXPECT_EQ(ss.str(), "11110000 00001111 pref:2 suff:3");
+}
+
+
+// -------------------------------------------------------------------
+//                       SkmerPrettyPrinter
+// -------------------------------------------------------------------
+
+TEST(SkmerPrettyPrinter, PrintsInterleavedSkmer)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+    // Prefix slots 0..3 = A,C,T,G; suffix slots 0..3 = A,C,T,G.
+    // Bits [1:0]=00 [3:2]=00 [5:4]=01 [7:6]=01 [9:8]=10 [11:10]=10 [13:12]=11 [15:14]=11
+    const kpair value{static_cast<kuint>(0xFA50u), 0};
+    km::Skmer<kuint> s{value, 3, 3};
+
+    km::SkmerPrettyPrinter<kuint> pp{k, m};
+    pp << s;
+    stringstream ss;
+    ss << pp;
+    EXPECT_EQ(ss.str(), "[skmer not interleaved: ACTG GTCA]");
+}
+
+
+// -------------------------------------------------------------------
+//                  SkmerManipulator untested methods
+// -------------------------------------------------------------------
+
+TEST(SkmerManipulator, AddEmptyNucleotideSaturatesBothStrands)
+{
+    // Pushing the 0b11 sentinel sk_size times fills every slot with 0b11 on both
+    // strands; add_empty_nucleotide does NOT complement (the sentinel has no complement).
+    using kuint = uint16_t;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+    constexpr uint64_t sk_size = 2 * k - m;
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    for (uint64_t i = 0; i < sk_size; i++)
+        manip.add_empty_nucleotide();
+
+    EXPECT_EQ(manip.m_fwd.m_pair.m_value[0], static_cast<kuint>(0xFFFFu));
+    EXPECT_EQ(manip.m_rev.m_pair.m_value[0], static_cast<kuint>(0xFFFFu));
+}
+
+TEST(SkmerManipulator, AddEmptyNucleotideDiffersFromAddNucleotideOnReverse)
+{
+    // add_nucleotide(0b11) pushes 0b11 forward but its complement (0b01) on reverse.
+    // add_empty_nucleotide pushes 0b11 on both strands.
+    using kuint = uint16_t;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> a{k, m};
+    km::SkmerManipulator<kuint> b{k, m};
+    a.add_nucleotide(static_cast<kuint>(0b11));
+    b.add_empty_nucleotide();
+
+    EXPECT_EQ(a.m_fwd.m_pair, b.m_fwd.m_pair);
+    EXPECT_NE(a.m_rev.m_pair, b.m_rev.m_pair);
+}
+
+TEST(SkmerManipulator, MinimizerOverloadAndNoArgConsistency)
+{
+    using kuint = uint16_t;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    const string seq{"TCAAGCA"};
+    for (const auto& letter : seq)
+    {
+        kuint nucl{static_cast<kuint>((letter >> 1) & 0b11)};
+        manip.add_nucleotide(nucl);
+    }
+
+    const kuint fwd_minimizer = static_cast<kuint>(manip.m_fwd.m_pair >> (4 * (k - m)));
+    const kuint rev_minimizer = static_cast<kuint>(manip.m_rev.m_pair >> (4 * (k - m)));
+
+    EXPECT_EQ(manip.minimizer(manip.m_fwd), fwd_minimizer);
+    EXPECT_EQ(manip.minimizer(manip.m_rev), rev_minimizer);
+    EXPECT_EQ(manip.minimizer(), std::min(fwd_minimizer, rev_minimizer));
+}
+
+TEST(SkmerManipulator, MaskAbsentNucleotidesFillsTrimmedSlots)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+
+    // pref_size=1, suff_size=1 → absent prefix slots {0,1} and absent suffix slots {0,1}.
+    // Prefix slot i sits at bits [4i+1:4i]; setting to 0b11 yields 0x03 at i=0 and 0x30 at i=1.
+    // Suffix slot i sits at bits [4i+3:4i+2]; setting to 0b11 yields 0x0C at i=0 and 0xC0 at i=1.
+    // Combined low byte: 0xFF.
+    km::Skmer<kuint> s{kpair{0u, 0u}, 1, 1};
+    manip.mask_absent_nucleotides(s);
+    EXPECT_EQ(s.m_pair.m_value[0], static_cast<kuint>(0x00FFu));
+    EXPECT_EQ(s.m_pair.m_value[1], static_cast<kuint>(0u));
+}
+
+TEST(SkmerManipulator, GetSkmerOfKmerPreservesKmerBitsAndSizes)
+{
+    using kuint = uint16_t;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    const string seq{"TCAAGCAT"};
+    for (const auto& letter : seq)
+    {
+        kuint nucl{static_cast<kuint>((letter >> 1) & 0b11)};
+        manip.add_nucleotide(nucl);
+    }
+
+    const auto k_masks = manip.get_k_mask();
+    const km::Skmer<kuint> full = manip.m_fwd;
+
+    for (uint64_t pos{0}; pos <= k - m; pos++)
+    {
+        const auto extracted = manip.get_skmer_of_kmer(full, pos);
+        EXPECT_EQ(extracted.m_pair & k_masks[pos], full.m_pair & k_masks[pos])
+            << "kmer_pos=" << pos;
+        const uint16_t expected_pref = static_cast<uint16_t>(((2*k - m + 1)/2) - (m + 1)/2 - pos);
+        const uint16_t expected_suff = static_cast<uint16_t>(pos);
+        EXPECT_EQ(extracted.m_pref_size, expected_pref) << "kmer_pos=" << pos;
+        EXPECT_EQ(extracted.m_suff_size, expected_suff) << "kmer_pos=" << pos;
+    }
+}
+
+TEST(SkmerManipulator, ExtractPrefixSuffixCoversAllPositions)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    const auto sp_masks = manip.get_sp_mask();
+    ASSERT_EQ(sp_masks.size(), k - m + 2u);
+
+    km::Skmer<kuint> s{kpair{0xFFFFu, 0u}};
+    for (uint64_t pos{0}; pos < sp_masks.size(); pos++)
+    {
+        const auto extracted = manip.extract_prefix_suffix(s, pos);
+        EXPECT_EQ(extracted, s.m_pair & sp_masks[pos]) << "pos=" << pos;
+    }
+}
+
+TEST(SkmerManipulator, ConcatenateSkmerPinsCurrentBehavior)
+{
+    // concatenate_skmer uses &= (not |=) and increments m_suff_size by 1.
+    // This test pins the current observable behavior so any future change is deliberate.
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    km::Skmer<kuint> a{kpair{0xFFFFu, 0u}, 3, 2};
+    km::Skmer<kuint> b{kpair{0xA5A5u, 0u}, 3, 3};
+
+    manip.concatenate_skmer(a, b);
+
+    EXPECT_EQ(a.m_pair, kpair(static_cast<kuint>(0xA5A5u), 0u));
+    EXPECT_EQ(a.m_suff_size, 3);
+    EXPECT_EQ(a.m_pref_size, 3);
+}
+
+TEST(SkmerManipulator, IsForwardMatchesReturnedSkmer)
+{
+    using kuint = uint16_t;
+    constexpr uint64_t k{5};
+    constexpr uint64_t m{2};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    const string seq{"ACGTACGTACGT"};
+    for (const auto& letter : seq)
+    {
+        kuint nucl{static_cast<kuint>((letter >> 1) & 0b11)};
+        const auto& returned = manip.add_nucleotide(nucl);
+        if (manip.is_forward())
+            EXPECT_EQ(returned.m_pair, manip.m_fwd.m_pair);
+        else
+            EXPECT_EQ(returned.m_pair, manip.m_rev.m_pair);
+    }
+}
+
+
+TEST(SkmerManipulator, MinimumKMPlusOne)
+{
+    // Sanity check that the minimum skmer (k=m+1, so k-m=1) builds its mask
+    // tables with the right sizes and enumerates nucleotides without crashing.
+    using kuint = uint8_t;
+    constexpr uint64_t k{2};
+    constexpr uint64_t m{1};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    EXPECT_EQ(manip.get_sp_mask().size(), k - m + 2u);
+    EXPECT_EQ(manip.get_k_mask().size(), k - m + 1u);
+    EXPECT_EQ(manip.get_n_mask().size(), 2u * k - m);
+
+    const string seq{"ACGT"};
+    for (const auto& letter : seq)
+    {
+        kuint nucl{static_cast<kuint>((letter >> 1) & 0b11)};
+        manip.add_nucleotide(nucl);
+    }
+}
+
+TEST(SkmerManipulator, EnumerateAcrossKuintBoundary)
+{
+    using kuint = uint32_t;
+    constexpr uint64_t k{10};
+    constexpr uint64_t m{2};
+
+    // 2 * sk_size bits of state > one kuint, so m_value[1] must be used.
+    ASSERT_GT(2u * (2u*k - m), sizeof(kuint) * 8u);
+
+    km::SkmerManipulator<kuint> manip{k, m};
+    const string seq{"ACGTACGTACGTACGTACGT"};
+    for (const auto& letter : seq)
+    {
+        kuint nucl{static_cast<kuint>((letter >> 1) & 0b11)};
+        manip.add_nucleotide(nucl);
+    }
+
+    const kuint high_engaged = manip.m_fwd.m_pair.m_value[1] | manip.m_rev.m_pair.m_value[1];
+    EXPECT_NE(high_engaged, static_cast<kuint>(0));
+
+    const auto k_masks = manip.get_k_mask();
+    const km::Skmer<kuint> full = manip.m_fwd;
+    for (uint64_t pos{0}; pos <= k - m; pos++)
+    {
+        const auto extracted = manip.get_skmer_of_kmer(full, pos);
+        EXPECT_EQ(extracted.m_pair & k_masks[pos], full.m_pair & k_masks[pos])
+            << "kmer_pos=" << pos;
+    }
+}

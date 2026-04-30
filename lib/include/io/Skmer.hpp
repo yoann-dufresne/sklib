@@ -124,6 +124,7 @@ public:
 
         pair& operator>>= (const uint64_t shift)
         {
+            if (shift == 0) return *this;
             if (shift >= sizeof(kuint) * 8)
             {
                 m_value[0] = static_cast<kuint>(m_value[1] >> (shift - sizeof(kuint) * 8));
@@ -154,6 +155,7 @@ public:
 
         pair& operator<<= (const uint64_t shift)
         {
+            if (shift == 0) return *this;
             if (shift >= sizeof(kuint) * 8)
             {
                 m_value[1] = static_cast<kuint>(m_value[0] << (shift - sizeof(kuint) * 8));
@@ -193,6 +195,14 @@ public:
             pair p{*this};
             p.m_value[0] &= value;
             p.m_value[1] = 0;
+            return p;
+        }
+
+        pair operator& (const pair& other) const
+        {
+            pair p{*this};
+            p.m_value[0] &= other.m_value[0];
+            p.m_value[1] &= other.m_value[1];
             return p;
         }
 

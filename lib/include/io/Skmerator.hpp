@@ -126,6 +126,7 @@ public:
 
             m_buffer_size = other.m_buffer_size;
             m_skmer_buffer_array = std::vector(other.m_skmer_buffer_array);
+            m_skmer_orientation = std::vector<bool>(other.m_skmer_orientation);
 
             m_ptr_current = other.m_ptr_current;
             m_ptr_min = other.m_ptr_min;
@@ -178,6 +179,8 @@ public:
             // End of the sequence => final yieldings
             if (m_remaining_nucleotides + k - m <= 0)
             {
+                // cout << "final yielding" << endl;
+                // debug_print_buffer();
                 // Yield the stored but not returned skmers while sequence is already over
                 do
                 {
@@ -301,7 +304,7 @@ public:
             {
                 auto const pred_buff_idx {(m_ptr_current - (k - m) + idx) % m_buffer_size};
                 Skmer<kuint>& predecessor {m_skmer_buffer_array[pred_buff_idx]};
-                auto const pred_orient {m_skmer_orientation[m_ptr_min % m_buffer_size]};
+                auto const pred_orient {m_skmer_orientation[pred_buff_idx]};
                 // Mask the nucleotides from the predecessor that are part of this skmer.
                 auto const right_size {get_skmer_right_size(predecessor, pred_orient)};
                 update_skmer_right_size(predecessor, pred_orient, std::min(right_size

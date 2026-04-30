@@ -1,14 +1,14 @@
-set(EXEC_NAME "rsqf")
+set(EXEC_NAME "sskm")
 
-file(GLOB_RECURSE DBG_SOURCES "*.cpp")
-add_executable(${EXEC_NAME} ${DBG_SOURCES})
+file(GLOB_RECURSE SKLIB_APP_SOURCES "*.cpp")
+add_executable(${EXEC_NAME} ${SKLIB_APP_SOURCES})
 
-target_compile_features(${EXEC_NAME} PUBLIC cxx_std_17)
+target_compile_features(${EXEC_NAME} PUBLIC cxx_std_23)
 target_link_libraries(${EXEC_NAME} PUBLIC
   $<BUILD_INTERFACE:build_type_flags>
   $<BUILD_INTERFACE:warning_flags>
   $<BUILD_INTERFACE:asan_flags>
-  dbglib
+  sklib
 )
 
 if (STATIC_BUILD)
@@ -18,7 +18,7 @@ if (STATIC_BUILD)
     -Wl,--no-whole-archive
   )
 else()
-  target_link_libraries(${EXEC_NAME} PUBLIC pthread cxxopts)
+  target_link_libraries(${EXEC_NAME} PUBLIC pthread CLI11::CLI11)
 endif()
 
 if (ipo_supported)
@@ -33,5 +33,5 @@ endif()
 
 install (TARGETS ${EXEC_NAME}
          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-         COMPONENT ${DBG_LIB}_Runtime
+         COMPONENT ${SKLIB_LIB}_Runtime
 )

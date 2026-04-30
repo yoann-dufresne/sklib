@@ -8,7 +8,7 @@
 using namespace std;
 
 
-static const std::string data_path {std::getenv("DBGLIB_TEST_DATA") == nullptr ? "" : std::getenv("DBGLIB_TEST_DATA")};
+static const std::string data_path {std::getenv("SKLIB_TEST_DATA") == nullptr ? "" : std::getenv("SKLIB_TEST_DATA")};
 
 // TODO: tmp usage of relative path befor solving the getenv issue.
 static const std::string fa0 {"../tests/data/fasta0.fa"};
