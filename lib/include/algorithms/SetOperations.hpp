@@ -148,15 +148,30 @@ namespace km
           {
             // By reusing generate_sorted_list_from_enumeration we ensure unicity. It does not use much the sorting property though
             std::vector<Skmer<kuint>> combined;
+            auto before = group_a.size() + group_b.size();
             combined.reserve(group_a.size() + group_b.size());
             for (const auto &sk : group_a)
               combined.push_back(sk);
             for (const auto &sk : group_b)
               combined.push_back(sk);
-
+            std::cout << "--- UNION-SORTED-LIST-GEN ---" << std::endl;
             SortedVirtualSkmerList<kuint> tmp(manip.k, manip.m);
             tmp.generate_sorted_list_from_enumeration(combined);
-
+            auto after = tmp.size();
+            if (after != group_a.size()){
+              std::cerr << "Passed from " << before << " to " << after << " skmer." << std::endl;
+              km::SkmerPrettyPrinter<kuint> pp {manip.k, manip.m};
+              std::cout << "--- Fed in ---" << std::endl;
+              for(km::Skmer<kuint> const skmer : combined){
+                pp << skmer;
+                std:: cout << pp << std::endl;
+              }
+              std::cout << "--- Got out ---" << std::endl;
+              for(km::Skmer<kuint> const skmer : tmp.get_list()){
+                pp << skmer;
+                std:: cout << pp << std::endl;
+              }
+            }
             auto partial = tmp.steal_list();
             output.insert(output.end(),
                           std::make_move_iterator(partial.begin()),
@@ -285,7 +300,7 @@ namespace km
 
           while (source_a.has_next() && source_b.has_next())
           {
-            std::cout << "merge_loop" << std::endl;
+            // std::cout << "merge_loop" << std::endl;
             const Skmer<kuint> &sk_a = source_a.current();
             const Skmer<kuint> &sk_b = source_b.current();
 
@@ -294,14 +309,14 @@ namespace km
 
             if (min_a < min_b)
             {
-              std::cout << "min_sk_a < min_sk_b" << std::endl;
+              // std::cout << "min_sk_a < min_sk_b" << std::endl;
               if (op != OpType::INTERSECTION)
                 output.push_back(sk_a);
               source_a.advance();
             }
             else if (min_a > min_b)
             {
-              std::cout << "min_sk_a > min_sk_b" << std::endl;
+              // std::cout << "min_sk_a > min_sk_b" << std::endl;
               if (op == OpType::UNION)
                 output.push_back(sk_b);
               source_b.advance();
@@ -309,7 +324,7 @@ namespace km
             else
             {
               // Same minimizer: collect entire runs from both sides
-              std::cout << "min_sk_a == min_sk_b" << std::endl;
+              // std::cout << "min_sk_a == min_sk_b" << std::endl;
               auto current_min = min_a;
               group_a.clear();
               group_b.clear();
@@ -333,11 +348,11 @@ namespace km
 
           // Drain whatever remains
           if (op == OpType::UNION || op == OpType::DIFF){
-            std::cout << "UNION/DIFF, draining A" << std::endl;
+            // std::cout << "UNION/DIFF, draining A" << std::endl;
             drain_source(source_a, output);
           }
           if (op == OpType::UNION){
-            std::cout << "union, draining B" << std::endl;
+            // std::cout << "union, draining B" << std::endl;
             drain_source(source_b, output);
           }
 
@@ -391,7 +406,7 @@ namespace km
         FileSkmerSource<kuint> src(filepath);
         if (mem.get_k() != src.k() || mem.get_m() != src.m())
           throw std::invalid_argument("In-memory list k/m mismatch with file header");
-
+        std::cout << "K is: " << mem.get_k() << ", M is: " <<  mem.get_m() << std::endl;
         InMemorySkmerSource<kuint> mem_src(mem.get_list(), mem.get_k(), mem.get_m());
         return internal::merge_set_op<kuint>(mem_src, src, OpType::UNION);
       }

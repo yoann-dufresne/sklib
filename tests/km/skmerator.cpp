@@ -212,7 +212,7 @@ TEST(Skmerator, seq_test_5_2)
     std::string seq{"ATCGACTGTGTACACT"};
     km::SkmerManipulator<kuint> seq_manip {k, m};
     uint64_t const expected_skmers[] = {1,2,2,3,3,4,4,4,4,5,5,5};
-    
+
     for (uint seq_size{k} ; seq_size<=seq.length() ; seq_size++) {
         // cout << "seq_size: " << seq_size << " ---" << endl;
         std::string sub{seq.substr(0, seq_size)};

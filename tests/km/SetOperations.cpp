@@ -10,7 +10,7 @@
 #include <algorithms/SetOperations.hpp>
 
 using namespace std;
-using kuint = uint16_t;
+using kuint = uint64_t;
 using kpair = km::Skmer<kuint>::pair;
 
 constexpr uint64_t K = 5;
@@ -343,4 +343,190 @@ TEST_F(SetOpsFile, Diff_FileWithMem) {
     expect_skmer_eq(res.get_list()[1], sk_two());
 
 }
+TEST_F(SetOpsFile, Large_file_union_in_mem)
+{
+    const uint64_t k_in_test{21};
+    const uint64_t m_in_test{13};
 
+    // --- File 1---
+    std::string filename_one{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_one {k_in_test, m_in_test};
+    km::FileSkmerator<kuint> file_skmerator_one {file_manip_one, filename_one};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_one {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_one) {
+        file_skmers_one.emplace_back(skmer);
+    }
+    std::cout << "Enumerated " << file_skmers_one.size() << " skmers." << std::endl;
+    km::sortedlist::SortedVirtualSkmerList<kuint> a(k_in_test, m_in_test);
+    a.generate_sorted_list_from_enumeration(file_skmers_one);
+    std::cout << "Computed " << a.size() << " sorted virtual skmers." << std::endl;
+
+    // --- File 2---
+    std::string filename_two{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_two {k_in_test, m_in_test};
+    km::FileSkmerator<kuint> file_skmerator_two {file_manip_two, filename_two};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_two {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_two) {
+        file_skmers_two.emplace_back(skmer);
+    }
+    std::cout << "Enumerated " << file_skmers_two.size() << " skmers." << std::endl;
+    km::sortedlist::SortedVirtualSkmerList<kuint> b(k_in_test, m_in_test);
+    b.generate_sorted_list_from_enumeration(file_skmers_two);
+    std::cout << "Computed " << b.size() << " sorted virtual skmers." << std::endl;
+
+    auto res = km::sortedlist::setops::set_union(a, b);
+    std::cout << "union done" << std::endl;
+
+    ASSERT_EQ(res.size(), b.size());
+    std::vector<km::Skmer<kuint>> res_list {res.get_list()};
+    std::vector<km::Skmer<kuint>> curr_list {b.get_list()};
+    std::cout << "RES SIZE IS " << res.size() << std::endl;
+    for (size_t i {0}; i < res.size(); i++)
+        expect_skmer_eq(res_list[i], curr_list[i]);
+
+}
+
+TEST_F(SetOpsFile, Large_file_union)
+{
+    const uint64_t k_in_test{21};
+    const uint64_t m_in_test{13};
+
+    // --- File 1---
+    std::string filename_one{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_one {k_in_test, m_in_test};
+    km::FileSkmerator<kuint> file_skmerator_one {file_manip_one, filename_one};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_one {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_one) {
+        file_skmers_one.emplace_back(skmer);
+    }
+    std::cout << "Enumerated " << file_skmers_one.size() << " skmers." << std::endl;
+    km::sortedlist::SortedVirtualSkmerList<kuint> a(k_in_test, m_in_test);
+    a.generate_sorted_list_from_enumeration(file_skmers_one);
+    std::cout << "Computed " << a.size() << " sorted virtual skmers." << std::endl;
+
+    std::string f = tmpname("file_skmers");
+    save(f, a);
+     std::cout << "Saved " << std::endl;
+    // --- File 2---
+    std::string filename_two{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_two {k_in_test, m_in_test};
+    km::FileSkmerator<kuint> file_skmerator_two {file_manip_two, filename_two};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_two {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_two) {
+        file_skmers_two.emplace_back(skmer);
+    }
+    std::cout << "Enumerated " << file_skmers_two.size() << " skmers." << std::endl;
+    km::sortedlist::SortedVirtualSkmerList<kuint> b(k_in_test, m_in_test);
+    b.generate_sorted_list_from_enumeration(file_skmers_two);
+    std::cout << "Computed " << b.size() << " sorted virtual skmers." << std::endl;
+
+    auto res = km::sortedlist::setops::set_union(f, b);
+    std::cout << "union done" << std::endl;
+    cleanup(f);
+    ASSERT_EQ(res.size(), b.size());
+    std::vector<km::Skmer<kuint>> res_list {res.get_list()};
+    std::vector<km::Skmer<kuint>> curr_list {b.get_list()};
+    std::cout << "RES SIZE IS " << res.size() << std::endl;
+    for (size_t i {0}; i < res.size(); i++)
+        expect_skmer_eq(res_list[i], curr_list[i]);
+
+}
+
+TEST_F(SetOpsFile, large_file_intersection)
+{
+    const uint64_t k{21};
+    const uint64_t m{9};
+
+    // --- File 1---
+    std::string filename_one{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_one {k, m};
+    km::FileSkmerator<kuint> file_skmerator_one {file_manip_one, filename_one};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_one {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_one) {
+        file_skmers_one.emplace_back(skmer);
+    }
+    km::sortedlist::SortedVirtualSkmerList<kuint> a(k, m);
+    a.generate_sorted_list_from_enumeration(file_skmers_one);
+
+    std::string f = tmpname("file_skmers");
+    save(f, a);
+
+    // --- File 2---
+    std::string filename_two{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_two {k, m};
+    km::FileSkmerator<kuint> file_skmerator_two {file_manip_two, filename_two};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_two {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_two) {
+        file_skmers_two.emplace_back(skmer);
+    }
+    km::sortedlist::SortedVirtualSkmerList<kuint> b(k, m);
+    b.generate_sorted_list_from_enumeration(file_skmers_two);
+    auto res = km::sortedlist::setops::set_intersection(f, b);
+    cleanup(f);
+
+    std::vector<km::Skmer<kuint>> res_list {res.get_list()};
+    std::vector<km::Skmer<kuint>> curr_list {b.get_list()};
+
+    ASSERT_EQ(res.size(), b.size());
+    for (size_t i {0}; i < res.size(); i++)
+        expect_skmer_eq(res_list[i], curr_list[i]);
+}
+
+TEST_F(SetOpsFile, large_file_dif)
+{
+    const uint64_t k{17};
+    const uint64_t m{11};
+
+    // --- File 1---
+    std::string filename_one{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_one {k, m};
+    km::FileSkmerator<kuint> file_skmerator_one {file_manip_one, filename_one};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_one {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_one) {
+        file_skmers_one.emplace_back(skmer);
+    }
+    km::sortedlist::SortedVirtualSkmerList<kuint> a(k, m);
+    a.generate_sorted_list_from_enumeration(file_skmers_one);
+
+    std::string f = tmpname("file_skmers");
+    save(f, a);
+
+    // --- File 2---
+    std::string filename_two{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip_two {k, m};
+    km::FileSkmerator<kuint> file_skmerator_two {file_manip_two, filename_two};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > file_skmers_two {};
+    for (km::Skmer<kuint> const skmer : file_skmerator_two) {
+        file_skmers_two.emplace_back(skmer);
+    }
+    km::sortedlist::SortedVirtualSkmerList<kuint> b(k, m);
+    b.generate_sorted_list_from_enumeration(file_skmers_two);
+    auto res = km::sortedlist::setops::set_diff(f, b);
+    cleanup(f);
+
+    ASSERT_EQ(res.size(), 0);
+}
