@@ -346,7 +346,7 @@ TEST_F(SetOpsFile, Diff_FileWithMem) {
 TEST_F(SetOpsFile, Large_file_union_in_mem)
 {
     const uint64_t k_in_test{21};
-    const uint64_t m_in_test{13};
+    const uint64_t m_in_test{10};
 
     // --- File 1---
     std::string filename_one{"../tests/data/sars-cov-2-delta-variant.fasta"};
