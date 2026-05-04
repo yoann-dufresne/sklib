@@ -1,0 +1,57 @@
+found: [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC] OK
+found: [skmer not interleaved: AACACTGTTTACACAA AAGTTGATGGTGTTGA] GATGGTGTTGA Missing from my input case
+found: [skmer not interleaved: CCTCATTTGTGCACAA AAGTTTAACGGCCTTA] OK
+
+[skmer not interleaved: AACACTGTTTACACAA AAGTTGATGGTGTTGA]
+//P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+//S:A   A   G   T   T|  G   A   T   G   G   T   G   T   T   G   A
+
+// [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+//P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+//S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+
+// [skmer not interleaved: CCTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+//P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+//S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+
+
+Number enumerated skmers: 3
+computed: [skmer not interleaved: AACACTGTTTACACAA AAGTT]
+computed: [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+computed: [skmer not interleaved: CCTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+computed: [skmer not interleaved: ACACTGTTTACACAA AAGTTGATGGTGTTGA]
+
+[skmer not interleaved: AACACTGTTTACACAA AAGTT]
+//P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+//S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+
+
+[skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+//P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+//S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+
+
+[skmer not interleaved: CCTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+//P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+//S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+
+[skmer not interleaved: ACACTGTTTACACAA AAGTTGATGGTGTTGA]
+//P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   _
+//S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+
+
+Difference in k-mers is: 1
+computed: [skmer not interleaved: ACACTGTTTACACAA AAGTTGATGGTGTTGA]
+
+
+    //P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+    //S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+    {0b0000000011011000100111001110111011101111111011011100110111001100ULL, 0},
+    // [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+    //P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+    //S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+    {0b0000000011011000100100111110011100001100011010001011010000000110ULL, 0},
+    // [skmer not interleaved: CTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+    //P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+    //S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+    {0b0000000011011000100110110010001101101110111001000101101010010001ULL, 0},

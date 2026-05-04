@@ -7,6 +7,7 @@
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include <algorithms/SetOperations.hpp>
 
 using namespace std;
 using kuint = uint16_t;
@@ -1639,6 +1640,178 @@ using kuint = uint64_t;
         km::Skmer<kuint>(expected_pairs_sort[1], 11, 11),
         km::Skmer<kuint>(expected_pairs_sort[2], 11, 11),
     };
+    ASSERT_EQ(m_output_list.size(), expected_skmer_sort.size());
+    for (size_t i{0}; i < m_output_list.size(); i++)
+    {
+        std::cout << "Checking skmer #" << i << std::endl;
+        std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+        pp << expected_skmer_sort[i];
+        std::cout << "expected: " << pp << std::endl;
+        pp << m_output_list[i];
+        std::cout << "computed: " << pp << std::endl << "_____" << std::endl;
+        ASSERT_EQ(expected_skmer_sort[i].m_pair, m_output_list[i].m_pair);
+        ASSERT_EQ(expected_skmer_sort[i].m_pref_size, m_output_list[i].m_pref_size);
+        ASSERT_EQ(expected_skmer_sort[i].m_suff_size, m_output_list[i].m_suff_size);
+    }
+
+}
+
+
+TEST(SortedVirtualSkmerListTest, Verify_Correct_Merge_2){
+    using kuint = uint64_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{21};
+    constexpr uint64_t m{10};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    // POSSIBLE INPUTS
+    const kpair basic_pairs[4]{
+    // [skmer not interleaved: AACACTGTTTACACAA AAGTT]
+    //P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+    //S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+    {0b0000000011011000100111001110111011101111111011011100110111001100ULL, 0},
+    // [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+    //P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+    //S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+    {0b0000000011011000100100111110011100001100011010001011010000000110ULL, 0},
+    // [skmer not interleaved: CTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+    //P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   _
+    //S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+    {0b0000000011011000100110110010001101101110111001000101101010010011ULL, 0},
+    // [skmer not interleaved: CCTCATTTGTGCACAA AAGTT]
+    //P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+    //S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+    {0b0000000011011000100111111110111111101110111011001101111011011101ULL, 0},
+    };
+    std::vector<km::Skmer<kuint>> enumeration{
+        km::Skmer<kuint>(basic_pairs[0], 11, 0),
+        km::Skmer<kuint>(basic_pairs[1], 11, 11),
+        km::Skmer<kuint>(basic_pairs[2], 10, 11),
+        km::Skmer<kuint>(basic_pairs[3], 11, 0),
+    };
+
+    //EXPECTED
+    const kpair expected_pairs_sort[4]{
+    // [skmer not interleaved: AACACTGTTTACACAA AAGTT]
+    //P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+    //S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+    {0b0000000011011000100111001110111011101111111011011100110111001100ULL, 0},
+    // [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+    //P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+    //S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+    {0b0000000011011000100100111110011100001100011010001011010000000110ULL, 0},
+    // [skmer not interleaved: CTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+    //P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+    //S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+    {0b0000000011011000100110110010001101101110111001000101101010010001ULL, 0},
+    // [skmer not interleaved: CCTCATTTGTGCACAA AAGTT]
+
+    };
+    std::vector<km::Skmer<kuint>> expected_skmer_sort{
+        km::Skmer<kuint>(expected_pairs_sort[0], 11, 0),
+        km::Skmer<kuint>(expected_pairs_sort[1], 11, 11),
+        km::Skmer<kuint>(expected_pairs_sort[2], 11, 11),
+    };
+    size_t perm_count {0};
+    do {
+        std::cout << "PERMUTATION #" << perm_count << std::endl;
+        perm_count++;
+        km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+        list.generate_sorted_list_from_enumeration(enumeration);
+        std::vector<km::Skmer<kuint>> m_output_list = list.get_list();
+
+        ASSERT_EQ(m_output_list.size(), expected_skmer_sort.size());
+        for (size_t i{0}; i < m_output_list.size(); i++)
+        {
+            std::cout << "Checking skmer #" << i << std::endl;
+            std::cout << "Output has prefix: " << m_output_list[i].m_pref_size << "; suffix: " << m_output_list[i].m_suff_size << std::endl;
+            pp << expected_skmer_sort[i];
+            std::cout << "expected: " << pp << std::endl;
+            pp << m_output_list[i];
+            std::cout << "computed: " << pp << std::endl << "_____" << std::endl;
+            ASSERT_EQ(expected_skmer_sort[i].m_pair, m_output_list[i].m_pair);
+            ASSERT_EQ(expected_skmer_sort[i].m_pref_size, m_output_list[i].m_pref_size);
+            ASSERT_EQ(expected_skmer_sort[i].m_suff_size, m_output_list[i].m_suff_size);
+        }
+
+
+    }while (std::next_permutation(enumeration.begin(), enumeration.end()));
+
+}
+
+TEST(SortedVirtualSkmerListTest, Find_Skmers_Not_Merging)
+{
+    using kuint = uint64_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    const uint64_t k{21};
+    const uint64_t m{10};
+    km::SkmerPrettyPrinter<kuint> pp {k, m};
+
+    km::Skmer<kuint> flag_skmer = km::Skmer<kuint>({0b0000000011011000100111001110111011101111111011011100110111001100ULL, 0ULL}, 11, 0);
+
+    // --- File 1---
+    std::string filename{"../tests/data/sars-cov-2-delta-variant.fasta"};
+    km::SkmerManipulator<kuint> file_manip {k, m};
+    km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
+
+
+    // Enumerates the superkmers from the file
+    std::vector<km::Skmer<kuint> > enumeration {};
+    for (km::Skmer<kuint> const skmer : file_skmerator) {
+        if (file_manip.minimizer(flag_skmer) == file_manip.minimizer(skmer)){
+            enumeration.emplace_back(skmer);
+            pp << skmer;
+            std::cout << "found: " << pp << std::endl;
+        }
+    }
+
+    std::cout << "Number enumerated skmers: " << enumeration.size() << std::endl;
+
+    //EXPECTED
+    const kpair expected_pairs_sort[4]{
+    // [skmer not interleaved: AACACTGTTTACACAA AAGTT]
+    //P:  A   A   C   A   C|  A   T   T   T   G   T   C   A   C   A   A
+    //S:A   A   G   T   T|  _   _   _   _   _   _   _   _   _   _   _
+    {0b0000000011011000100111001110111011101111111011011100110111001100ULL, 0},
+    // [skmer not interleaved: TAAGATAAGTGCACAA AAGTTAGCAGCTTCAC]
+    //P:  A   A   C   A   C|  G   T   G   A   A   T   A   G   A   A   T
+    //S:A   A   G   T   T|  A   G   C   A   G   C   T   T   C   A   C
+    {0b0000000011011000100100111110011100001100011010001011010000000110ULL, 0},
+    // [skmer not interleaved: CTCATTTGTGCACAA AAGTTTAACGGCCTTA]
+    //P:  A   A   C   A   C|  G   T   G   T   T   T   A   C   T   C   C
+    //S:A   A   G   T   T|  T   A   A   C   G   G   C   C   T   T   A
+    {0b0000000011011000100110110010001101101110111001000101101010010001ULL, 0},
+    // [skmer not interleaved: CCTCATTTGTGCACAA AAGTT]
+
+    };
+    std::vector<km::Skmer<kuint>> expected_skmer_sort{
+        km::Skmer<kuint>(expected_pairs_sort[0], 11, 0),
+        km::Skmer<kuint>(expected_pairs_sort[1], 11, 11),
+        km::Skmer<kuint>(expected_pairs_sort[2], 11, 11),
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.generate_sorted_list_from_enumeration(enumeration);
+    std::vector<km::Skmer<kuint>> m_output_list = list.get_list();
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list_two(k, m);
+    list_two.add_list(expected_skmer_sort);
+    for (size_t i{0}; i < m_output_list.size(); i++)
+    {
+         pp << m_output_list[i];
+        std::cout << "computed: " << pp << std::endl;
+    }
+    auto res = km::sortedlist::setops::set_diff(list, list_two);
+    std::cout << "Difference in k-mers is: " << res.size() << std::endl;
+    auto res_list = res.get_list();
+    for (size_t i{0}; i < res_list.size(); i++)
+    {
+         pp << res_list[i];
+        std::cout << "computed: " << pp << std::endl;
+    }
+
     ASSERT_EQ(m_output_list.size(), expected_skmer_sort.size());
     for (size_t i{0}; i < m_output_list.size(); i++)
     {
