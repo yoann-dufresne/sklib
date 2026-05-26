@@ -29,8 +29,18 @@ struct CLIResult {
 };
 
 CLIResult parse_cli(int argc, char** argv) {
-    CLI::App app{"sskm tool"};
+    CLI::App app{
+        "sskm — construct and query compact sorted super-k-mer lists.\n"
+        "Packs DNA into 2-bit-per-nucleotide skmers, builds a disk-backed sorted list, "
+        "and answers k-mer membership queries."
+    };
     app.set_version_flag("--version,-V", std::string{SKLIB_VERSION});
+    app.footer(
+        "Examples:\n"
+        "  sskm construct -k 21 -m 11 -f genome.fa -o genome.sskm\n"
+        "  sskm query -l genome.sskm -i reads.fa -o hits.txt\n"
+        "  sskm query -l genome.sskm ACGTACGTACGTACGTACGTA\n"
+    );
 
     CLIResult result;
 
@@ -38,24 +48,31 @@ CLIResult parse_cli(int argc, char** argv) {
     // construct subcommand
     // -----------------------
     auto construct = app.add_subcommand("construct",
-        "Construct a sorted super-kmer list");
+        "Construct a sorted super-k-mer list from a FASTA input.");
 
     ConstructOptions construct_opts;
 
     construct->add_option("-f,--file", construct_opts.input_file,
-        "Input fasta file (default: stdin)");
+        "Input FASTA file (plain or gzip-compressed). Reads from stdin if omitted.");
 
     construct->add_option("-o,--output", construct_opts.output_file,
-        "Output file (default: stdout)");
+        "Output sorted skmer list. Writes to stdout if omitted.");
 
-    construct->add_option("-k,--kmer-size", construct_opts.k, "k-mer size")
+    construct->add_option("-k,--kmer-size", construct_opts.k,
+        "k-mer length in nucleotides (1 <= k <= 32 with the default 64-bit backend).")
         ->required();
 
-    construct->add_option("-m,--minimizer-size", construct_opts.m, "minimizer size")
+    construct->add_option("-m,--minimizer-size", construct_opts.m,
+        "Minimizer length in nucleotides (1 <= m <= k). Smaller m yields longer skmers.")
         ->required();
 
     construct->add_flag("--ascii", construct_opts.ascii,
-        "Write output in human-readable ASCII format instead of binary");
+        "Write the output as human-readable ASCII instead of the default binary format.");
+
+    construct->footer(
+        "Example:\n"
+        "  sskm construct -k 21 -m 11 -f genome.fa -o genome.sskm\n"
+    );
 
     construct->callback([&]() {
         result.construct = construct_opts;
@@ -65,22 +82,30 @@ CLIResult parse_cli(int argc, char** argv) {
     // query subcommand
     // -----------------------
     auto query = app.add_subcommand("query",
-        "Query kmers from a list");
+        "Query k-mers against an existing sorted skmer list. "
+        "Queries come either from a FASTA file (-i) or from a single sequence given as a positional argument.");
 
     QueryOptions query_opts;
 
     query->add_option("-l,--list", query_opts.list_file,
-        "Input ssk list")
+        "Sorted skmer list produced by `sskm construct` (binary or ASCII).")
         ->required();
 
     query->add_option("-i,--input", query_opts.input_file,
-        "Input fasta file");
+        "FASTA file whose k-mers are extracted and looked up in the list. "
+        "Mutually exclusive with the positional `sequence` argument.");
 
     query->add_option("-o,--output", query_opts.output_file,
-        "Output file (default: stdout)");
+        "Output file for query hits. Writes to stdout if omitted.");
 
     query->add_option("sequence", query_opts.sequence,
-        "Sequence to query (if no -i)");
+        "Single DNA sequence to query. Mutually exclusive with -i/--input.");
+
+    query->footer(
+        "Examples:\n"
+        "  sskm query -l genome.sskm -i reads.fa -o hits.txt\n"
+        "  sskm query -l genome.sskm ACGTACGTACGTACGTACGTA\n"
+    );
 
     // Constraints
     query->require_option(1, 2); // either sequence, or -i
@@ -88,7 +113,7 @@ CLIResult parse_cli(int argc, char** argv) {
     query->callback([&]() {
         result.query = query_opts;
     });
-    
+
     app.require_subcommand(true);
     // -----------------------
     try {
