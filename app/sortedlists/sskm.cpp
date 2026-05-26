@@ -30,6 +30,7 @@ struct CLIResult {
 
 CLIResult parse_cli(int argc, char** argv) {
     CLI::App app{"sskm tool"};
+    app.set_version_flag("--version,-V", std::string{SKLIB_VERSION});
 
     CLIResult result;
 
@@ -47,10 +48,10 @@ CLIResult parse_cli(int argc, char** argv) {
     construct->add_option("-o,--output", construct_opts.output_file,
         "Output file (default: stdout)");
 
-    construct->add_option("-k", construct_opts.k, "k-mer size")
+    construct->add_option("-k,--kmer-size", construct_opts.k, "k-mer size")
         ->required();
 
-    construct->add_option("-m", construct_opts.m, "minimizer size")
+    construct->add_option("-m,--minimizer-size", construct_opts.m, "minimizer size")
         ->required();
 
     construct->add_flag("--ascii", construct_opts.ascii,

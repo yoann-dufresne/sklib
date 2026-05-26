@@ -4,6 +4,7 @@ file(GLOB_RECURSE SKLIB_APP_SOURCES "*.cpp")
 add_executable(${EXEC_NAME} ${SKLIB_APP_SOURCES})
 
 target_compile_features(${EXEC_NAME} PUBLIC cxx_std_23)
+target_compile_definitions(${EXEC_NAME} PRIVATE SKLIB_VERSION="${PROJECT_VERSION}")
 target_link_libraries(${EXEC_NAME} PUBLIC
   $<BUILD_INTERFACE:build_type_flags>
   $<BUILD_INTERFACE:warning_flags>
