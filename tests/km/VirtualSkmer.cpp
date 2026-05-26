@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <string>
@@ -1782,7 +1783,8 @@ TEST(QueryTest, QueryMultipleKmersInSkmerBatch)
     }
 }
 
-// TOTAL QUERY TEST
+// TOTAL QUERY TEST — captures the output and validates structure +
+// self-consistency with query_skmer_batch on the same file-derived skmers.
 TEST(QueryTest, QueryOutputWorking)
 {
     using kuint = uint16_t;
@@ -1817,8 +1819,182 @@ TEST(QueryTest, QueryOutputWorking)
     list.add_list(skmer_enumeration);
 
     std::string filename{"../tests/data/seq2.fa"};
-    list.query(filename);
 
+    std::ostringstream captured;
+    list.query(filename, captured);
+    const std::string actual = captured.str();
+
+    // Compute the reference output via the lower-level API on the same file.
+    km::SkmerManipulator<kuint> manip{k, m};
+    km::FileSkmerator<kuint> file_skmerator{manip, filename};
+    std::vector<km::Skmer<kuint>> file_skmers;
+    for (km::Skmer<kuint> const& s : file_skmerator) {
+        file_skmers.push_back(s);
+    }
+    ASSERT_FALSE(file_skmers.empty()) << "test data file produced no skmers";
+
+    auto batch_results = list.query_skmer_batch(file_skmers);
+    std::ostringstream expected;
+    km::sortedlist::util::print_query_results(batch_results, expected);
+
+    ASSERT_FALSE(actual.empty()) << "query() wrote nothing to its ostream";
+    ASSERT_EQ(actual, expected.str())
+        << "query(filename, os) output diverges from query_skmer_batch + print_query_results";
+
+    // Format sanity: every character must be '0', '1', ',', or '\n'.
+    for (char c : actual) {
+        ASSERT_TRUE(c == '0' || c == '1' || c == ',' || c == '\n')
+            << "unexpected character in query output: 0x" << std::hex << (int)c;
+    }
+}
+
+// ROUND-TRIP TEST — save then load the list and verify query_skmer returns
+// identical results on both the in-memory and disk-roundtripped lists.
+TEST(QueryTest, QuerySerializationRoundTrip)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    const kpair input_pairs[4]{
+        {0b000011010101U, 0},
+        {0b000101111100U, 0},
+        {0b000110110011U, 0},
+        {0b000111011011U, 0},
+    };
+
+    std::vector<km::Skmer<kuint>> skmer_enumeration{
+        km::Skmer<kuint>(input_pairs[0], 2, 2),
+        km::Skmer<kuint>(input_pairs[1], 2, 1),
+        km::Skmer<kuint>(input_pairs[2], 1, 2),
+        km::Skmer<kuint>(input_pairs[3], 1, 2),
+    };
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(skmer_enumeration);
+
+    const std::string tmp_path = ::testing::TempDir() + "roundtrip_query.bin";
+    km::sortedlist::VirtualSkmerSerializer<kuint>::save(list, tmp_path);
+    auto loaded = km::sortedlist::VirtualSkmerSerializer<kuint>::load(tmp_path);
+
+    // Re-use the queries from QueryMultipleKmersInSkmer (mix of present + absent).
+    const kpair query_pairs[2]{
+        {0b000110111100U, 0}, // both present
+        {0b000111101011U, 0}, // first absent, second present
+    };
+    std::vector<km::Skmer<kuint>> queries{
+        km::Skmer<kuint>(query_pairs[0], 2, 1),
+        km::Skmer<kuint>(query_pairs[1], 1, 2),
+    };
+
+    for (km::Skmer<kuint> const& q : queries) {
+        auto in_memory = list.query_skmer(q);
+        auto on_disk = loaded.query_skmer(q);
+        ASSERT_EQ(in_memory, on_disk)
+            << "round-tripped list disagrees with in-memory list";
+        ASSERT_FALSE(in_memory.empty()) << "query returned no results";
+    }
+}
+
+// CANONICAL TEST — a list built from a sequence S must yield the same
+// matches when queried with skmers from S itself and from reverse-complement(S),
+// because canonical encoding makes both produce the same skmers.
+TEST(QueryTest, QueryCanonicalForwardReverse)
+{
+    using kuint = uint16_t;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    // Non-palindromic sequence with multiple distinct minimizers.
+    std::string fwd_seq{"ACGTACGTACGTACGT"};
+
+    km::SkmerManipulator<kuint> build_manip{k, m};
+    std::string build_seq = fwd_seq;
+    km::SeqSkmerator<kuint> build_rator{build_manip, build_seq};
+    std::vector<km::Skmer<kuint>> build_skmers;
+    for (km::Skmer<kuint> const& s : build_rator) {
+        build_skmers.push_back(s);
+    }
+    ASSERT_FALSE(build_skmers.empty()) << "sequence produced no skmers";
+
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.generate_sorted_list_from_enumeration(build_skmers);
+
+    // Forward query: every kmer is in the list by construction.
+    km::SkmerManipulator<kuint> fwd_manip{k, m};
+    std::string fwd_query_seq = fwd_seq;
+    km::SeqSkmerator<kuint> fwd_rator{fwd_manip, fwd_query_seq};
+    std::vector<km::Skmer<kuint>> fwd_skmers;
+    for (km::Skmer<kuint> const& s : fwd_rator) {
+        fwd_skmers.push_back(s);
+    }
+    auto fwd_results = list.query_skmer_batch(fwd_skmers);
+    for (size_t i = 0; i < fwd_results.size(); i++) {
+        for (size_t j = 0; j < fwd_results[i].size(); j++) {
+            ASSERT_EQ(fwd_results[i][j], 1u)
+                << "forward query missed kmer at skmer " << i << " position " << j;
+        }
+    }
+
+    // Reverse-complement query: canonical encoding must yield the same matches.
+    std::string rc_seq;
+    rc_seq.reserve(fwd_seq.size());
+    for (auto it = fwd_seq.rbegin(); it != fwd_seq.rend(); ++it) {
+        switch (*it) {
+            case 'A': rc_seq += 'T'; break;
+            case 'C': rc_seq += 'G'; break;
+            case 'G': rc_seq += 'C'; break;
+            case 'T': rc_seq += 'A'; break;
+            default: FAIL() << "unexpected nucleotide in input";
+        }
+    }
+    km::SkmerManipulator<kuint> rc_manip{k, m};
+    km::SeqSkmerator<kuint> rc_rator{rc_manip, rc_seq};
+    std::vector<km::Skmer<kuint>> rc_skmers;
+    for (km::Skmer<kuint> const& s : rc_rator) {
+        rc_skmers.push_back(s);
+    }
+    auto rc_results = list.query_skmer_batch(rc_skmers);
+    for (size_t i = 0; i < rc_results.size(); i++) {
+        for (size_t j = 0; j < rc_results[i].size(); j++) {
+            ASSERT_EQ(rc_results[i][j], 1u)
+                << "reverse-complement query missed kmer at skmer " << i << " position " << j;
+        }
+    }
+}
+
+// ALL-ABSENT TEST — every queried kmer position must be eliminated by
+// binary-search exhaustion (no match path), exercising the termination
+// branch at lines 404–407 of VirtualSkmer.hpp.
+TEST(QueryTest, QueryAllKmersAbsent)
+{
+    using kuint = uint16_t;
+    using kpair = km::Skmer<kuint>::pair;
+
+    constexpr uint64_t k{4};
+    constexpr uint64_t m{2};
+
+    // Single-skmer list containing only AAAA kmers (pair = 0 => all A).
+    const kpair list_pair{0b000000000000U, 0};
+    std::vector<km::Skmer<kuint>> list_skmers{
+        km::Skmer<kuint>(list_pair, 2, 2),
+    };
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+    list.add_list(list_skmers);
+
+    // Query skmer whose valid kmer positions hold G nucleotides (0b11) —
+    // disjoint from any AAAA kmer in the list.
+    const kpair query_pair{0b000011111111U, 0};
+    km::Skmer<kuint> query{query_pair, 1, 2};
+
+    std::vector<uint8_t> result = list.query_skmer(query);
+
+    ASSERT_EQ(result.size(), 2u) << "expected 2 valid kmer positions for pref=1 suff=2";
+    ASSERT_EQ(result[0], 0u) << "kmer at position 0 should be absent";
+    ASSERT_EQ(result[1], 0u) << "kmer at position 1 should be absent";
 }
 
 // SET OPERATION TESTS
