@@ -4,3 +4,11 @@ build-profile/
 CLAUDE.md
 thirdparty/FlameGraph/
 scripts/out/
+
+# Local data fixtures (data/small.fa is tracked)
+data/ecoli.fa
+data/minimal.fa
+data/sarscov2.fa
+data/tiny.fa
+data/sarscov2_oneline.txt
+data/small_analysis.txt
