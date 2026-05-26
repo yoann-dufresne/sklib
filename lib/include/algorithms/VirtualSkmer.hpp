@@ -424,7 +424,7 @@ class SortedVirtualSkmerList {
         return result;
     }
 
-    void query(const std::string filename) {
+    void query(const std::string filename, std::ostream& os = std::cout) {
         constexpr uint64_t MAX_INGESTED_SKMER {4096};
         //start enumeration from sequence
         km::FileSkmerator<kuint> file_skmerator {m_manip, filename};
@@ -450,7 +450,7 @@ class SortedVirtualSkmerList {
 
             // if a process was already executing, expect it ends and dispatch results to outstream
             if (curr_task.valid()){
-              km::sortedlist::util::print_query_results(curr_task.get());
+              km::sortedlist::util::print_query_results(curr_task.get(), os);
             }
             // swap the two buffers pointers
             std::swap(cur, work);
@@ -470,15 +470,15 @@ class SortedVirtualSkmerList {
         // taking care of the last elements in current, if present
         if (!cur->empty()) {
           if (curr_task.valid()){
-            km::sortedlist::util::print_query_results(curr_task.get());
+            km::sortedlist::util::print_query_results(curr_task.get(), os);
           }
         //   std::cerr << "FINAL DISPATCHING" << std::endl;
           auto last = query_skmer_batch(*cur);
         //   std::cerr << "LAST RESULT VECTOR SIZE: " << last.size() << std::endl;
-          km::sortedlist::util::print_query_results(last);
+          km::sortedlist::util::print_query_results(last, os);
         }
         else if (curr_task.valid()) {
-          km::sortedlist::util::print_query_results(curr_task.get());
+          km::sortedlist::util::print_query_results(curr_task.get(), os);
         }
     }
 
@@ -495,6 +495,9 @@ class SortedVirtualSkmerList {
     size_t size() const {
         return m_skmer_list.size();
     }
+
+    uint64_t k() const { return m_manip.k; }
+    uint64_t m() const { return m_manip.m; }
 
     ~SortedVirtualSkmerList() = default;
 

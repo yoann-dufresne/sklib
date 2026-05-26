@@ -3,6 +3,8 @@
 #include <optional>
 #include <cstdint>
 #include <vector>
+#include <fstream>
+#include <iostream>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -88,7 +90,7 @@ CLIResult parse_cli(int argc, char** argv) {
     QueryOptions query_opts;
 
     query->add_option("-l,--list", query_opts.list_file,
-        "Sorted skmer list produced by `sskm construct` (binary or ASCII).")
+        "Sorted skmer list produced by `sskm construct` (binary format).")
         ->required();
 
     query->add_option("-i,--input", query_opts.input_file,
@@ -106,9 +108,6 @@ CLIResult parse_cli(int argc, char** argv) {
         "  sskm query -l genome.sskm -i reads.fa -o hits.txt\n"
         "  sskm query -l genome.sskm ACGTACGTACGTACGTACGTA\n"
     );
-
-    // Constraints
-    query->require_option(1, 2); // either sequence, or -i
 
     query->callback([&]() {
         result.query = query_opts;
@@ -170,11 +169,50 @@ int run_construct(const ConstructOptions& opts) {
 }
 
 
+int run_query(const QueryOptions& opts) {
+    using kuint = uint64_t;
+
+    auto list = km::sortedlist::VirtualSkmerSerializer<kuint>::load(opts.list_file);
+
+    std::ofstream out_file;
+    std::ostream* os = &std::cout;
+    if (opts.output_file) {
+        out_file.open(*opts.output_file);
+        if (!out_file) {
+            std::cerr << "Error opening output file: " << *opts.output_file << std::endl;
+            return 1;
+        }
+        os = &out_file;
+    }
+
+    if (opts.input_file) {
+        list.query(*opts.input_file, *os);
+    } else {
+        km::SkmerManipulator<kuint> manip{list.k(), list.m()};
+        std::string seq = *opts.sequence;
+        km::SeqSkmerator<kuint> seq_skmerator{manip, seq};
+
+        std::vector<km::Skmer<kuint>> skmers;
+        for (const km::Skmer<kuint>& s : seq_skmerator) {
+            skmers.push_back(s);
+        }
+
+        auto results = list.query_skmer_batch(skmers);
+        km::sortedlist::util::print_query_results(results, *os);
+    }
+
+    return 0;
+}
+
+
 int main(int argc, char* argv[]) {
     auto const parsed {parse_cli(argc, argv)};
 
     if (parsed.construct) {
         return run_construct(*parsed.construct);
+    }
+    if (parsed.query) {
+        return run_query(*parsed.query);
     }
 
     return 0;
