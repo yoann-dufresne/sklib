@@ -224,9 +224,10 @@ TEST(SortedVirtualSkmerListTest, InputOutput1)
 
     list.add_list(skmer_enumeration);
 
-    km::sortedlist::VirtualSkmerSerializer<kuint>::save(list, "input.bin");
+    const std::string tmp_path = ::testing::TempDir() + "input.bin";
+    km::sortedlist::VirtualSkmerSerializer<kuint>::save(list, tmp_path);
 
-    auto loaded_list = km::sortedlist::VirtualSkmerSerializer<kuint>::load("input.bin");
+    auto loaded_list = km::sortedlist::VirtualSkmerSerializer<kuint>::load(tmp_path);
 
     std::vector<km::Skmer<kuint>> m_loaded_list = loaded_list.get_list();
 
