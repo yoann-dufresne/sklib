@@ -543,6 +543,9 @@ class SortedVirtualSkmerList {
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, AddLeftColumnElement);
     FRIEND_TEST(SortedVirtualSkmerListPrivateTest, NoElementPointed);
 
+    // QUERY - BINARY SEARCH HELPERS
+    FRIEND_TEST(SortedVirtualSkmerListPrivateTest, FindClosestValidSkmerUnderflow);
+
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
 
@@ -634,8 +637,13 @@ class SortedVirtualSkmerList {
     }
 
     int64_t find_closest_valid_skmer(const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum, const uint64_t kmer_position_in_skmer) const{
-        for (uint64_t i {position_in_list}; i >= minimum; i--){
+        // Scan down to `minimum` inclusive. `i` is unsigned, so guard the loop
+        // with an explicit `i == minimum` break: a `i >= minimum` condition is
+        // always true once minimum == 0 and `i--` would wrap past 0 to 2^64-1,
+        // reading m_skmer_list out of bounds.
+        for (uint64_t i {position_in_list}; ; i--){
             if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;
+            if (i == minimum) break;
         }
         for (uint64_t i {position_in_list}; i <= maximum; i++){
             if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;

@@ -1084,6 +1084,37 @@ namespace km
             }
         }
 
+        // REGRESSION TEST for find_closest_valid_skmer. When no skmer in the
+        // [minimum, maximum] window has a valid kmer at the queried position and
+        // minimum == 0, the descending loop underflowed its unsigned counter
+        // past 0 (the `i >= minimum` guard is always true once minimum is 0),
+        // reading m_skmer_list[2^64-1] — 8 bytes before the buffer — and
+        // aborting under AddressSanitizer. It must stop at index 0 and return -1.
+        TEST_F(SortedVirtualSkmerListPrivateTest, FindClosestValidSkmerUnderflow)
+        {
+            using kuint = uint64_t;
+            using kpair = km::Skmer<kuint>::pair;
+
+            constexpr uint64_t k{5};
+            constexpr uint64_t m{2};
+
+            // Three skmers with suffix size 0: none has a valid kmer at
+            // position k-m = 3 (has_valid_kmer requires suff_size >= kmer_pos),
+            // so the descending scan is forced all the way down to index 0.
+            std::vector<km::Skmer<kuint>> skmers{
+                km::Skmer<kuint>(kpair{0, 0}, 2, 0),
+                km::Skmer<kuint>(kpair{0, 0}, 2, 0),
+                km::Skmer<kuint>(kpair{0, 0}, 2, 0),
+            };
+            km::sortedlist::SortedVirtualSkmerList<kuint> m_list(k, m);
+            m_list.add_list(skmers);
+
+            // Search from the middle with lower bound 0: no hit anywhere.
+            // Must return -1 rather than read out of bounds.
+            const int64_t found = m_list.find_closest_valid_skmer(1, 0, 2, k - m);
+            ASSERT_EQ(found, -1) << "no skmer has a valid kmer at position k-m";
+        }
+
     }
 }
 
