@@ -127,7 +127,7 @@ inline uint64_t get_new_priority_value(
     return old_position;
 }
 
-void print_query_results(const std::vector<std::vector<uint8_t>> & result_vector, std::ostream & os = std::cout){
+inline void print_query_results(const std::vector<std::vector<uint8_t>> & result_vector, std::ostream & os = std::cout){
     std::cerr << "PRINTING RESULT" << std::endl;
     if(result_vector.size() == 0){
         std::cout << "EMPTY RESULT VECTOR!" << std::endl;
