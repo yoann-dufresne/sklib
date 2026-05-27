@@ -354,100 +354,91 @@ void RMQtree::MaxValueIterator::next_valid_max() {
  **/
 std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
 {
-    // 1 - Sort the overlaps by the first coordinate.
-    std::sort(begin, end, [](const overlap& a, const overlap& b) {
-        if (a.first == b.first)
-            return a.second < b.second;
-        return a.first < b.first;
-    });
-    
-    // std::cout << "[colinear_chaining]::SORTED OVERLAPS" << std::endl;
-    // for(auto el = begin; el != end; el++){
-    //     std::cout << "(" << el->first << "," << el->second << ")" << " ";
-    // }
-    // std::cout << std::endl;
+    std::vector<overlap> ov(begin, end);
+    size_t const n = ov.size();
+    if (n == 0)
+        return {};
 
-    // 2 - Create a tree according to the order from 1 and initialize the scores with 0.
-    RMQtree tree {begin, end};
-    
-    // 3 - Sort the overlaps by the second coordinate for the iteration.
-    std::sort(begin, end, [](const overlap& a, const overlap& b) {
-        if (a.second == b.second)
-            return a.first < b.first;
-        return a.second < b.second;
+    // Longest chain with STRICTLY increasing first AND second coordinate.
+    // Process the overlaps in first-coordinate order (ties: larger second first, so
+    // two overlaps that share a first coordinate are never chained to each other),
+    // keeping a Fenwick tree of the best chain length over the second coordinate.
+    // When overlap X is processed, the tree holds exactly the overlaps before X in
+    // first order; among them, those with second < X.second also have first < X.first,
+    // so they are the legal predecessors.
+    std::sort(ov.begin(), ov.end(), [](overlap const& a, overlap const& b) {
+        return a.first != b.first ? a.first < b.first : a.second > b.second;
     });
 
-    
-    // 4 - For each overlap, update the score according to the best chaining.
-    // 4 bis - Also register the previous compatible overlap
-    std::unordered_map<overlap, overlap> previous_overlaps;
-    for (auto it = begin; it != end; it++)
+    // Coordinate-compress the second coordinates.
+    std::vector<uint64_t> ys;
+    ys.reserve(n);
+    for (overlap const& o : ov) ys.push_back(o.second);
+    std::sort(ys.begin(), ys.end());
+    ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
+    auto rank = [&ys](uint64_t y) -> size_t {
+        return static_cast<size_t>(std::lower_bound(ys.begin(), ys.end(), y) - ys.begin());
+    };
+    size_t const S = ys.size();
+
+    // Fenwick (1-indexed) prefix-maximum. A cell records the best chain ending at a
+    // processed overlap: longer wins; ties go to the smaller (first, second) overlap,
+    // which reproduces the chain tie-breaking the unit tests pin.
+    struct Cell { uint64_t length; overlap end; };
+    Cell const empty {0, null_overlap};
+    auto better = [](Cell const& a, Cell const& b) -> bool {
+        if (a.length != b.length) return a.length > b.length;
+        if (a.length == 0)        return false;
+        if (a.end.first != b.end.first) return a.end.first < b.end.first;
+        return a.end.second < b.end.second;
+    };
+    std::vector<Cell> bit(S + 1, empty);
+    auto bit_update = [&](size_t pos, Cell const& v) {
+        for (size_t i = pos; i <= S; i += i & (~i + 1))
+            if (better(v, bit[i])) bit[i] = v;
+    };
+    auto bit_prefix_max = [&](size_t pos) -> Cell {
+        Cell res {empty};
+        for (size_t i = pos; i > 0; i -= i & (~i + 1))
+            if (better(bit[i], res)) res = bit[i];
+        return res;
+    };
+
+    std::unordered_map<overlap, overlap> previous;
+    std::unordered_map<overlap, uint64_t> length;
+    for (overlap const& o : ov)
     {
-        overlap const& current_overlap = *it;
-        // std::cout << "\tPROCESSING OVERLAP: (" << current_overlap.first << "," << current_overlap.second << ")" << std::endl;
-        
-        // Get previous max scores with compatible second coordinate
-        uint64_t max_score = tree.rmq_right(it->second - 1);
-        // std::cout << "\t\tMax score: " << max_score << std::endl;
-        
-        if (max_score == 0)
-        {
-            // std::cout << "\t\tNo compatible overlap found. (score 0)" << std::endl;
-            // No compatible overlap
-            tree.update(current_overlap, 1);
-            previous_overlaps[current_overlap] = null_overlap;
-            continue;
-        }
-        
-        overlap previous {null_overlap};
-        // std::cout << "POUET" << std::endl;
-        // std::cout << tree.toDot() << std::endl;
-
-        for (auto max_it=tree.begin(max_score, it->second-1); max_it != tree.end(); max_it++)
-        {
-            // std::cout << "POUET PO" << std::endl;
-            RMQnode const& node = *max_it;
-            // std::cout << "\t\tChecking overlap: (" << node.key.first << "," << node.key.second << ") with score " << node.score << std::endl;
-
-            // Is it compatible on the first coordinate?
-            if (node.key.first < current_overlap.first)
-            {
-                // std::cout << "\t\tCompatible overlap: (" << node.key.first << "," << node.key.second << ")" << std::endl;
-                // Update the score of the current overlap
-                max_score = node.score + 1;
-                previous = node.key;
-                break;
-            }
-            else
-            {
-                // std::cout << "\t\tNot compatible overlap: (" << node.key.first << "," << node.key.second << ")" << std::endl;
-                previous = previous_overlaps[node.key];
-            }
-        }
-        // std::cout << "POUET POUET" << std::endl;
-
-        // Update the score
-        tree.update(current_overlap, max_score);
-
-        previous_overlaps[current_overlap] = previous;
-
+        size_t const r = rank(o.second);                          // ranks [0, r-1] have second < o.second
+        Cell const best = (r == 0) ? empty : bit_prefix_max(r);   // Fenwick positions [1, r]
+        uint64_t const len = best.length + 1;
+        previous[o] = (best.length == 0) ? null_overlap : best.end;
+        length[o]   = len;
+        bit_update(r + 1, Cell {len, o});
     }
 
-    uint64_t score = tree.max_score();
-    // std::cout << "[colinear_chaining]::MAX SCORE: " << score << std::endl;
-
-    std::vector<overlap> overlaps(score);
-    // 5 - Get the last overlap of the chain
-    overlaps[--score] = tree.get_max_overlap();
-
-    // 6 - Get the chain of overlaps
-    while (score > 0)
+    // Chain end: the longest chain, ties broken by larger (first, second).
+    overlap chain_end {null_overlap};
+    uint64_t max_len {0};
+    for (overlap const& o : ov)
     {
-        uint64_t const prev_score = score;
-        overlaps[--score] = previous_overlaps[overlaps[prev_score]];
+        uint64_t const len = length[o];
+        if (len > max_len ||
+            (len == max_len && (o.first > chain_end.first ||
+                                (o.first == chain_end.first && o.second > chain_end.second))))
+        {
+            max_len = len;
+            chain_end = o;
+        }
     }
 
-    return overlaps;
+    std::vector<overlap> chain(max_len);
+    overlap cur {chain_end};
+    for (uint64_t i = max_len; i > 0; i--)
+    {
+        chain[i - 1] = cur;
+        cur = previous[cur];
+    }
+    return chain;
 }
 
 }} // namespace sorting // namespace km

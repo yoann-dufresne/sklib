@@ -2,6 +2,7 @@
 #include <utility>
 #include <iostream>
 #include <cstdint>
+#include <set>
 
 #include <algorithms/ColinearChaining.hpp>
 
@@ -577,4 +578,30 @@ TEST(ColinearChaining, cross_cross_overlap)
     {
         ASSERT_EQ(chaining[i], expected[i]);
     }
+}
+
+
+/** Regression for issue #6. This candidate set (seen mid-construction on a chr21
+ * region, reduced to GGAGCCAAACAGGAGGAAAAGAGG / k=5,m=2) drove colinear_chaining
+ * to return overlaps that were never candidates -- e.g. (0,0) and the
+ * null_overlap sentinel (2^64-1, 2^64-1) -- which corrupted merge_LList_column
+ * and dropped a k-mer. The result must be a strictly-increasing chain made only
+ * of input overlaps, of maximum length (here 4: (0,1)(2,4)(4,5)(5,6)).
+ */
+TEST(ColinearChaining, issue6_no_spurious_overlaps)
+{
+    vector<overlap> overlaps {overlap(1,0), overlap(0,1), overlap(2,4),
+                              overlap(4,5), overlap(3,6), overlap(5,6)};
+    std::set<overlap> input(overlaps.begin(), overlaps.end());
+
+    auto chain = colinear_chaining(overlaps.begin(), overlaps.end());
+
+    for (overlap const& o : chain)
+        ASSERT_TRUE(input.count(o) == 1) << "spurious overlap (" << o.first << "," << o.second << ")";
+    for (size_t i{1}; i<chain.size(); i++)
+    {
+        ASSERT_LT(chain[i-1].first,  chain[i].first);
+        ASSERT_LT(chain[i-1].second, chain[i].second);
+    }
+    ASSERT_EQ(chain.size(), 4u);
 }
