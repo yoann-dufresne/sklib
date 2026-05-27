@@ -586,6 +586,55 @@ public:
             skmer.m_pair |= kpair(0b11U) << (4 * i + 2);
     }
 
+    /** Reverse-complement of a super-k-mer in the minimizer-centered interleaved
+     * encoding. Position p (from the start) maps to position (2k-m-1-p), so prefix
+     * slot p and suffix slot p swap, and every nucleotide is complemented (XOR 0b10).
+     * For odd 2k-m the central prefix slot maps to itself (complemented). pref/suff
+     * sizes swap. Absent slots are re-masked to 0b11 afterwards.
+     * @param skmer Super-k-mer to reverse-complement
+     * @return the reverse-complemented super-k-mer
+     **/
+    Skmer<kuint> reverse_complement(const Skmer<kuint>& skmer) const
+    {
+        using kpair = typename Skmer<kuint>::pair;
+        const uint64_t sk_size {2 * k - m};
+        const uint64_t buf_pref {(sk_size + 1) / 2};
+        const uint64_t buf_suff {sk_size / 2};
+        const kpair in {skmer.m_pair};
+        kpair out {};
+
+        for (uint64_t slot {0} ; slot < buf_suff ; slot++)
+        {
+            const kuint pref_nucl (static_cast<kuint>(in >> (4 * slot))     & kuint{0b11});
+            const kuint suff_nucl (static_cast<kuint>(in >> (4 * slot + 2)) & kuint{0b11});
+            out |= kpair(static_cast<kuint>(suff_nucl ^ 0b10U)) << (4 * slot);     // new prefix = compl(old suffix)
+            out |= kpair(static_cast<kuint>(pref_nucl ^ 0b10U)) << (4 * slot + 2); // new suffix = compl(old prefix)
+        }
+        if (buf_pref > buf_suff) // odd 2k-m: central prefix slot maps to itself
+        {
+            const uint64_t slot {buf_suff};
+            const kuint pref_nucl (static_cast<kuint>(in >> (4 * slot)) & kuint{0b11});
+            out |= kpair(static_cast<kuint>(pref_nucl ^ 0b10U)) << (4 * slot);
+        }
+
+        Skmer<kuint> rc {out, skmer.m_suff_size, skmer.m_pref_size};
+        mask_absent_nucleotides(rc);
+        return rc;
+    }
+
+    /** Rewrite a (masked) super-k-mer in its canonical orientation: the one whose
+     * minimizer-centered interleaved encoding is the smaller. Idempotent, and
+     * independent of the surrounding context, so the same k-mer is stored and
+     * queried identically (issue #7).
+     * @param skmer Super-k-mer to canonicalize in place
+     **/
+    void canonicalize(Skmer<kuint>& skmer) const
+    {
+        Skmer<kuint> rc {reverse_complement(skmer)};
+        if (rc.m_pair < skmer.m_pair)
+            skmer = rc;
+    }
+
 
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer

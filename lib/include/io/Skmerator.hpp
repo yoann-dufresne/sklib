@@ -196,6 +196,7 @@ public:
                     {
                         m_rator.m_yielded_skmer = skmer;
                         m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
+                        m_manip.canonicalize(m_rator.m_yielded_skmer);
 
                         // Avoid jumping around the final condition of the do-while
                         if ((m_ptr_last_round % m_buffer_size) == (m_ptr_current % m_buffer_size))
@@ -257,6 +258,7 @@ public:
                 if (m_rator.m_yielded_skmer.m_pref_size + m_rator.m_yielded_skmer.m_suff_size >= k - m)
                 {
                     m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
+                    m_manip.canonicalize(m_rator.m_yielded_skmer);
                     if ((m_remaining_nucleotides + k - m) == 0) {
                         yield_needed = true;
                         break;
