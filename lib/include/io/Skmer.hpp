@@ -117,6 +117,18 @@ public:
                 return m_value[1] < other.m_value[1];
         }
 
+        // Without this, `a > b` falls back to the implicit `operator uint64_t()`
+        // conversion below and compares only the low word (m_value[0]), which made
+        // kmer_compare report distinct k-mers as equal once a k-mer spans both
+        // words (issue #5: query false positives for 2*(2k-m) > 64).
+        bool operator>(const pair& other) const
+        {
+            if (m_value[1] == other.m_value[1])
+                return m_value[0] > other.m_value[0];
+            else
+                return m_value[1] > other.m_value[1];
+        }
+
         pair operator~ () const
         {
             return pair(~m_value[0], ~m_value[1]);
