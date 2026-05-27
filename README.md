@@ -2,6 +2,10 @@
 
 A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed sorted skmer list (`VirtualSkmer`), and answers membership queries through the `sskm` CLI.
 
+## Documentation
+
+A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the on-disk format, and the k-mer search algorithm.
+
 ## Dependencies
 
 * zlib : https://zlib.net/ (apt install zlib1g-dev)
