@@ -30,7 +30,11 @@ namespace sortedlist
 namespace util
 {
 // INTEGER USED TO CHECK THAT THE ENDIANESS IS CORRECT
-constexpr uint64_t ENDIANNESS_SANITY_INTEGER = 0x56534B4D45525F4DULL; // "VSKMER_M" in ASCII
+// Doubles as a format-version marker: bumped from "VSKMER_M" to "VSKMER_2" when the
+// on-disk minimizer slot became φ-permuted (minimizer-order hash). Old raw-order lists
+// carry the previous magic, so load() rejects them (and vice-versa) instead of silently
+// returning wrong query results.
+constexpr uint64_t ENDIANNESS_SANITY_INTEGER = 0x56534B4D45525F32ULL; // "VSKMER_2" in ASCII
 constexpr uint64_t MAX_POSSIBLE_KMERS = 64;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
@@ -891,7 +895,13 @@ public:
         // suffix slots (not a contiguous bit block), so we iterate slots and the
         // minimizer nucleotides are interleaved along with the flanks.
         for (uint64_t i = 0; i < count; i++) {
-            const auto& sk = list.m_skmer_list[i];
+            // The stored minimizer slot is φ-permuted; undo it (φ⁻¹) before decoding so
+            // the printed nucleotides are the real minimizer, not the mixed value. Bind a
+            // const ref for the decode below (a non-const m_pair would make pair's implicit
+            // operator uint64_t() viable and the `>>` overload ambiguous).
+            Skmer<kuint> sk_decoded = list.m_skmer_list[i];
+            list.m_manip.unpermute_minimizer_slot(sk_decoded);
+            const Skmer<kuint>& sk = sk_decoded;
 
             // Prefix side: positions [flank - m_pref_size, buf_pref - 1]
             // (valid prefix flank, then prefix-side minimizer nucleotides)
