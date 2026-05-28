@@ -763,6 +763,32 @@ public:
         permute_minimizer_slot(skmer);
     }
 
+    /** Reverse-complement of a minimizer m-mer (m nucleotides, 2 bits each, raw value).
+     * Reverses the nucleotide order and complements each (A<->T, C<->G via XOR 0b10).
+     **/
+    kuint rc_mmer(kuint mmer) const
+    {
+        kuint r {0};
+        for (uint64_t i{0} ; i<m ; i++)
+        {
+            r = (r << 2) | ((mmer & kuint{0b11}) ^ kuint{0b10});
+            mmer >>= 2;
+        }
+        return r;
+    }
+
+    /** A minimizer that equals its own reverse-complement (only possible for even m,
+     * e.g. GC, AT, GCGC...). Such a minimizer does NOT fix the super-k-mer's orientation,
+     * so the k-mers sharing it need not all be canonical in the whole-super-k-mer
+     * orientation — the Skmerator must then split the super-k-mer per k-mer (issue #7
+     * completion). For non-palindrome minimizers the minimizer's strand pins a single
+     * consistent orientation for every contained k-mer, so no split is needed.
+     **/
+    bool minimizer_is_rc_palindrome(kuint mmer) const
+    {
+        return rc_mmer(mmer) == mmer;
+    }
+
 
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer

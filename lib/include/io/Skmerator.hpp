@@ -79,6 +79,13 @@ public:
         uint64_t m_ptr_min;
         uint64_t m_ptr_last_round;
 
+        // Per-k-mer split queue. A yielded super-k-mer whose minimizer is an
+        // RC-palindrome is split into per-k-mer canonical pieces (issue #7 completion):
+        // the first is yielded immediately, the rest wait here and are drained by the
+        // next operator++ calls. Empty (idx==size) for the normal single-piece yield.
+        std::vector<Skmer<kuint> > m_split_pending;
+        uint64_t m_split_idx {0};
+
     public:
 
         bool consumed() const
@@ -132,6 +139,9 @@ public:
             m_ptr_min = other.m_ptr_min;
             m_ptr_last_round = other.m_ptr_last_round;
 
+            m_split_pending = other.m_split_pending;
+            m_split_idx = other.m_split_idx;
+
             return *this;
         }
 
@@ -163,9 +173,50 @@ public:
             return m_rator.m_yielded_skmer;
         }
 
+        // Build the canonical, φ-permuted yield from the (already masked) super-k-mer in
+        // m_rator.m_yielded_skmer. Normal case: a single canonicalized+permuted piece. If
+        // the minimizer is an RC-palindrome, the contained k-mers may not share a canonical
+        // orientation, so split into per-k-mer canonical pieces and queue all but the first.
+        void finalize_and_yield()
+        {
+            m_split_pending.clear();
+            m_split_idx = 0;
+
+            Skmer<kuint>& sk {m_rator.m_yielded_skmer};
+            m_manip.canonicalize(sk); // raw canonical orientation (RC works on raw layout)
+
+            if (!m_manip.minimizer_is_rc_palindrome(m_manip.minimizer(sk)))
+            {
+                m_manip.permute_minimizer_slot(sk);
+                return;
+            }
+
+            // RC-palindrome minimizer: emit each contained k-mer in its own canonical frame.
+            auto const bounds {m_manip.get_valid_kmer_bounds(sk)};
+            if (bounds.first > bounds.second) // defensive: no valid k-mer -> keep whole
+            {
+                m_manip.permute_minimizer_slot(sk);
+                return;
+            }
+            for (uint64_t pos{bounds.first} ; pos<=bounds.second ; pos++)
+            {
+                Skmer<kuint> single {m_manip.get_skmer_of_kmer(sk, pos)};
+                m_manip.canonicalize(single);
+                m_manip.permute_minimizer_slot(single);
+                m_split_pending.push_back(single);
+            }
+            m_rator.m_yielded_skmer = m_split_pending[0];
+            m_split_idx = 1;
+        }
+
         Iterator& operator++()
         {
             // cout << "operator++" << endl;
+            // Drain any pending per-k-mer split pieces before advancing.
+            if (m_split_idx < m_split_pending.size()) {
+                m_rator.m_yielded_skmer = m_split_pending[m_split_idx++];
+                return *this;
+            }
             if (m_consumed) {
                 m_isend = true;
                 // debug_print_buffer();
@@ -196,7 +247,7 @@ public:
                     {
                         m_rator.m_yielded_skmer = skmer;
                         m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
-                        m_manip.canonicalize_for_sort(m_rator.m_yielded_skmer);
+                        finalize_and_yield();
 
                         // Avoid jumping around the final condition of the do-while
                         if ((m_ptr_last_round % m_buffer_size) == (m_ptr_current % m_buffer_size))
@@ -258,7 +309,7 @@ public:
                 if (m_rator.m_yielded_skmer.m_pref_size + m_rator.m_yielded_skmer.m_suff_size >= k - m)
                 {
                     m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
-                    m_manip.canonicalize_for_sort(m_rator.m_yielded_skmer);
+                    finalize_and_yield();
                     if ((m_remaining_nucleotides + k - m) == 0) {
                         yield_needed = true;
                         break;
