@@ -149,7 +149,13 @@ inline void print_query_results(const std::vector<std::vector<uint8_t>> & result
 template<typename kuint>
 struct Virtual_skmer {
     Skmer<kuint> skmer;
-    uint64_t last_id;
+    // Index of the last enumerated super-k-mer merged into this virtual skmer.
+    // It indexes the per-bucket (or whole-input, in-RAM path) enumeration, whose
+    // size is far below 2^32, so 32 bits suffice and drop sizeof from 40 to 32
+    // bytes (the 8-byte alignment floor) — shrinking the two ping-pong merge
+    // buffers by 20%. Kept inline (not a parallel side-array) so the merge keeps
+    // its locality.
+    uint32_t last_id;
     bool expandable;
 
     Virtual_skmer() : skmer(), last_id(0), expandable(true) {}
