@@ -7,6 +7,8 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <functional>
+#include <cstdlib>
 #include <unistd.h>
 
 #include <io/Skmer.hpp>
@@ -21,6 +23,7 @@ struct ConstructOptions {
     int m = 0;
     bool ascii = false;
     uint64_t buckets = 4096;
+    std::optional<std::string> max_ram;
     std::optional<std::string> tmp_dir;
 };
 
@@ -81,6 +84,11 @@ CLIResult parse_cli(int argc, char** argv) {
         "Number of on-disk minimizer buckets for the low-memory construction path "
         "(default 4096, rounded down to a power of two). More buckets => lower peak "
         "RAM. Use 1 for a single bucket. Binary output to a regular file only.");
+
+    construct->add_option("--max-ram", construct_opts.max_ram,
+        "Approximate target peak RAM for construction (e.g. 2G, 512M). When set, a "
+        "histogram pass derives adaptive minimizer buckets balanced to this budget "
+        "(overrides --buckets). Requires -f <file> (the input is read twice).");
 
     construct->add_option("--tmp-dir", construct_opts.tmp_dir,
         "Directory for temporary bucket files (default: next to the output file).");
@@ -207,13 +215,120 @@ struct TmpDirGuard {
     }
 };
 
-// Low-memory bucketed construction (strategy A v1 + B(1)).
+// Parse a human size like "2G", "512M", "4096K", or a plain byte count.
+// Returns 0 on parse failure.
+static uint64_t parse_size(const std::string& s) {
+    if (s.empty()) return 0;
+    char* end = nullptr;
+    const double value = std::strtod(s.c_str(), &end);
+    if (end == s.c_str() || value < 0) return 0;
+    uint64_t mult = 1;
+    switch (*end) {
+        case 'k': case 'K': mult = 1ull << 10; break;
+        case 'm': case 'M': mult = 1ull << 20; break;
+        case 'g': case 'G': mult = 1ull << 30; break;
+        case 't': case 'T': mult = 1ull << 40; break;
+        case '\0': mult = 1; break;
+        default: return 0;
+    }
+    return static_cast<uint64_t>(value * static_cast<double>(mult));
+}
+
+// Holds a minimizer -> bucket-id mapping plus the bucket count.
+template<typename kuint>
+struct Bucketing {
+    uint64_t n_buckets;
+    std::function<uint64_t(kuint)> bucket_of;
+};
+
+// Empirical phase-2 peak bytes per *raw* (pre-dedup) super-k-mer in a bucket.
+// Drives --max-ram bucket sizing. Chosen conservatively (above the measured
+// worst case) so --max-ram behaves as an approximate ceiling rather than a
+// target; duplicate-heavy buckets cost even less. Very small budgets still hit
+// an irreducible floor (one minimizer's worth + base process RSS).
+static constexpr uint64_t BYTES_PER_SKMER_PEAK = 512;
+// Cap on adaptive bucket count, to keep the temp file count sane.
+static constexpr uint64_t MAX_ADAPTIVE_BUCKETS = 1u << 16;
+
+// Strategy A v1: fixed bucketing on the top bits of the minimizer.
+template<typename kuint>
+static Bucketing<kuint> make_prefix_bucketing(uint64_t m, uint64_t requested_buckets) {
+    const uint64_t mini_bits = 2 * m;
+    uint64_t bucket_bits = 0;
+    while ((uint64_t{1} << (bucket_bits + 1)) <= std::max<uint64_t>(requested_buckets, 1))
+        bucket_bits++;
+    const uint64_t effective_bits = std::min<uint64_t>(bucket_bits, mini_bits);
+    const uint64_t n_buckets = uint64_t{1} << effective_bits;
+    const uint64_t shift = mini_bits - effective_bits;
+    return Bucketing<kuint>{ n_buckets, [shift, n_buckets](kuint mini) -> uint64_t {
+        if (n_buckets == 1) return 0;
+        return static_cast<uint64_t>(mini >> shift);
+    }};
+}
+
+// Strategy A v2: a histogram pass over the minimizers builds contiguous
+// minimizer-prefix intervals each holding ~`target` raw super-k-mers, so the
+// load is balanced and a hot prefix gets a narrow interval. Intervals stay
+// contiguous in minimizer order (so concatenation reproduces the global sort)
+// and never split a single minimizer.
+template<typename kuint>
+static Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
+                                                const std::string& input_path,
+                                                uint64_t m, uint64_t max_ram_bytes) {
+    constexpr uint64_t H = 22;                       // 2^22 * 4 B = 16 MB histogram
+    const uint64_t mini_bits = 2 * m;
+    const uint64_t hist_bits = std::min<uint64_t>(mini_bits, H);
+    const uint64_t low = mini_bits - hist_bits;      // minimizers per cell = 2^low
+    const uint64_t cells = uint64_t{1} << hist_bits;
+
+    std::vector<uint32_t> hist(cells, 0);
+    uint64_t total = 0;
+    {
+        km::FileSkmerator<kuint> rator{manip, input_path};
+        for (const km::Skmer<kuint>& sk : rator) {
+            const kuint mini = manip.minimizer(sk);
+            const uint64_t cell = (low >= 64) ? 0 : static_cast<uint64_t>(mini >> low);
+            if (hist[cell] != UINT32_MAX) hist[cell]++;
+            total++;
+        }
+    }
+
+    if (total == 0)
+        return Bucketing<kuint>{ 1, [](kuint) -> uint64_t { return 0; } };
+
+    // Target raw skmers per bucket from the RAM budget, capped so the bucket
+    // count stays bounded.
+    uint64_t target = std::max<uint64_t>(max_ram_bytes / BYTES_PER_SKMER_PEAK, 1);
+    if (total / target > MAX_ADAPTIVE_BUCKETS)
+        target = (total + MAX_ADAPTIVE_BUCKETS - 1) / MAX_ADAPTIVE_BUCKETS;
+
+    // Greedy contiguous partition: close an interval once it reaches `target`.
+    std::vector<uint64_t> starts{0};
+    uint64_t acc = 0;
+    for (uint64_t cell = 0; cell < cells; cell++) {
+        acc += hist[cell];
+        if (acc >= target && cell + 1 < cells) {
+            starts.push_back(cell + 1);
+            acc = 0;
+        }
+    }
+
+    const uint64_t n_buckets = starts.size();
+    return Bucketing<kuint>{ n_buckets,
+        [low, starts = std::move(starts)](kuint mini) -> uint64_t {
+            const uint64_t cell = (low >= 64) ? 0 : static_cast<uint64_t>(mini >> low);
+            return static_cast<uint64_t>(
+                std::upper_bound(starts.begin(), starts.end(), cell) - starts.begin() - 1);
+        }};
+}
+
+// Low-memory bucketed construction (strategy A v1 + B(1), optionally A v2).
 // Phase 1 streams every super-k-mer into a per-minimizer disk bucket; phase 2
 // loads one bucket at a time, sorts+dedups it, runs the unchanged column
 // algorithm, and appends the sorted sub-list to the output. Buckets are keyed
-// by a monotone prefix of the minimizer, so concatenating them in increasing
-// id order reproduces the global sorted list. Peak RAM is bounded by the
-// largest bucket rather than by the whole genome.
+// by a monotone prefix/interval of the minimizer, so concatenating them in
+// increasing id order reproduces the global sorted list. Peak RAM is bounded by
+// the largest bucket rather than by the whole genome.
 static int run_construct_bucketed(const ConstructOptions& opts) {
     using kuint = uint64_t;
     namespace fs = std::filesystem;
@@ -223,18 +338,39 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
     const std::string input_path  = opts.input_file.value_or("/dev/stdin");
     const std::string output_path = *opts.output_file;
 
-    // ---- bucketing function: keep the top `effective_bits` of the minimizer ----
-    const uint64_t mini_bits = 2 * m;
-    uint64_t bucket_bits = 0;
-    while ((uint64_t{1} << (bucket_bits + 1)) <= std::max<uint64_t>(opts.buckets, 1))
-        bucket_bits++;
-    const uint64_t effective_bits = std::min<uint64_t>(bucket_bits, mini_bits);
-    const uint64_t n_buckets = uint64_t{1} << effective_bits;
-    const uint64_t shift = mini_bits - effective_bits;
-    auto bucket_of = [shift, n_buckets](kuint mini) -> uint64_t {
-        if (n_buckets == 1) return 0;
-        return static_cast<uint64_t>(mini >> shift);
-    };
+    km::SkmerManipulator<kuint> manip{k, m};
+
+    // ---- choose the minimizer -> bucket mapping ----
+    // --max-ram (A v2) needs to read the input twice, so it requires -f <file>;
+    // otherwise fall back to the fixed prefix bucketing (A v1).
+    bool use_adaptive = false;
+    uint64_t max_ram_bytes = 0;
+    if (opts.max_ram) {
+        max_ram_bytes = parse_size(*opts.max_ram);
+        if (max_ram_bytes == 0) {
+            std::cerr << "Invalid --max-ram value: " << *opts.max_ram << std::endl;
+            return 1;
+        }
+        if (!opts.input_file) {
+            std::cerr << "--max-ram requires -f <file> (the input is read twice); "
+                         "falling back to --buckets " << opts.buckets << std::endl;
+        } else {
+            use_adaptive = true;
+        }
+    }
+
+    Bucketing<kuint> bucketing = use_adaptive
+        ? make_adaptive_bucketing<kuint>(manip, input_path, m, max_ram_bytes)
+        : make_prefix_bucketing<kuint>(m, opts.buckets);
+    const uint64_t n_buckets = bucketing.n_buckets;
+    const auto& bucket_of = bucketing.bucket_of;
+
+    // Scale the phase-1 write buffer down for tiny RAM budgets so it does not
+    // dominate the requested budget.
+    size_t writer_budget = size_t{32} << 20;
+    if (use_adaptive)
+        writer_budget = std::min<size_t>(writer_budget,
+            std::max<size_t>(max_ram_bytes / 4, size_t{1} << 20));
 
     // ---- temporary directory (unique per process), cleaned on any exit ----
     fs::path tmp_base = opts.tmp_dir ? fs::path(*opts.tmp_dir)
@@ -243,15 +379,13 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
     fs::path tmp_dir = tmp_base / (".sskm_buckets." + std::to_string(::getpid()));
     TmpDirGuard guard{tmp_dir};
 
-    km::SkmerManipulator<kuint> manip{k, m};
-
     // ---- Phase 1: stream super-k-mers into buckets ----
     // Kept in its own scope so the writer's per-bucket buffers and the sequence
     // reader are fully released before phase 2 allocates, bounding the peak to
     // max(phase-1 buffers, largest bucket) rather than their sum.
     std::vector<uint64_t> counts(n_buckets, 0);
     {
-        km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets};
+        km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets, writer_budget};
         km::FileSkmerator<kuint> file_skmerator{manip, input_path};
         for (const km::Skmer<kuint>& sk : file_skmerator) {
             const kuint mini = manip.minimizer(sk);
