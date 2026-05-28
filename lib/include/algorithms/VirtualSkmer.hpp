@@ -603,36 +603,35 @@ class SortedVirtualSkmerList {
      **/
     std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column){
         using kpair = typename Skmer<kuint>::pair;
-        using kpairhash = typename Skmer<kuint>::pair_hasher;
-        std::unordered_map< kpair, std::vector<uint64_t>, kpairhash > prefixes {};
+        using keyed_pos = std::pair<kpair, uint64_t>;
 
-        kpair suffix, prefix;
-        std::vector<std::pair<uint64_t,uint64_t> > candidate_overlaps;
-        typename std::unordered_map< kpair, std::vector<uint64_t>, kpairhash >::const_iterator matching_prefix;
-        // First, there should be a function that extracts the k-1 prefix of the right column
-        uint64_t prefix_pos {0};
-        for (auto& skmer_id : right_column) {
-            // std::cout << "pref" << std::endl;
-            assert(skmer_id < skmer_enumeration.size());
-            assert(skmer_id >= 0);
-            prefix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
-            prefixes[prefix].push_back(prefix_pos);
-            prefix_pos++;
+        // Index the right column's prefix (k-1)-mers in a sorted array of
+        // (key, right_pos), replacing the per-column hash map (whose nodes
+        // dominated peak RAM on repeat-rich buckets). Sorting by (key, pos) keeps
+        // each key group's positions ascending.
+        std::vector<keyed_pos> right_keys;
+        right_keys.reserve(right_column.size());
+        for (uint64_t pos {0}; pos < right_column.size(); pos++) {
+            assert(right_column[pos] < skmer_enumeration.size());
+            right_keys.emplace_back(
+                m_manip.extract_prefix_suffix(skmer_enumeration[right_column[pos]], left_position + 1), pos);
         }
+        std::sort(right_keys.begin(), right_keys.end(),
+            [](keyed_pos const& a, keyed_pos const& b) {
+                return a.first == b.first ? a.second < b.second : a.first < b.first;
+            });
 
-        // Second, there should be a function that extracts the k-1 suffix of the left column (same funct as before, just give param the place)
-        uint64_t suffix_pos {0};
-        for (auto& skmer_id : left_column) {
-            // std::cout << "suff" << std::endl;
-            suffix = m_manip.extract_prefix_suffix(skmer_enumeration[skmer_id], left_position+1);
-
-            matching_prefix = prefixes.find(suffix);
-            if (matching_prefix != prefixes.end()){
-                for (auto& pref_sk_id: matching_prefix->second){
-                    candidate_overlaps.emplace_back(suffix_pos,pref_sk_id);
-                }
-            }
-            suffix_pos++;
+        // Walk the left column in order; each left suffix (k-1)-mer matches a
+        // contiguous range of right_keys (binary search). Emitting (suffix_pos,
+        // right_pos) this way reproduces the previous (left asc, right asc) order.
+        std::vector<std::pair<uint64_t,uint64_t> > candidate_overlaps;
+        for (uint64_t suffix_pos {0}; suffix_pos < left_column.size(); suffix_pos++) {
+            assert(left_column[suffix_pos] < skmer_enumeration.size());
+            const kpair suffix {m_manip.extract_prefix_suffix(skmer_enumeration[left_column[suffix_pos]], left_position + 1)};
+            auto it = std::lower_bound(right_keys.begin(), right_keys.end(), suffix,
+                [](keyed_pos const& e, kpair const& k) { return e.first < k; });
+            for (; it != right_keys.end() && it->first == suffix; ++it)
+                candidate_overlaps.emplace_back(suffix_pos, it->second);
         }
         return candidate_overlaps;
     }
