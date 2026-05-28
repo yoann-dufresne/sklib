@@ -20,8 +20,7 @@ namespace chaining
  **/
 std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std::vector<overlap>::iterator end)
 {
-    std::vector<overlap> ov(begin, end);
-    size_t const n = ov.size();
+    size_t const n = static_cast<size_t>(end - begin);
     if (n == 0)
         return {};
 
@@ -32,14 +31,18 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     // When overlap X is processed, the tree holds exactly the overlaps before X in
     // first order; among them, those with second < X.second also have first < X.first,
     // so they are the legal predecessors.
-    std::sort(ov.begin(), ov.end(), [](overlap const& a, overlap const& b) {
+    //
+    // We sort and index the caller's range in place (it is not reused after, and the
+    // contract already documents that the input order changes) — no private copy, so
+    // the per-overlap state is just the DP vectors below.
+    std::sort(begin, end, [](overlap const& a, overlap const& b) {
         return a.first != b.first ? a.first < b.first : a.second > b.second;
     });
 
     // Coordinate-compress the second coordinates.
     std::vector<uint64_t> ys;
     ys.reserve(n);
-    for (overlap const& o : ov) ys.push_back(o.second);
+    for (size_t i = 0; i < n; i++) ys.push_back(begin[i].second);
     std::sort(ys.begin(), ys.end());
     ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
     auto rank = [&ys](uint64_t y) -> size_t {
@@ -48,18 +51,18 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     size_t const S = ys.size();
 
     // Fenwick (1-indexed) prefix-maximum. A cell records the best chain ending at a
-    // processed overlap, referenced by its index in the sorted `ov`: longer wins;
+    // processed overlap, referenced by its index in the sorted range: longer wins;
     // ties go to the smaller (first, second) overlap, which reproduces the chain
-    // tie-breaking the unit tests pin. Storing indices (not the overlaps themselves)
-    // lets the per-overlap DP state live in flat vectors instead of hash maps, which
-    // dominated the peak RAM on repeat-rich buckets.
-    struct Cell { uint64_t length; int64_t end_idx; };
+    // tie-breaking the unit tests pin. Indices and lengths are 32-bit: both are
+    // bounded by the candidate count, far below 2^31 for any in-RAM bucket, halving
+    // the DP/Fenwick footprint that dominates repeat-rich buckets.
+    struct Cell { uint32_t length; int32_t end_idx; };
     Cell const empty {0, -1};
-    auto better = [&ov](Cell const& a, Cell const& b) -> bool {
+    auto better = [begin](Cell const& a, Cell const& b) -> bool {
         if (a.length != b.length) return a.length > b.length;
         if (a.length == 0)        return false;
-        overlap const& ae = ov[static_cast<size_t>(a.end_idx)];
-        overlap const& be = ov[static_cast<size_t>(b.end_idx)];
+        overlap const& ae = begin[a.end_idx];
+        overlap const& be = begin[b.end_idx];
         if (ae.first != be.first) return ae.first < be.first;
         return ae.second < be.second;
     };
@@ -76,41 +79,40 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     };
 
     // Per-overlap DP: predecessor index (or -1) and chain length, indexed by the
-    // overlap's position in the sorted `ov`.
-    std::vector<int64_t> prev_idx(n, -1);
-    std::vector<uint64_t> length(n, 0);
+    // overlap's position in the sorted range.
+    std::vector<int32_t> prev_idx(n, -1);
+    std::vector<uint32_t> length(n, 0);
     for (size_t i = 0; i < n; i++)
     {
-        overlap const& o = ov[i];
-        size_t const r = rank(o.second);                          // ranks [0, r-1] have second < o.second
+        size_t const r = rank(begin[i].second);                   // ranks [0, r-1] have second < o.second
         Cell const best = (r == 0) ? empty : bit_prefix_max(r);   // Fenwick positions [1, r]
         length[i]   = best.length + 1;
-        prev_idx[i] = (best.length == 0) ? int64_t{-1} : best.end_idx;
-        bit_update(r + 1, Cell {length[i], static_cast<int64_t>(i)});
+        prev_idx[i] = (best.length == 0) ? int32_t{-1} : best.end_idx;
+        bit_update(r + 1, Cell {length[i], static_cast<int32_t>(i)});
     }
 
     // Chain end: the longest chain, ties broken by larger (first, second).
-    int64_t end_idx = -1;
-    uint64_t max_len = 0;
+    int32_t end_idx = -1;
+    uint32_t max_len = 0;
     for (size_t i = 0; i < n; i++)
     {
-        uint64_t const len = length[i];
+        uint32_t const len = length[i];
         if (end_idx < 0 || len > max_len ||
             (len == max_len &&
-             (ov[i].first > ov[static_cast<size_t>(end_idx)].first ||
-              (ov[i].first == ov[static_cast<size_t>(end_idx)].first &&
-               ov[i].second > ov[static_cast<size_t>(end_idx)].second))))
+             (begin[i].first > begin[static_cast<size_t>(end_idx)].first ||
+              (begin[i].first == begin[static_cast<size_t>(end_idx)].first &&
+               begin[i].second > begin[static_cast<size_t>(end_idx)].second))))
         {
             max_len = len;
-            end_idx = static_cast<int64_t>(i);
+            end_idx = static_cast<int32_t>(i);
         }
     }
 
     std::vector<overlap> chain(max_len);
-    int64_t cur {end_idx};
-    for (uint64_t i = max_len; i > 0; i--)
+    int32_t cur {end_idx};
+    for (uint32_t i = max_len; i > 0; i--)
     {
-        chain[i - 1] = ov[static_cast<size_t>(cur)];
+        chain[i - 1] = begin[static_cast<size_t>(cur)];
         cur = prev_idx[static_cast<size_t>(cur)];
     }
     return chain;
