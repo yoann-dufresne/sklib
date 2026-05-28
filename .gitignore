@@ -1,9 +1,11 @@
 build/
+build-debug/
 build-profile/
 .vscode/
 CLAUDE.md
 thirdparty/FlameGraph/
 scripts/out/
+scripts/bench/.venv/
 
 # Local data fixtures (data/small.fa is tracked)
 data/ecoli.fa
