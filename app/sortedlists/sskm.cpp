@@ -5,10 +5,14 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <filesystem>
+#include <algorithm>
+#include <unistd.h>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include <algorithms/SkmerBucketWriter.hpp>
 
 struct ConstructOptions {
     std::optional<std::string> input_file;
@@ -16,6 +20,8 @@ struct ConstructOptions {
     int k = 0;
     int m = 0;
     bool ascii = false;
+    uint64_t buckets = 1024;
+    std::optional<std::string> tmp_dir;
 };
 
 struct QueryOptions {
@@ -70,6 +76,14 @@ CLIResult parse_cli(int argc, char** argv) {
 
     construct->add_flag("--ascii", construct_opts.ascii,
         "Write the output as human-readable ASCII instead of the default binary format.");
+
+    construct->add_option("--buckets", construct_opts.buckets,
+        "Number of on-disk minimizer buckets for the low-memory construction path "
+        "(rounded down to a power of two). More buckets => lower peak RAM. "
+        "Use 1 for a single bucket. Binary output to a regular file only.");
+
+    construct->add_option("--tmp-dir", construct_opts.tmp_dir,
+        "Directory for temporary bucket files (default: next to the output file).");
 
     construct->footer(
         "Example:\n"
@@ -137,9 +151,27 @@ CLIResult parse_cli(int argc, char** argv) {
 }
 
 
-int run_construct(const ConstructOptions& opts) {
-    using kuint = uint64_t;
+// Sort by the total key (m_pair, pref_size, suff_size) then drop strictly-equal
+// duplicates. Exact-duplicate super-k-mers (canonicalized => bit-identical)
+// contribute identical k-mers in every column and are collapsed per-column by
+// the construction anyway, so removing them up front is a pure optimization and
+// does not change the final k-mer set (strategy B(1)).
+template<typename kuint>
+static void sort_and_dedup(std::vector<km::Skmer<kuint>>& v) {
+    std::sort(v.begin(), v.end(), [](const km::Skmer<kuint>& a, const km::Skmer<kuint>& b) {
+        if (a.m_pair == b.m_pair) {
+            if (a.m_pref_size == b.m_pref_size) return a.m_suff_size < b.m_suff_size;
+            return a.m_pref_size < b.m_pref_size;
+        }
+        return a.m_pair < b.m_pair;
+    });
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+}
 
+// All-in-RAM construction (historical path). Used for ASCII output and for
+// non-seekable / stdout targets where the bucketed path cannot patch the count.
+static int run_construct_in_ram(const ConstructOptions& opts) {
+    using kuint = uint64_t;
     const uint64_t k = static_cast<uint64_t>(opts.k);
     const uint64_t m = static_cast<uint64_t>(opts.m);
 
@@ -149,13 +181,9 @@ int run_construct(const ConstructOptions& opts) {
     km::SkmerManipulator<kuint> manip{k, m};
     km::FileSkmerator<kuint> file_skmerator{manip, input_path};
 
-    km::SkmerPrettyPrinter<kuint> pp{k, m};
-
     std::vector<km::Skmer<kuint>> skmer_enumeration;
-    for (const km::Skmer<kuint> & skmer : file_skmerator) {
+    for (const km::Skmer<kuint>& skmer : file_skmerator)
         skmer_enumeration.push_back(skmer);
-    }
-    // exit(0);
 
     km::sortedlist::SortedVirtualSkmerList<kuint> sorted_list(k, m);
     sorted_list.generate_sorted_list_from_enumeration(skmer_enumeration);
@@ -166,6 +194,120 @@ int run_construct(const ConstructOptions& opts) {
         km::sortedlist::VirtualSkmerSerializer<kuint>::save(sorted_list, output_path);
 
     return 0;
+}
+
+// Removes a temporary directory tree on scope exit (success or exception).
+struct TmpDirGuard {
+    std::filesystem::path dir;
+    bool armed{true};
+    ~TmpDirGuard() {
+        if (!armed) return;
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+};
+
+// Low-memory bucketed construction (strategy A v1 + B(1)).
+// Phase 1 streams every super-k-mer into a per-minimizer disk bucket; phase 2
+// loads one bucket at a time, sorts+dedups it, runs the unchanged column
+// algorithm, and appends the sorted sub-list to the output. Buckets are keyed
+// by a monotone prefix of the minimizer, so concatenating them in increasing
+// id order reproduces the global sorted list. Peak RAM is bounded by the
+// largest bucket rather than by the whole genome.
+static int run_construct_bucketed(const ConstructOptions& opts) {
+    using kuint = uint64_t;
+    namespace fs = std::filesystem;
+
+    const uint64_t k = static_cast<uint64_t>(opts.k);
+    const uint64_t m = static_cast<uint64_t>(opts.m);
+    const std::string input_path  = opts.input_file.value_or("/dev/stdin");
+    const std::string output_path = *opts.output_file;
+
+    // ---- bucketing function: keep the top `effective_bits` of the minimizer ----
+    const uint64_t mini_bits = 2 * m;
+    uint64_t bucket_bits = 0;
+    while ((uint64_t{1} << (bucket_bits + 1)) <= std::max<uint64_t>(opts.buckets, 1))
+        bucket_bits++;
+    const uint64_t effective_bits = std::min<uint64_t>(bucket_bits, mini_bits);
+    const uint64_t n_buckets = uint64_t{1} << effective_bits;
+    const uint64_t shift = mini_bits - effective_bits;
+    auto bucket_of = [shift, n_buckets](kuint mini) -> uint64_t {
+        if (n_buckets == 1) return 0;
+        return static_cast<uint64_t>(mini >> shift);
+    };
+
+    // ---- temporary directory (unique per process), cleaned on any exit ----
+    fs::path tmp_base = opts.tmp_dir ? fs::path(*opts.tmp_dir)
+                                     : fs::path(output_path).parent_path();
+    if (tmp_base.empty()) tmp_base = fs::path(".");
+    fs::path tmp_dir = tmp_base / (".sskm_buckets." + std::to_string(::getpid()));
+    TmpDirGuard guard{tmp_dir};
+
+    km::SkmerManipulator<kuint> manip{k, m};
+
+    // ---- Phase 1: stream super-k-mers into buckets ----
+    {
+        km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets};
+        km::FileSkmerator<kuint> file_skmerator{manip, input_path};
+        for (const km::Skmer<kuint>& sk : file_skmerator) {
+            const kuint mini = manip.minimizer(sk);
+            writer.append(bucket_of(mini), sk);
+        }
+        writer.close();
+
+        // ---- Phase 2: build + append each bucket's sorted sub-list ----
+        std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+        if (out.fail()) {
+            std::cerr << "Error opening output file for writing: " << output_path << std::endl;
+            return 1;
+        }
+        km::sortedlist::VirtualSkmerSerializer<kuint>::write_header(out, k, m, 0);
+        if (out.fail()) {
+            std::cerr << "Error writing header to file: " << output_path << std::endl;
+            return 1;
+        }
+
+        uint64_t total = 0;
+        for (uint64_t id{0}; id < n_buckets; id++) {
+            if (writer.bucket_count(id) == 0) continue;
+            std::vector<km::Skmer<kuint>> vec =
+                km::sortedlist::SkmerBucketWriter<kuint>::load_bucket(writer.bucket_path(id));
+            if (vec.empty()) continue;
+
+            sort_and_dedup(vec);
+
+            km::sortedlist::SortedVirtualSkmerList<kuint> sub(k, m);
+            sub.generate_sorted_list_from_enumeration(vec);
+            km::sortedlist::VirtualSkmerSerializer<kuint>::append_payload(out, sub.get_list());
+            if (out.fail()) {
+                std::cerr << "Error writing skmers to file: " << output_path << std::endl;
+                return 1;
+            }
+            total += sub.size();
+
+            std::error_code ec;
+            fs::remove(writer.bucket_path(id), ec); // free disk as we go
+        }
+
+        km::sortedlist::VirtualSkmerSerializer<kuint>::patch_count(out, total);
+        if (out.fail()) {
+            std::cerr << "Error patching count in file: " << output_path << std::endl;
+            return 1;
+        }
+        out.close();
+    }
+
+    return 0;
+}
+
+int run_construct(const ConstructOptions& opts) {
+    // Bucketing needs a seekable regular file (to patch the header count) and
+    // the raw binary layout. ASCII output and stdout fall back to the
+    // all-in-RAM path.
+    const bool can_bucket = !opts.ascii && opts.output_file.has_value();
+    if (can_bucket)
+        return run_construct_bucketed(opts);
+    return run_construct_in_ram(opts);
 }
 
 

@@ -828,6 +828,33 @@ public:
         return outFile.close();
     }
 
+    // ---- Incremental binary serialization ----
+    // Lets a caller stream the payload out in several blocks (e.g. one per
+    // minimizer bucket) without ever holding the whole list in RAM. The header
+    // layout matches save(): ENDIANNESS(8) + k(8) + m(8) + count(8), then the
+    // raw Skmer payload. The total count is unknown when the header is written,
+    // so write a placeholder and patch_count() it at the end. Requires a
+    // seekable (regular) output file.
+    static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t); // after endianness, k, m
+
+    static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count) {
+        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&k), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&m), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
+    }
+
+    static void append_payload(std::ofstream& out, const std::vector<Skmer<kuint>>& list) {
+        if (list.empty()) return;
+        out.write(reinterpret_cast<const char*>(list.data()),
+                  static_cast<std::streamsize>(list.size() * sizeof(Skmer<kuint>)));
+    }
+
+    static void patch_count(std::ofstream& out, uint64_t total) {
+        out.seekp(COUNT_OFFSET, std::ios::beg);
+        out.write(reinterpret_cast<const char*>(&total), sizeof(uint64_t));
+    }
+
     static void save_ascii(const SortedVirtualSkmerList<kuint>& list, const std::string& filename) {
         std::ofstream outFile(filename);
 
