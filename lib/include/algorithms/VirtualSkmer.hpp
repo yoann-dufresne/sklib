@@ -548,6 +548,7 @@ class SortedVirtualSkmerList {
 
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
+    LList m_merge_scratch;                            // Reused merge target (ping-pong with the working list)
 
     private:
 
@@ -670,8 +671,12 @@ class SortedVirtualSkmerList {
 {
     assert(column_pos <= (m_manip.k - m_manip.m));
 
-    // Merge into a fresh buffer to avoid O(n) shifts from mid-vector inserts.
-    LList merged;
+    // Merge into a reused scratch buffer (ping-pong): we read from `list` and
+    // write to `m_merge_scratch`, then swap. Reusing the member buffer across
+    // all k-m columns avoids reallocating a list-sized buffer each column,
+    // which otherwise churns RSS and fragments the heap.
+    LList& merged = m_merge_scratch;
+    merged.clear();
     merged.reserve(list.size() + column.size());
 
     size_t list_idx = 0;
@@ -776,7 +781,9 @@ class SortedVirtualSkmerList {
         list_idx++;
     }
 
-    list = std::move(merged);
+    // Hand the merged result back to the caller and keep the now-stale `list`
+    // storage as the scratch buffer for the next column.
+    std::swap(list, merged);
 }
 
 }; // end of my class
