@@ -284,17 +284,16 @@ static Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& man
     std::vector<uint32_t> hist(cells, 0);
     uint64_t total = 0;
     {
+        // Count the full stream (no B(2) dedup here): the histogram only needs
+        // relative bin weights to place boundaries, and counting every skmer keeps
+        // the boundaries — hence the whole --max-ram output — identical to the
+        // pre-B(2) version. (B(2)'s consecutive-dup collapse happens in phase 1.)
         km::FileSkmerator<kuint> rator{manip, input_path};
-        km::Skmer<kuint> prev{};
-        bool have_prev = false;
         for (const km::Skmer<kuint>& sk : rator) {
-            if (have_prev && sk == prev) continue;       // B(2): match phase-1 streaming dedup
             const kuint mini = manip.minimizer(sk);
             const uint64_t cell = (low >= 64) ? 0 : static_cast<uint64_t>(mini >> low);
             if (hist[cell] != UINT32_MAX) hist[cell]++;
             total++;
-            prev = sk;
-            have_prev = true;
         }
     }
 
