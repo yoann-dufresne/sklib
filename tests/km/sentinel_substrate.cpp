@@ -236,20 +236,52 @@ TEST(SentinelSubstrate, ValidEntriesPerColumnMonotone) {
     }
 }
 
-// ---- Substrate value (realistic k): per-column key non-decreasing over ALL entries
-// (holes included) => the hole-aware query can navigate scan-free. ----
-TEST(SentinelSubstrate, FilledListFullyNavigableRealisticK) {
+// The current-query invariant holds at GENOME SCALE too: build a larger list and check
+// valid-entry per-column monotonicity stays perfect.
+TEST(SentinelSubstrate, ValidEntriesPerColumnMonotoneAtScale) {
     using kuint = uint64_t;
-    for (const Config& c : kRealisticConfigs) {
-        km::SkmerManipulator<kuint> manip{c.k, c.m};
-        for (const std::string& ref : sample_sequences(c.k)) {
-            if (ref.size() < c.k) continue;
-            std::vector<km::Skmer<kuint>> enumeration = enumerate(manip, ref);
-            if (enumeration.empty()) continue;
-            auto filled = build<kuint>(c.k, c.m, enumeration, true);
-            EXPECT_EQ(column_violations(filled, manip, c.k, c.m, /*include_holes=*/true), 0)
-                << "holes break per-column order k=" << c.k << " m=" << c.m
-                << " (substrate not fully navigable)";
-        }
-    }
+    const Config c{21, 11};
+    km::SkmerManipulator<kuint> manip{c.k, c.m};
+    std::vector<km::Skmer<kuint>> enumeration = enumerate(manip, random_seq(200000, 5));
+    auto filled = build<kuint>(c.k, c.m, enumeration, true);
+    EXPECT_EQ(column_violations(filled, manip, c.k, c.m, /*include_holes=*/false), 0)
+        << "valid-entry column order broken at scale";
+}
+
+// IMPORTANT NEGATIVE RESULT (documents the limitation; see docs/sentinel_substrate.md):
+// the sentinel fill does NOT make the list per-column monotone once HOLES are included,
+// beyond trivially small inputs — so it does NOT enable a scan-free hole-aware binary
+// search at genome scale. Holes (entries lacking a k-mer at a column) are placed by the
+// columns where they ARE valid; at a column where they are absent, their high-order
+// content is already out of order, and no absent-bit fill can fix high-order bits.
+// (If this ever starts passing because the substrate became genuinely navigable, the
+// idea was rescued — update the query and the docs accordingly.)
+TEST(SentinelSubstrate, SubstrateHoleMonotonicityFailsAtScale) {
+    using kuint = uint64_t;
+    const Config c{21, 11};
+    km::SkmerManipulator<kuint> manip{c.k, c.m};
+    std::vector<km::Skmer<kuint>> enumeration = enumerate(manip, random_seq(200000, 5));
+    auto filled = build<kuint>(c.k, c.m, enumeration, true);
+    EXPECT_GT(column_violations(filled, manip, c.k, c.m, /*include_holes=*/true), 0)
+        << "holes unexpectedly monotone at scale — the sentinel idea may be rescuable";
+}
+
+// The hole-aware query (query_skmer_substrate) is exact WHEN the substrate is monotone,
+// i.e. on tiny inputs below the break threshold. It is NOT correct at genome scale (see
+// the SKLIB_BENCH micro-benchmark, which reports ~5% false negatives on a 2 Mb genome).
+TEST(SentinelSubstrate, HoleAwareQueryExactOnTinyMonotoneInput) {
+    using kuint = uint64_t;
+    const Config c{21, 11};
+    km::SkmerManipulator<kuint> manip{c.k, c.m};
+    std::string ref = random_seq(1000, 9); // below the monotonicity break threshold
+    std::vector<km::Skmer<kuint>> enumeration = enumerate(manip, ref);
+    auto filled = build<kuint>(c.k, c.m, enumeration, true);
+    ASSERT_EQ(column_violations(filled, manip, c.k, c.m, /*include_holes=*/true), 0)
+        << "precondition: tiny input must be hole-monotone";
+
+    std::vector<km::Skmer<kuint>> q = enumeration;
+    std::vector<km::Skmer<kuint>> e = enumerate(manip, random_seq(2000, 71));
+    q.insert(q.end(), e.begin(), e.end());
+    EXPECT_EQ(filled.query_skmer_batch(q), filled.query_skmer_batch_substrate(q))
+        << "hole-aware query must match the existing query while the substrate is monotone";
 }
