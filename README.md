@@ -75,6 +75,10 @@ By default, binary construction to a regular file (`-o`) is **disk-backed and lo
 
 `--ascii` and writing to stdout (no `-o`) fall back to the historical all-in-RAM path (the disk-backed path patches the header record count with a seek, which a stream cannot do).
 
+#### Minimizer ordering (compact index)
+
+The order on minimizers uses a fixed, invertible hash (φ) rather than the raw lexicographic value. Hash-ordered minimizers have lower density than lexicographic ones, so the list holds **9–21% fewer super-k-mers** (a smaller index / fewer bits per k-mer) across genomes, and on repeat-rich genomes it also sharply lowers peak construction RAM (e.g. *C. elegans* `k=21, m=11`: ~341 MB → ~70 MB) by breaking the over-selection of low-complexity minimizers. Each k-mer is stored in its own canonical frame (super-k-mers with a reverse-complement-palindrome minimizer are split per k-mer), which also removes a rare construction drop of poly-A k-mers. The on-disk minimizer slot is hash-permuted, so the format carries a version marker: **lists written by an older (raw-order) build are rejected on load** rather than queried incorrectly — rebuild such lists.
+
 ### `sskm query`
 
 Queries k-mers against an existing list, either from a FASTA file or from a single sequence given as a positional argument.

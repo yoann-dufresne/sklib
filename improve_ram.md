@@ -20,10 +20,14 @@
 > (RAM jusqu'à −32 %, temps ×0.36–0.71) **sans aucune régression**. Benchmark
 > complet (5 génomes × 3 configs) : **§5**.
 >
+> **V3 = ordre des minimiseurs par hash φ** (branche `mini_hash_order`) : optimisation de
+> **compression** (−9 à −21 % de super-k-mers partout) + **RAM sur génomes répétitifs**
+> (celegans k21m11 : 341 → 70 Mo, ~5×) + correction du **drop poly-A**. Détail : **§6**.
+>
 > Ce document liste désormais **ce qui reste à faire**. §0 résume le livré ;
 > §1 garde les invariants de correction (fondation des optimisations futures) ;
 > §2 décrit les nouvelles propositions ; §3 la validation ; §4 le statut ;
-> §5 le benchmark final.
+> §5 le benchmark final ; §6 l'ordre φ (V3).
 
 ---
 
@@ -203,3 +207,58 @@ AddressSanitizer et gonfle le RSS ~3,7× — mémoire `measuring-construct-rss-a
   gain RAM est **gratuit** côté vitesse.
 - **Régressions** : **aucune** (seuils 2 % RAM / 5 % temps). Chaque commit V2 est
   par ailleurs **byte-identique** à la sortie V1 validée vs KMC.
+
+---
+
+## 6. V3 — Ordre des minimiseurs par hash φ (compression + RAM sur répétitifs)
+
+**Idée.** Remplacer l'ordre **lexicographique** sur les m-mers (valeur brute) par une
+**bijection fixe φ** (mixer xorshift-multiply de classe hash-prospector `lowbias32`, masqué à
+2m bits, + XOR constant pour `φ(0)≠0`). φ pilote **la sélection ET le tri/bucketing** : le slot
+minimiseur stocké devient `φ(min)` (forme décodable ; `φ⁻¹` au décodage ASCII). Les minimiseurs
+« aléatoires » ont une **densité plus faible** que lexicographiques → **moins de super-k-mers**.
+
+**Correctif de frame (complétion d'issue #7).** Un minimiseur **palindrome reverse-complement**
+(possible seulement à m **pair**, ex. `GC`) ne fixe pas l'orientation du super-k-mer → ses k-mers
+ne sont pas tous canoniques. Le **Skmerator découpe** ces super-k-mers par k-mer (chacun
+canonicalisé). Effet bonus : le **drop poly-A** rare en ordre brut disparaît (chr21 désormais
+exactement égal à KMC : 32 720 485 k-mers).
+
+**Format.** Le slot minimiseur étant permuté, le magic on-disk passe `VSKMER_M → VSKMER_2` :
+`load()` **rejette** les anciennes listes (ordre brut) au lieu de renvoyer des résultats faux.
+
+**Benchmark V2 (`main`) → V3 (φ)** (Release, mono-thread, `--buckets` défaut) :
+
+| génome | k,m | V2 RSS | **V3 RSS** | ΔRSS | V2 skmers | **V3 skmers** | Δskmers |
+|---|---|--:|--:|--:|--:|--:|--:|
+| ecoli | 15,7 | 22 Mo | 28 Mo | +27 % | 2.12 M | 1.93 M | **−9 %** |
+| ecoli | 21,11 | 21 Mo | 27 Mo | +29 % | 1.03 M | 0.88 M | **−14 %** |
+| ecoli | 31,15 | 19 Mo | 23 Mo | +21 % | 0.60 M | 0.51 M | **−15 %** |
+| yeast | 21,11 | 15 Mo | 25 Mo | +67 % | 2.90 M | 2.46 M | **−15 %** |
+| yeast | 31,15 | 13 Mo | 19 Mo | +46 % | 1.57 M | 1.30 M | **−17 %** |
+| **celegans** | 15,7 | 139 Mo | **73 Mo** | **−47 %** | 36.2 M | 32.9 M | −9 % |
+| **celegans** | 21,11 | **341 Mo** | **70 Mo** | **−79 %** | 30.5 M | 26.2 M | −14 % |
+| **celegans** | 31,15 | 211 Mo | **64 Mo** | **−70 %** | 14.7 M | 11.5 M | −21 % |
+| chr21 | 15,7 | 51 Mo | 64 Mo | +25 % | 15.4 M | 14.1 M | −9 % |
+| chr21 | 21,11 | 50 Mo | 62 Mo | +24 % | 9.43 M | 8.13 M | −14 % |
+| chr21 | 31,15 | 53 Mo | 55 Mo | +4 % | 4.99 M | 4.12 M | −17 % |
+| **chr1** | 21,11 | **261 Mo** | **206 Mo** | **−21 %** | 66.0 M | 58.3 M | −12 % |
+| chr1 | 15,7 | 192 Mo | 208 Mo | +8 % | 71.0 M | 64.5 M | −9 % |
+| chr1 | 31,15 | 204 Mo | 199 Mo | −2 % | 31.3 M | 25.8 M | −18 % |
+
+**Lecture.**
+- **Compression : gain partout** — −9 à −21 % de super-k-mers sur **tous** les génomes/configs
+  (plus fort à grand m). Index plus petit (moins de bits/k-mer).
+- **RAM : gros gain là où la RAM est grande** — sur le génome **répétitif celegans**, φ réduit
+  le pic de **47 à 79 %** (k21m11 : **341 → 70 Mo**, ~5×), et chr1 k21m11 de **−21 %**. Ce sont
+  les pires buckets dominés par la sur-sélection, que φ casse (l'objectif initial).
+- **RAM : légère hausse là où la RAM est petite** — ecoli/yeast/chr21 +4 à +67 %, mais en
+  absolu quelques Mo sur une base de 13–64 Mo (le plancher de chr21 est un run poly-A quasi-pur
+  que φ ne fait que **relocaliser** ; φ produit aussi des super-k-mers moins nombreux mais plus
+  longs → plus d'état de chaînage par bucket).
+- **Temps** : neutre à légèrement plus rapide (moins de super-k-mers).
+- **Correction** : égalité d'ensemble vs **KMC** (ecoli + chr21, m pair inclus), **0 faux
+  négatif**, sortie **déterministe** byte-identique entre runs.
+
+⇒ φ est repositionné comme optimisation de **compression + correction** (et RAM **sur les gros
+génomes répétitifs**), pas comme un gain RAM universel.
