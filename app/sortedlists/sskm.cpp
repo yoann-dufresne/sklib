@@ -285,11 +285,16 @@ static Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& man
     uint64_t total = 0;
     {
         km::FileSkmerator<kuint> rator{manip, input_path};
+        km::Skmer<kuint> prev{};
+        bool have_prev = false;
         for (const km::Skmer<kuint>& sk : rator) {
+            if (have_prev && sk == prev) continue;       // B(2): match phase-1 streaming dedup
             const kuint mini = manip.minimizer(sk);
             const uint64_t cell = (low >= 64) ? 0 : static_cast<uint64_t>(mini >> low);
             if (hist[cell] != UINT32_MAX) hist[cell]++;
             total++;
+            prev = sk;
+            have_prev = true;
         }
     }
 
@@ -387,9 +392,19 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
     {
         km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets, writer_budget};
         km::FileSkmerator<kuint> file_skmerator{manip, input_path};
+        // B(2): collapse runs of identical consecutive super-k-mers (tandem repeats
+        // emit the same canonical skmer in a row) before they hit disk. Pure O(1)
+        // filter; the per-bucket sort+unique (B(1)) drops the rest, so the output is
+        // unchanged — this only shrinks the temporary bucket files and the phase-2
+        // load.
+        km::Skmer<kuint> prev{};
+        bool have_prev = false;
         for (const km::Skmer<kuint>& sk : file_skmerator) {
+            if (have_prev && sk == prev) continue;
             const kuint mini = manip.minimizer(sk);
             writer.append(bucket_of(mini), sk);
+            prev = sk;
+            have_prev = true;
         }
         writer.close();
         for (uint64_t id{0}; id < n_buckets; id++) counts[id] = writer.bucket_count(id);
