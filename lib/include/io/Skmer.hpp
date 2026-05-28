@@ -375,6 +375,21 @@ protected:
     kpair* m_pref_masks;
     kpair* m_suff_masks;
 
+    // --- Minimizer-order permutation φ (hash-prospector-class, bijective on 2m bits) ---
+    // The minimizer occupies the top 2m bits of m_pair (above bit 4(k-m)). φ relabels
+    // that 2m-bit value via a fixed invertible xorshift-multiply mixer so the order on
+    // minimizers no longer favors poly-A (raw value 0). Each step is a bijection on
+    // Z/2^{2m}: odd-constant multiply (masked), and x ^= x>>s (in range). A final XOR
+    // with a nonzero constant breaks the 0-fixpoint the prospector mixers have
+    // (lowbias32(0)=0), so φ(0)≠0 — otherwise poly-A would stay minimal and the whole
+    // reordering would be a no-op.
+    uint64_t m_phi_w;                  // minimizer width in bits = 2m
+    kuint m_phi_mask;                  // (1<<2m)-1, or all-ones if 2m == bits(kuint)
+    uint64_t m_phi_s1, m_phi_s2, m_phi_s3; // xorshift amounts, scaled to 2m
+    kuint m_phi_c1, m_phi_c2;          // odd multiply constants
+    kuint m_phi_c1_inv, m_phi_c2_inv;  // their inverses mod 2^bits(kuint)
+    kuint m_phi_k;                     // nonzero XOR constant (ensures φ(0)≠0)
+
 
     std::vector<kpair > prefix_suffix_mask;
     std::vector<kpair > kmer_masks;
@@ -412,6 +427,25 @@ public:
         // Minimizer mask
         kpair sub_maks = max_pair_value >> (2 * sizeof(kuint) * 8 - 4 * (k - m));
         m_minimizer_mask = m_mask ^ sub_maks;
+
+        // --- φ (minimizer-order permutation) setup ---
+        m_phi_w = 2 * m;
+        m_phi_mask = (m_phi_w >= sizeof(kuint) * 8)
+                        ? static_cast<kuint>(~static_cast<kuint>(0))
+                        : static_cast<kuint>((static_cast<kuint>(1) << m_phi_w) - 1);
+        // Shifts scaled to the 2m width (a fixed 16 would degenerate to identity for
+        // small m). All ≥ 1 so x ^= x>>s stays a bijection.
+        m_phi_s1 = std::max<uint64_t>(1, m);
+        m_phi_s2 = std::max<uint64_t>(1, m > 1 ? m - 1 : 1);
+        m_phi_s3 = std::max<uint64_t>(1, m);
+        // splitmix64 finalizer constants (odd). Used full-width; the multiply is masked
+        // to 2m bits in phi(), and the inverse mod 2^bits(kuint) masks down to mod 2^2m.
+        m_phi_c1 = static_cast<kuint>(0xbf58476d1ce4e5b9ULL);
+        m_phi_c2 = static_cast<kuint>(0x94d049bb133111ebULL);
+        m_phi_c1_inv = mul_inverse(m_phi_c1);
+        m_phi_c2_inv = mul_inverse(m_phi_c2);
+        // Golden-ratio odd constant → low bit set → nonzero under any 2m-bit mask.
+        m_phi_k = static_cast<kuint>(0x9E3779B97F4A7C15ULL) & m_phi_mask;
 
         // Skmer and skmer buffers init
         this->init_skmer();
@@ -576,6 +610,70 @@ public:
     kuint minimizer(const Skmer<kuint>& skmer) const
     {
         return static_cast<kuint>(skmer.m_pair >> (4*(k-m)));
+    }
+
+    // Multiplicative inverse of an odd constant mod 2^bits(kuint) (Newton iteration:
+    // each step doubles the number of correct low bits; 6 steps reach ≥ 64 bits).
+    static kuint mul_inverse(kuint a)
+    {
+        kuint x = a; // correct to 3 low bits for odd a
+        for (int i = 0; i < 6; i++)
+            x *= static_cast<kuint>(2) - a * x;
+        return x;
+    }
+
+    // φ : fixed invertible permutation of the 2m-bit minimizer value (hash-prospector
+    // style xorshift-multiply, masked to 2m bits, + XOR constant so φ(0)≠0).
+    kuint phi(kuint x) const
+    {
+        const kuint mask = m_phi_mask;
+        x &= mask;
+        x ^= x >> m_phi_s1;
+        x = (x * m_phi_c1) & mask;
+        x ^= x >> m_phi_s2;
+        x = (x * m_phi_c2) & mask;
+        x ^= x >> m_phi_s3;
+        x ^= m_phi_k;
+        return x & mask;
+    }
+
+    // Inverse of `y = x ^ (x >> s)` on the 2m-bit space, by iterated doubling of s.
+    kuint inv_xorshift_right(kuint x, uint64_t s) const
+    {
+        for (uint64_t sh = s; sh < m_phi_w; sh <<= 1)
+            x ^= x >> sh;
+        return x;
+    }
+
+    // φ⁻¹ : steps of φ in reverse (cold path: ASCII / decoding only).
+    kuint phi_inv(kuint x) const
+    {
+        const kuint mask = m_phi_mask;
+        x &= mask;
+        x ^= m_phi_k;
+        x = inv_xorshift_right(x, m_phi_s3);
+        x = (x * m_phi_c2_inv) & mask;
+        x = inv_xorshift_right(x, m_phi_s2);
+        x = (x * m_phi_c1_inv) & mask;
+        x = inv_xorshift_right(x, m_phi_s1);
+        return x & mask;
+    }
+
+    // Replace the raw minimizer in the top 2m bits of m_pair by φ(minimizer) (flanks
+    // untouched), so a plain m_pair compare orders the list by φ-minimizer.
+    void permute_minimizer_slot(Skmer<kuint>& skmer) const
+    {
+        const kuint raw {static_cast<kuint>(skmer.m_pair >> (4 * (k - m)))};
+        const kpair pm {phi(raw)};
+        skmer.m_pair = (skmer.m_pair & (~m_minimizer_mask)) | (pm << (4 * (k - m)));
+    }
+
+    // Inverse of permute_minimizer_slot: recover the raw nucleotide minimizer (decode).
+    void unpermute_minimizer_slot(Skmer<kuint>& skmer) const
+    {
+        const kuint pm {static_cast<kuint>(skmer.m_pair >> (4 * (k - m)))};
+        const kpair raw {phi_inv(pm)};
+        skmer.m_pair = (skmer.m_pair & (~m_minimizer_mask)) | (raw << (4 * (k - m)));
     }
 
     /** Replace the bits of absent nucleotides (outside of registered prefix/suffix) by 0b11.
