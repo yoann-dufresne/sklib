@@ -196,7 +196,7 @@ public:
                     {
                         m_rator.m_yielded_skmer = skmer;
                         m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
-                        m_manip.canonicalize(m_rator.m_yielded_skmer);
+                        m_manip.canonicalize_for_sort(m_rator.m_yielded_skmer);
 
                         // Avoid jumping around the final condition of the do-while
                         if ((m_ptr_last_round % m_buffer_size) == (m_ptr_current % m_buffer_size))
@@ -233,8 +233,8 @@ public:
                 Skmer<kuint>& candidate {compute_new_candidate_skmer()};
                 auto const candidate_orient {m_skmer_orientation[m_ptr_current % m_buffer_size]};
 
-                // Get the minimizer
-                const kuint candidate_minimizer {m_manip.minimizer(candidate)};
+                // Get the minimizer order key (φ-rank, not the raw value)
+                const kuint candidate_minimizer {m_manip.minimizer_rank(candidate)};
 
                 // -- A new minimizer has been discovered
                 if (candidate_minimizer < m_current_minimizer) {
@@ -258,7 +258,7 @@ public:
                 if (m_rator.m_yielded_skmer.m_pref_size + m_rator.m_yielded_skmer.m_suff_size >= k - m)
                 {
                     m_manip.mask_absent_nucleotides(m_rator.m_yielded_skmer);
-                    m_manip.canonicalize(m_rator.m_yielded_skmer);
+                    m_manip.canonicalize_for_sort(m_rator.m_yielded_skmer);
                     if ((m_remaining_nucleotides + k - m) == 0) {
                         yield_needed = true;
                         break;
@@ -410,7 +410,7 @@ public:
         {
             // 0 - Select first candidate
             Skmer<kuint>& first = m_skmer_buffer_array[buff_start % m_buffer_size];
-            m_current_minimizer = m_manip.minimizer(first);
+            m_current_minimizer = m_manip.minimizer_rank(first);
             m_ptr_min = buff_start;
             uint64_t first_equal_mini {m_ptr_min};
             uint64_t last_equal_mini {m_ptr_min};
@@ -419,7 +419,7 @@ public:
             for (uint64_t idx{buff_start+1} ; idx<=buff_stop ; idx++)
             {
                 Skmer<kuint>& candidate = m_skmer_buffer_array[idx % m_buffer_size];
-                kuint candidate_minimizer = m_manip.minimizer(candidate);
+                kuint candidate_minimizer = m_manip.minimizer_rank(candidate);
 
                 if (candidate_minimizer < m_current_minimizer)
                 {
@@ -444,7 +444,7 @@ public:
                 }
                 else if (idx <= last_equal_mini)
                 {
-                    kuint candidate_minimizer = m_manip.minimizer(candidate);
+                    kuint candidate_minimizer = m_manip.minimizer_rank(candidate);
 
                     if (candidate_minimizer == m_current_minimizer)
                     {

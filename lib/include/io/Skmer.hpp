@@ -612,6 +612,15 @@ public:
         return static_cast<kuint>(skmer.m_pair >> (4*(k-m)));
     }
 
+    // Order key of a skmer's (raw) minimizer: φ of the raw-canonical m-mer. The window
+    // minimizer is selected by argmin of this rank instead of the raw value, so poly-A
+    // (raw 0 → φ(0)=K) is no longer systematically chosen. φ is bijective, so equal
+    // ranks ⇔ equal minimizers (the selection's "same minimizer" test stays correct).
+    kuint minimizer_rank(const Skmer<kuint>& skmer) const
+    {
+        return phi(minimizer(skmer));
+    }
+
     // Multiplicative inverse of an odd constant mod 2^bits(kuint) (Newton iteration:
     // each step doubles the number of correct low bits; 6 steps reach ≥ 64 bits).
     static kuint mul_inverse(kuint a)
@@ -738,6 +747,20 @@ public:
         Skmer<kuint> rc {reverse_complement(skmer)};
         if (rc.m_pair < skmer.m_pair)
             skmer = rc;
+    }
+
+    /** Finalize a yielded super-k-mer for the φ-ordered sorted list: pick the raw
+     * canonical orientation (reverse_complement works on the raw nucleotide layout),
+     * then permute the minimizer slot in place so the stored value is [φ(min) | flanks].
+     * From here on the skmer is in "permuted" space and a plain m_pair compare orders by
+     * φ(minimizer). Construction and query both reach this via the Skmerator yield, so
+     * they stay consistent. Decode with unpermute_minimizer_slot (φ⁻¹).
+     * @param skmer Super-k-mer to canonicalize then permute in place
+     **/
+    void canonicalize_for_sort(Skmer<kuint>& skmer) const
+    {
+        canonicalize(skmer);
+        permute_minimizer_slot(skmer);
     }
 
 
