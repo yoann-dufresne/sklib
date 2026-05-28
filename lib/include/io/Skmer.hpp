@@ -28,6 +28,13 @@ public:
     pair m_pair;
     uint16_t m_pref_size;
     uint16_t m_suff_size;
+    // Explicit, zero-initialized tail padding. sizeof(Skmer) is 24 but only the
+    // 20 bytes above carry data; the serializer dumps records raw, so without a
+    // deterministic value these 4 bytes leak uninitialized heap and make the
+    // output bytes (not the k-mer set) differ run-to-run. Keeping it an explicit
+    // member with a default initializer zeroes it across every constructor
+    // without changing sizeof or the on-disk layout.
+    uint32_t m_pad{0};
 
     Skmer() : m_pair(), m_pref_size(0), m_suff_size(0)
     {}
