@@ -700,6 +700,24 @@ public:
             skmer.m_pair |= kpair(0b11U) << (4 * i + 2);
     }
 
+    /** Bitmask (over m_pair) of the absent nucleotide slots of an entry with the given
+     * prefix/suffix sizes — exactly the bits mask_absent_nucleotides sets to 0b11. These
+     * are the low/peripheral flank slots (below the minimizer in the interleaved layout),
+     * i.e. the bits free to carry the order-preserving sentinel fill of the sorted list.
+     * @param pref_size stored super-k-mer prefix size
+     * @param suff_size stored super-k-mer suffix size
+     * @return the absent-slot bitmask
+     **/
+    kpair absent_slot_mask(uint16_t pref_size, uint16_t suff_size) const
+    {
+        kpair mask {};
+        for (uint64_t i{0} ; i<(k - m - pref_size) ; i++)
+            mask |= kpair(static_cast<kuint>(0b11U)) << (4 * i);
+        for (uint64_t i{0} ; i<(k - m - suff_size) ; i++)
+            mask |= kpair(static_cast<kuint>(0b11U)) << (4 * i + 2);
+        return mask;
+    }
+
     /** Reverse-complement of a super-k-mer in the minimizer-centered interleaved
      * encoding. Position p (from the start) maps to position (2k-m-1-p), so prefix
      * slot p and suffix slot p swap, and every nucleotide is complemented (XOR 0b10).

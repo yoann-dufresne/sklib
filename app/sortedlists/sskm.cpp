@@ -196,6 +196,11 @@ static int run_construct_in_ram(const ConstructOptions& opts) {
     km::sortedlist::SortedVirtualSkmerList<kuint> sorted_list(k, m);
     sorted_list.generate_sorted_list_from_enumeration(skmer_enumeration);
 
+    // Order-preserving sentinel fill of the absent flank slots (substrate for hole-aware
+    // queries). Skipped for --ascii, which inspects only the present nucleotides.
+    if (!opts.ascii)
+        sorted_list.fill_absent_sentinel();
+
     if (opts.ascii)
         km::sortedlist::VirtualSkmerSerializer<kuint>::save_ascii(sorted_list, output_path);
     else
@@ -434,6 +439,10 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
 
             km::sortedlist::SortedVirtualSkmerList<kuint> sub(k, m);
             sub.generate_sorted_list_from_enumeration(vec);
+            // Order-preserving sentinel fill before serialization (per bucket: each bucket
+            // is a contiguous minimizer range, and the fill touches only sub-minimizer bits,
+            // so concatenation stays globally sorted).
+            sub.fill_absent_sentinel();
             km::sortedlist::VirtualSkmerSerializer<kuint>::append_payload(out, sub.get_list());
             if (out.fail()) {
                 std::cerr << "Error writing skmers to file: " << output_path << std::endl;

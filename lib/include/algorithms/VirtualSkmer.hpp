@@ -506,6 +506,36 @@ class SortedVirtualSkmerList {
         return m_skmer_list.size();
     }
 
+    // Sentinel fill of the absent (low/peripheral) flank slots: clear them from the
+    // build-time 0b11 padding down to 0 (= A, the minimal completion of each entry).
+    //
+    // Why this is the substrate a hole-aware query wants: a stored entry's k-mer at a
+    // column c occupies the HIGH-order bits of m_pair; the absent slots are the low,
+    // peripheral bits, so an entry that is a "hole" at column c is only missing low-order
+    // bits there. Setting them to 0 makes every hole the minimal completion of its
+    // family, i.e. an order-consistent lower bound. Empirically (see sentinel_substrate
+    // tests) this makes the per-column key (m_pair & kmer_masks[c]) NON-DECREASING along
+    // the whole list — holes included — for every realistic (k, m) (k-m large enough),
+    // so a binary search can navigate through holes by direction alone, with no
+    // find_closest_valid_skmer linear scan. (For degenerate tiny k-m the content order is
+    // incompatible with any single m_pair order, so the hole-aware fast path does not
+    // apply there; the *current* query is unaffected for all k — see below.)
+    //
+    // Safety for the current query (this is a construction-only change): it compares
+    // k-mers only at entries VALID at column c (where these slots are masked out by
+    // kmer_masks[c]) and skips holes, so it never reads the filled bits — query results
+    // are byte-identical with or without this fill. A match is accepted only within a
+    // super-k-mer's valid k-mer bounds (has_valid_kmer), so any duplicate k-mer value the
+    // fill may create is harmless ("only one is real within its super-k-mer's bounds").
+    void fill_absent_sentinel() {
+        using kpair = typename Skmer<kuint>::pair;
+        for (Skmer<kuint>& sk : m_skmer_list) {
+            const kpair amask = m_manip.absent_slot_mask(sk.m_pref_size, sk.m_suff_size);
+            sk.m_pair.m_value[0] = static_cast<kuint>(sk.m_pair.m_value[0] & ~amask.m_value[0]);
+            sk.m_pair.m_value[1] = static_cast<kuint>(sk.m_pair.m_value[1] & ~amask.m_value[1]);
+        }
+    }
+
     uint64_t k() const { return m_manip.k; }
     uint64_t m() const { return m_manip.m; }
 
