@@ -1,22 +1,20 @@
-// Tests for the absent-slot sentinel fill (SortedVirtualSkmerList::fill_absent_sentinel),
-// the construction-side substrate prepared for a future hole-aware query.
+// Tests for the absent-slot sentinel fill (SortedVirtualSkmerList::fill_absent_sentinel).
 //
 // The fill clears each stored entry's absent (low/peripheral) flank bits from the
-// build-time 0b11 padding down to 0 (the minimal completion). What we validate:
+// build-time 0b11 padding down to 0 (the minimal completion). It was meant to make the
+// list per-column monotone WITH holes included, so a binary search could navigate through
+// entries lacking a k-mer at the column without find_closest_valid_skmer's linear scan.
 //
-//   Universal (every k, m), construction-only safety:
-//     * query results are IDENTICAL with/without the fill (the current query never reads
-//       those bits: it compares k-mers only at entries valid at the column, where the
-//       bits are masked out, and skips holes);
-//     * the list keeps its size; each entry's m_pair is only lowered (present bits and
-//       pref/suff sizes unchanged); self-query stays complete; save/load round-trips.
-//
-//   Substrate value (realistic k, i.e. k-m large enough):
-//     * the per-column key (m_pair & kmer_masks[c]) is NON-DECREASING along the WHOLE
-//       list, holes included — so a future binary search can navigate through holes by
-//       direction alone, with no find_closest_valid_skmer linear scan.
-//     * for ALL k (incl. degenerate tiny k-m) the key is non-decreasing over the entries
-//       VALID at c — the invariant the current query already relies on.
+// That goal is NOT achieved beyond trivially small inputs (see SubstrateHoleMonotonicity
+// FailsAtScale and docs/sentinel_substrate.md). What these tests pin down is what is
+// actually true:
+//   * Construction-only safety (every k, m): query results are IDENTICAL with/without the
+//     fill (the current query reads k-mers only at entries valid at the column, where the
+//     bits are masked out, and skips holes); the list keeps its size; each entry's m_pair
+//     is only lowered (present bits / sizes unchanged); self-query stays complete; round-trips.
+//   * The valid-entry per-column monotonicity the current query relies on holds for all k
+//     and at genome scale.
+//   * The hole-INCLUSIVE monotonicity (the navigability the fill aimed for) fails at scale.
 
 #include <gtest/gtest.h>
 
@@ -68,16 +66,9 @@ std::string repeat_motif(const std::string& motif, size_t times) {
 
 struct Config { uint64_t k, m; };
 
-// Full spread (incl. degenerate tiny k-m) for the universal safety tests.
+// Spread incl. degenerate tiny k-m for the universal safety tests.
 const std::vector<Config> kAllConfigs = {
     {5, 2}, {8, 4}, {15, 7}, {21, 11}, {23, 11}, {31, 15},
-};
-// Realistic regime (k-m >= 8): the fill yields a fully navigable (per-column monotone
-// incl. holes) substrate. (Degenerate tiny k-m are excluded — their content order is
-// incompatible with any single m_pair order, so the hole-aware fast path can't apply;
-// the *current* query is still correct there, covered by the universal tests.)
-const std::vector<Config> kRealisticConfigs = {
-    {15, 7}, {16, 8}, {21, 11}, {23, 11}, {27, 13}, {31, 15},
 };
 
 // A spread of sequence shapes incl. low-complexity stressors for the sentinel.
@@ -97,8 +88,8 @@ std::vector<std::string> sample_sequences(uint64_t k) {
 }
 
 // Count column-key monotonicity violations along the list. With include_holes=false only
-// entries valid at the column are considered (current-query invariant); with true, every
-// entry is considered (the hole-aware navigability claim).
+// entries valid at the column are considered (the current-query invariant); with true,
+// every entry is considered (the navigability the fill aimed for).
 template <typename kuint>
 long column_violations(const km::sortedlist::SortedVirtualSkmerList<kuint>& list,
                        km::SkmerManipulator<kuint>& manip, uint64_t k, uint64_t m,
@@ -236,8 +227,7 @@ TEST(SentinelSubstrate, ValidEntriesPerColumnMonotone) {
     }
 }
 
-// The current-query invariant holds at GENOME SCALE too: build a larger list and check
-// valid-entry per-column monotonicity stays perfect.
+// Same invariant at GENOME SCALE.
 TEST(SentinelSubstrate, ValidEntriesPerColumnMonotoneAtScale) {
     using kuint = uint64_t;
     const Config c{21, 11};
@@ -254,8 +244,8 @@ TEST(SentinelSubstrate, ValidEntriesPerColumnMonotoneAtScale) {
 // search at genome scale. Holes (entries lacking a k-mer at a column) are placed by the
 // columns where they ARE valid; at a column where they are absent, their high-order
 // content is already out of order, and no absent-bit fill can fix high-order bits.
-// (If this ever starts passing because the substrate became genuinely navigable, the
-// idea was rescued — update the query and the docs accordingly.)
+// (If this ever starts FAILING because the substrate became navigable, the idea was
+// rescued — update the query and the docs accordingly.)
 TEST(SentinelSubstrate, SubstrateHoleMonotonicityFailsAtScale) {
     using kuint = uint64_t;
     const Config c{21, 11};
