@@ -35,7 +35,7 @@ class SkmerBucketWriter
 {
 public:
     SkmerBucketWriter(std::filesystem::path tmp_dir, uint64_t n_buckets,
-                      size_t buffer_bytes_total = (size_t{256} << 20))
+                      size_t buffer_bytes_total = (size_t{32} << 20))
         : m_tmp_dir(std::move(tmp_dir)), m_n_buckets(n_buckets)
     {
         std::filesystem::create_directories(m_tmp_dir);
@@ -58,22 +58,32 @@ public:
             flush_bucket(bucket_id);
     }
 
-    // Flush every non-empty buffer to disk. Idempotent.
+    // Flush every non-empty buffer to disk, then release the buffer memory so it
+    // does not coexist with phase-2 per-bucket allocations. Bucket paths/counts
+    // remain available afterwards. Idempotent.
     void close()
     {
         for (uint64_t id{0}; id < m_n_buckets; id++)
             if (!m_buffers[id].empty())
                 flush_bucket(id);
+        std::vector<std::vector<Skmer<kuint>>>().swap(m_buffers);
     }
 
     uint64_t n_buckets() const { return m_n_buckets; }
 
-    std::filesystem::path bucket_path(uint64_t id) const
+    // Deterministic bucket file name for an id (no directory). Phase 2 can
+    // reconstruct paths from the tmp dir + id without keeping the writer alive.
+    static std::string bucket_filename(uint64_t id)
     {
         char name[32];
         std::snprintf(name, sizeof(name), "bucket_%05llu.bin",
                       static_cast<unsigned long long>(id));
-        return m_tmp_dir / name;
+        return std::string(name);
+    }
+
+    std::filesystem::path bucket_path(uint64_t id) const
+    {
+        return m_tmp_dir / bucket_filename(id);
     }
 
     // Number of records routed to a bucket (0 => file never created).

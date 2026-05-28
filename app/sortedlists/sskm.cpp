@@ -20,7 +20,7 @@ struct ConstructOptions {
     int k = 0;
     int m = 0;
     bool ascii = false;
-    uint64_t buckets = 1024;
+    uint64_t buckets = 4096;
     std::optional<std::string> tmp_dir;
 };
 
@@ -79,8 +79,8 @@ CLIResult parse_cli(int argc, char** argv) {
 
     construct->add_option("--buckets", construct_opts.buckets,
         "Number of on-disk minimizer buckets for the low-memory construction path "
-        "(rounded down to a power of two). More buckets => lower peak RAM. "
-        "Use 1 for a single bucket. Binary output to a regular file only.");
+        "(default 4096, rounded down to a power of two). More buckets => lower peak "
+        "RAM. Use 1 for a single bucket. Binary output to a regular file only.");
 
     construct->add_option("--tmp-dir", construct_opts.tmp_dir,
         "Directory for temporary bucket files (default: next to the output file).");
@@ -246,6 +246,10 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
     km::SkmerManipulator<kuint> manip{k, m};
 
     // ---- Phase 1: stream super-k-mers into buckets ----
+    // Kept in its own scope so the writer's per-bucket buffers and the sequence
+    // reader are fully released before phase 2 allocates, bounding the peak to
+    // max(phase-1 buffers, largest bucket) rather than their sum.
+    std::vector<uint64_t> counts(n_buckets, 0);
     {
         km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets};
         km::FileSkmerator<kuint> file_skmerator{manip, input_path};
@@ -254,8 +258,11 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
             writer.append(bucket_of(mini), sk);
         }
         writer.close();
+        for (uint64_t id{0}; id < n_buckets; id++) counts[id] = writer.bucket_count(id);
+    }
 
-        // ---- Phase 2: build + append each bucket's sorted sub-list ----
+    // ---- Phase 2: build + append each bucket's sorted sub-list ----
+    {
         std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
         if (out.fail()) {
             std::cerr << "Error opening output file for writing: " << output_path << std::endl;
@@ -269,9 +276,10 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
 
         uint64_t total = 0;
         for (uint64_t id{0}; id < n_buckets; id++) {
-            if (writer.bucket_count(id) == 0) continue;
+            if (counts[id] == 0) continue;
+            const fs::path bpath = tmp_dir / km::sortedlist::SkmerBucketWriter<kuint>::bucket_filename(id);
             std::vector<km::Skmer<kuint>> vec =
-                km::sortedlist::SkmerBucketWriter<kuint>::load_bucket(writer.bucket_path(id));
+                km::sortedlist::SkmerBucketWriter<kuint>::load_bucket(bpath);
             if (vec.empty()) continue;
 
             sort_and_dedup(vec);
@@ -286,7 +294,7 @@ static int run_construct_bucketed(const ConstructOptions& opts) {
             total += sub.size();
 
             std::error_code ec;
-            fs::remove(writer.bucket_path(id), ec); // free disk as we go
+            fs::remove(bpath, ec); // free disk as we go
         }
 
         km::sortedlist::VirtualSkmerSerializer<kuint>::patch_count(out, total);
