@@ -8,7 +8,7 @@
 - [X] REIMPLEMENT TESTS FOR THE NEW VIRTUALSKMER WRAPPER CLASS
 - [X] QUERY A SINGLE KMER FROM THE LIST
 - [X] QUERY A STREAM OF KMERS FROM THE LIST
-- [ ] UPDATE QUERY STRATEGY FOR CACHE LOCALITY
+- [ ] UPDATE QUERY STRATEGY FOR CACHE LOCALITY (substrate ready: the absent-slot sentinel fill makes the list per-column monotone incl. holes for realistic k, so the binary search can drop find_closest_valid_skmer's linear scan)
 - [ ] ADD UNIQUENESS AFTER K-MER COLUMN SORTING
 - [ ] PARELLALIZE QUERY ON MULTIPLE CORES
 - [ ] CI/CD WITH GITHUB ACTIONS

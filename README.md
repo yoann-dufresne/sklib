@@ -79,6 +79,10 @@ By default, binary construction to a regular file (`-o`) is **disk-backed and lo
 
 The order on minimizers uses a fixed, invertible hash (φ) rather than the raw lexicographic value. Hash-ordered minimizers have lower density than lexicographic ones, so the list holds **9–21% fewer super-k-mers** (a smaller index / fewer bits per k-mer) across genomes, and on repeat-rich genomes it also sharply lowers peak construction RAM (e.g. *C. elegans* `k=21, m=11`: ~341 MB → ~70 MB) by breaking the over-selection of low-complexity minimizers. Each k-mer is stored in its own canonical frame (super-k-mers with a reverse-complement-palindrome minimizer are split per k-mer), which also removes a rare construction drop of poly-A k-mers. The on-disk minimizer slot is hash-permuted, so the format carries a version marker: **lists written by an older (raw-order) build are rejected on load** rather than queried incorrectly — rebuild such lists.
 
+#### Absent-slot sentinel (query substrate)
+
+A stored super-k-mer that covers few k-mers leaves its peripheral flank slots unused (build-time padding). Construction now clears those absent slots to a sentinel — the minimal completion of the entry — instead of leaving the padding. Because a k-mer occupies the **high-order** bits of the interleaved encoding while the absent slots are the **low-order** ones, this lowers each short entry to an order-consistent value: for realistic `k` the per-column search key becomes monotone over the *whole* list (entries lacking a k-mer at the searched position included), which lets a membership query navigate by binary search alone, dropping the linear scan that currently steps over those entries. The fill is transparent to the current query — it rewrites only bits that are masked out when comparing valid entries — so the on-disk format and all query results are unchanged; it is a substrate the upcoming query-side work builds on.
+
 ### `sskm query`
 
 Queries k-mers against an existing list, either from a FASTA file or from a single sequence given as a positional argument.
