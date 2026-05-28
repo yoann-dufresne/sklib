@@ -63,8 +63,17 @@ Builds a sorted skmer list from a FASTA file.
 | `-f, --file <path>` | no | stdin | Input FASTA (plain or gzip). |
 | `-o, --output <path>` | no | stdout | Output sorted skmer list. |
 | `--ascii` | no | off | Write human-readable ASCII instead of the default binary format. |
+| `--buckets <int>` | no | 4096 | Number of on-disk minimizer buckets for the low-memory path (rounded down to a power of two). More buckets ⇒ lower peak RAM; `1` is a single bucket. |
+| `--max-ram <size>` | no | — | Approximate target peak RAM (e.g. `2G`, `512M`); a histogram pass derives adaptive buckets balanced to this budget, overriding `--buckets`. Requires `-f <file>` (the input is read twice). |
+| `--tmp-dir <path>` | no | next to output | Directory for the temporary bucket files. |
 
 The default binary output embeds an endianness marker so files can be moved across machines. The ASCII format is intended for inspection and tests, not for downstream querying.
+
+#### Low-memory construction
+
+By default, binary construction to a regular file (`-o`) is **disk-backed and low-memory**: super-k-mers are partitioned by minimizer into on-disk buckets, then each bucket is sorted, deduplicated, and built independently and appended to the output. Because the minimizer occupies the most significant bits of a super-k-mer, concatenating buckets in order reproduces the exact same globally-sorted list — the output format is unchanged and queries are unaffected. Peak RAM is therefore bounded by the **largest bucket** rather than by the whole input, and is tunable with `--buckets` (or targeted with `--max-ram`). On human chr21 (`k=31, m=13`) this cuts construction peak RSS from ~850 MB (all-in-RAM) to ~67 MB at the default `--buckets 4096`. Temporary bucket files are removed automatically on success and on error.
+
+`--ascii` and writing to stdout (no `-o`) fall back to the historical all-in-RAM path (the disk-backed path patches the header record count with a seek, which a stream cannot do).
 
 ### `sskm query`
 
