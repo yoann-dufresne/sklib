@@ -250,6 +250,67 @@ template <typename kuint>
 std::vector<std::vector<uint8_t>> bounded_query(const std::vector<km::Skmer<kuint>>&,
         km::SkmerManipulator<kuint>&, const std::vector<km::Skmer<kuint>>&, int);
 
+// Extract MINIMAL examples where the interpolation fill leaves two consecutive entries out
+// of order at some column c (key_c[i] > key_c[i+1]). Decoded slot-by-slot:
+//   flanks printed high->low significance; UPPERCASE = present real nucleotide,
+//   lowercase = filled hole, '_' = slot outside column c's window (masked out of key_c).
+TEST(InterpExperiment, MinimalDisplacementExamples) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
+    using kuint = uint64_t;
+    const u64 k = 8, m = 4, flank = k - m;
+    km::SkmerManipulator<kuint> manip{k, m};
+    auto en = enumerate(manip, random_seq(160, 3));
+    km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+    L.generate_sorted_list_from_enumeration(en);
+    auto base = L.get_list();
+    auto yo = interpolated_fill(base, manip, k, m);
+    using kpair = typename km::Skmer<kuint>::pair;
+    const auto kmask = manip.get_k_mask();
+    static const char NUC[] = {'A', 'C', 'T', 'G'};
+    auto nib = [&](const km::Skmer<kuint>& e, u64 off) {
+        return unsigned((off < 64 ? (e.m_pair.m_value[0] >> off) : (e.m_pair.m_value[1] >> (off - 64))) & 3);
+    };
+    auto render = [&](const km::Skmer<kuint>& e, u64 c) {
+        const u64 pref = e.m_pref_size, suff = e.m_suff_size;
+        std::string s = "P:";
+        for (long sl = (long)flank - 1; sl >= 0; sl--) {
+            char ch = NUC[nib(e, 4 * sl)];
+            if ((u64)sl < flank - pref) ch = char(ch - 'A' + 'a');     // filled hole
+            if ((u64)sl < c) ch = '_';                                  // outside column c
+            s += ch;
+        }
+        s += " S:";
+        for (long sl = (long)flank - 1; sl >= 0; sl--) {
+            char ch = NUC[nib(e, 4 * sl + 2)];
+            if ((u64)sl < flank - suff) ch = char(ch - 'A' + 'a');
+            if ((u64)sl < flank - c) ch = '_';
+            s += ch;
+        }
+        return s;
+    };
+    int shown = 0;
+    for (u64 c = 0; c <= flank && shown < 8; c++) {
+        for (size_t i = 0; i + 1 < yo.size() && shown < 8; i++) {
+            kpair ka{yo[i].m_pair & kmask[c]}, kb{yo[i + 1].m_pair & kmask[c]};
+            if (kb < ka) {  // i is before i+1 in the list, but key_c(i) > key_c(i+1)
+                const u64 miA = (yo[i].m_pair.m_value[0] >> (4 * flank)) & ((1ull << (2 * m)) - 1);
+                const u64 miB = (yo[i + 1].m_pair.m_value[0] >> (4 * flank)) & ((1ull << (2 * m)) - 1);
+                std::cerr << "\n[ex] VIOLATION col=" << c << " positions " << i << " < " << i + 1
+                          << "  (mini A=" << miA << " B=" << miB << (miA == miB ? " same" : " DIFF") << ")\n";
+                std::cerr << "  A[" << i << "] pref=" << yo[i].m_pref_size << " suff=" << yo[i].m_suff_size
+                          << "  filled " << render(yo[i], c) << "  | unfilled " << render(base[i], c)
+                          << "  key_c=0x" << std::hex << (uint64_t)(ka.m_value[0]) << std::dec << "\n";
+                std::cerr << "  B[" << i + 1 << "] pref=" << yo[i + 1].m_pref_size << " suff=" << yo[i + 1].m_suff_size
+                          << "  filled " << render(yo[i + 1], c) << "  | unfilled " << render(base[i + 1], c)
+                          << "  key_c=0x" << std::hex << (uint64_t)(kb.m_value[0]) << std::dec << "\n";
+                shown++;
+            }
+        }
+    }
+    std::cerr << "[ex] total shown=" << shown << " (list size " << yo.size() << ")\n";
+    SUCCEED();
+}
+
 TEST(InterpExperiment, YoannFill) {
     if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
     using kuint = uint64_t;
