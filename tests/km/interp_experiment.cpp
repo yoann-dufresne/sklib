@@ -20,6 +20,7 @@
 #include <vector>
 #include <random>
 #include <iostream>
+#include <chrono>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -340,6 +341,119 @@ long valid_col_violations(const std::vector<km::Skmer<kuint>>& v, km::SkmerManip
         }
     }
     return viol;
+}
+
+// Yoann's flag idea. Mark (1 bit) each hole that breaks per-column monotonicity; the
+// dichotomy skips a marked entry only at columns where it is a hole. Returns the flag vector.
+template <typename kuint>
+std::vector<char> compute_hole_flags(const std::vector<km::Skmer<kuint>>& v,
+                                     km::SkmerManipulator<kuint>& manip, u64 k, u64 m) {
+    using kpair = typename km::Skmer<kuint>::pair;
+    const std::vector<kpair> kmask = manip.get_k_mask();
+    const size_t n = v.size();
+    std::vector<char> flag(n, 0);
+    const kpair INF{static_cast<kuint>(~kuint(0)), static_cast<kuint>(~kuint(0))};
+    std::vector<kpair> nextvk(n);
+    for (u64 c = 0; c <= k - m; c++) {
+        // next-valid-at-c key strictly after i (INF if none) — a kept hole must not exceed it
+        kpair nv = INF; bool have_nv = false;
+        for (long i = (long)n - 1; i >= 0; i--) { nextvk[i] = have_nv ? nv : INF;
+            if (manip.has_valid_kmer(v[i], c)) { nv = (v[i].m_pair & kmask[c]); have_nv = true; } }
+        kpair prev{}; bool have = false;
+        for (size_t i = 0; i < n; i++) {
+            const bool hole = !manip.has_valid_kmer(v[i], c);
+            if (hole && flag[i]) continue;            // already marked -> skipped here
+            const kpair key{v[i].m_pair & kmask[c]};
+            if (!hole) { prev = key; have = true; continue; }  // valid: always kept (backbone)
+            const bool fits = (!have || !(key < prev)) && !(nextvk[i] < key);  // prev <= key <= next valid
+            if (fits) { prev = key; have = true; } else flag[i] = 1;
+        }
+    }
+    return flag;
+}
+
+template <typename kuint>
+std::vector<std::vector<uint8_t>> flagged_query(const std::vector<km::Skmer<kuint>>& v,
+        const std::vector<char>& flag, km::SkmerManipulator<kuint>& manip,
+        const std::vector<km::Skmer<kuint>>& qs, long* skips = nullptr) {
+    const int64_t N = (int64_t)v.size();
+    long total_skips = 0;
+    std::vector<std::vector<uint8_t>> out(qs.size());
+    for (size_t qi = 0; qi < qs.size(); qi++) {
+        auto bnd = manip.get_valid_kmer_bounds(qs[qi]);
+        if (bnd.second < bnd.first) continue;
+        std::vector<uint8_t> res(bnd.second - bnd.first + 1, 0);
+        for (uint64_t off = 0; off + bnd.first <= bnd.second; off++) {
+            const uint64_t c = bnd.first + off;
+            int64_t lo = 0, hi = N - 1; bool found = false;
+            auto skip = [&](int64_t p) { return flag[p] && !manip.has_valid_kmer(v[p], c); };
+            while (lo <= hi) {
+                int64_t mid = lo + ((hi - lo) >> 1);
+                int64_t p = mid; while (p <= hi && skip(p)) { p++; total_skips++; }
+                if (p > hi) { p = mid - 1; while (p >= lo && skip(p)) { p--; total_skips++; } if (p < lo) break; }
+                const int cmp = manip.kmer_compare(qs[qi], v[p], c);
+                if (cmp == 0) {
+                    if (manip.has_valid_kmer(v[p], c)) { found = true; break; }
+                    // scan the S_c equal-key run for a valid match, skipping (out-of-order)
+                    // flagged holes that may be interspersed; stop at a kept entry of != key.
+                    for (int64_t j = p - 1; j >= 0; j--) {
+                        if (skip(j)) { total_skips++; continue; }
+                        if (manip.kmer_compare(qs[qi], v[j], c) != 0) break;
+                        if (manip.has_valid_kmer(v[j], c)) { found = true; break; }
+                    }
+                    if (!found) for (int64_t j = p + 1; j < N; j++) {
+                        if (skip(j)) { total_skips++; continue; }
+                        if (manip.kmer_compare(qs[qi], v[j], c) != 0) break;
+                        if (manip.has_valid_kmer(v[j], c)) { found = true; break; }
+                    }
+                    break;
+                } else if (cmp < 0) hi = p - 1; else lo = p + 1;
+            }
+            res[off] = found ? 1 : 0;
+        }
+        out[qi] = std::move(res);
+    }
+    if (skips) *skips = total_skips;
+    return out;
+}
+
+TEST(InterpExperiment, FlaggedSkipQuery) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
+    using kuint = uint64_t;
+    const u64 k = 21, m = 11;
+    for (size_t G : {size_t{200000}, size_t{1000000}, size_t{4000000}}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, random_seq(G, 5));
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        auto filled = interpolated_fill(L.get_list(), manip, k, m);
+        L.add_list(filled);                                  // make L hold the filled list
+        auto flag = compute_hole_flags(filled, manip, k, m);
+        long nflag = 0; for (char f : flag) nflag += f;
+        // verify S_c = (valid-at-c OR flag-OK) is monotone per column (the search space)
+        { using kpair = typename km::Skmer<kuint>::pair; const auto kmask = manip.get_k_mask(); long scv = 0;
+          for (u64 c = 0; c <= k - m; c++) { kpair prev{}; bool have = false;
+            for (size_t i = 0; i < filled.size(); i++) { if (flag[i] && !manip.has_valid_kmer(filled[i], c)) continue;
+              kpair key{filled[i].m_pair & kmask[c]}; if (have && key < prev) scv++; prev = key; have = true; } }
+          std::cerr << "[flag] G=" << G << " entries=" << filled.size()
+                    << " flagged=" << nflag << " (" << (100.0 * nflag / filled.size()) << "%)"
+                    << " S_c_violations=" << scv << "\n"; }
+
+        std::vector<km::Skmer<kuint>> present = en;
+        std::vector<km::Skmer<kuint>> absent = enumerate(manip, random_seq(G, 777));
+        for (auto* wl : {&present, &absent}) {
+            const char* name = (wl == &present) ? "present" : "absent ";
+            auto gt = L.query_skmer_batch(*wl);              // existing query = ground truth
+            long sk = 0;
+            auto t0 = std::chrono::high_resolution_clock::now();
+            auto r_new = flagged_query(filled, flag, manip, *wl, &sk);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            std::cerr << "[flag] " << name << " mismatch=" << mismatches(gt, r_new)
+                      << " | flagged-query(serial) " << ms << " ms (" << ms * 1e6 / wl->size()
+                      << " ns/skmer)  skips/skmer=" << double(sk) / wl->size() << std::endl;
+        }
+    }
 }
 
 // Can we reach per-column displacement 0 (pure dichotomy) by changing fill and/or order?
