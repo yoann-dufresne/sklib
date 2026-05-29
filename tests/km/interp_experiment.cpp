@@ -96,6 +96,103 @@ long mismatches(const std::vector<std::vector<uint8_t>>& a,
 }
 } // namespace
 
+// Column-AWARE fill: for each column c, interpolate each hole's MISSING window slots
+// between its valid-at-c neighbours (so column c's key lands between them); a slot
+// constrained by several columns gets the average of their desired values. This targets
+// per-column order directly, not the global m_pair order.
+template <typename kuint>
+std::vector<km::Skmer<kuint>> column_aware_fill(const std::vector<km::Skmer<kuint>>& base,
+                                                km::SkmerManipulator<kuint>& manip,
+                                                u64 k, u64 m) {
+    const size_t n = base.size();
+    const u64 flank = k - m;
+    const size_t S = 2 * flank;                       // slot index: prefix s -> s, suffix s -> flank+s
+    auto slotval = [&](const km::Skmer<kuint>& e, u64 off) -> unsigned {
+        return off < 64 ? unsigned((e.m_pair.m_value[0] >> off) & 3ULL)
+                        : unsigned((e.m_pair.m_value[1] >> (off - 64)) & 3ULL);
+    };
+    std::vector<float> sum(n * S, 0.0f), cnt(n * S, 0.0f);
+
+    for (u64 c = 0; c <= flank; c++) {
+        long il = -1;                                  // index of last valid-at-c entry
+        // first pass forward; for runs between valid brackets, interpolate
+        std::vector<long> valids;
+        for (size_t idx = 0; idx < n; idx++)
+            if (manip.has_valid_kmer(base[idx], c)) valids.push_back((long)idx);
+        if (valids.empty()) continue;
+        auto accum = [&](long h, long L, long R) {
+            const u64 pref = base[h].m_pref_size, suff = base[h].m_suff_size;
+            double f = (R > L) ? double(h - L) / double(R - L) : 0.0;
+            // missing prefix slots in window [c, flank-1]: s in [c, flank-pref-1]
+            for (u64 s = c; s + pref < flank; s++) {
+                double lv = (L >= 0) ? slotval(base[L], 4 * s) : 0;
+                double rv = (R >= 0) ? slotval(base[R], 4 * s) : lv;
+                double d = (L >= 0) ? lv + f * (rv - lv) : rv;
+                sum[h * S + s] += float(d); cnt[h * S + s] += 1;
+            }
+            // missing suffix slots in window: s in [flank-c, flank-suff-1]
+            for (u64 s = flank - c; s + suff < flank; s++) {
+                double lv = (L >= 0) ? slotval(base[L], 4 * s + 2) : 0;
+                double rv = (R >= 0) ? slotval(base[R], 4 * s + 2) : lv;
+                double d = (L >= 0) ? lv + f * (rv - lv) : rv;
+                sum[h * S + flank + s] += float(d); cnt[h * S + flank + s] += 1;
+            }
+        };
+        long prevValid = -1;
+        for (long v : valids) {
+            for (long h = prevValid + 1; h < v; h++) accum(h, prevValid, v);
+            prevValid = v;
+        }
+        for (long h = prevValid + 1; h < (long)n; h++) accum(h, prevValid, -1);
+        il = prevValid; (void)il;
+    }
+
+    std::vector<km::Skmer<kuint>> filled = base;
+    for (size_t i = 0; i < n; i++) {
+        const u64 pref = base[i].m_pref_size, suff = base[i].m_suff_size;
+        for (u64 s = 0; s + pref < flank; s++) {       // absent prefix slot s
+            unsigned v = cnt[i * S + s] > 0 ? unsigned(sum[i * S + s] / cnt[i * S + s] + 0.5f) : 0;
+            v &= 3; u64 off = 4 * s;
+            if (off < 64) { filled[i].m_pair.m_value[0] &= ~(3ULL << off); filled[i].m_pair.m_value[0] |= u64(v) << off; }
+            else { u64 o = off - 64; filled[i].m_pair.m_value[1] &= ~(3ULL << o); filled[i].m_pair.m_value[1] |= u64(v) << o; }
+        }
+        for (u64 s = 0; s + suff < flank; s++) {       // absent suffix slot s
+            unsigned v = cnt[i * S + flank + s] > 0 ? unsigned(sum[i * S + flank + s] / cnt[i * S + flank + s] + 0.5f) : 0;
+            v &= 3; u64 off = 4 * s + 2;
+            if (off < 64) { filled[i].m_pair.m_value[0] &= ~(3ULL << off); filled[i].m_pair.m_value[0] |= u64(v) << off; }
+            else { u64 o = off - 64; filled[i].m_pair.m_value[1] &= ~(3ULL << o); filled[i].m_pair.m_value[1] |= u64(v) << o; }
+        }
+    }
+    return filled;
+}
+
+TEST(InterpExperiment, ColumnAwareFill) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
+    using kuint = uint64_t;
+    const u64 k = 21, m = 11;
+    for (size_t G : {size_t{200000}, size_t{1000000}}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, random_seq(G, 5));
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        std::vector<km::Skmer<kuint>> base = L.get_list();
+        auto present = en;
+        auto absent = enumerate(manip, random_seq(G, 777));
+        auto gt_present = L.query_skmer_batch(present);
+        auto gt_absent = L.query_skmer_batch(absent);
+
+        auto filled = column_aware_fill(base, manip, k, m);
+        long colv = per_column_violations(filled, manip, k, m);
+        km::sortedlist::SortedVirtualSkmerList<kuint> F(k, m);
+        F.add_list(filled);
+        long fnp = mismatches(gt_present, F.query_skmer_batch_substrate(present));
+        long fna = mismatches(gt_absent, F.query_skmer_batch_substrate(absent));
+        std::cerr << "[colaware] G=" << G << " entries=" << base.size()
+                  << " per_col_viol=" << colv
+                  << " substrate_query_mismatch present=" << fnp << " absent=" << fna << std::endl;
+    }
+}
+
 TEST(InterpExperiment, OrderPreservingFills) {
     if (std::getenv("SKLIB_BENCH") == nullptr)
         GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
