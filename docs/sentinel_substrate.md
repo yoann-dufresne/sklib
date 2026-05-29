@@ -107,5 +107,44 @@ cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-re
 # honest unit tests (incl. the at-scale invariant and the documented limitation):
 (cd build-release && ./tests/sklib-tests --gtest_filter='SentinelSubstrate.*')
 # size sweep + 2 Mb timing/correctness + fill-then-resort experiment:
-(cd build-release && SKLIB_BENCH=1 ./tests/sklib-tests --gtest_filter='SentinelBench.*')
+(cd build-release && SKLIB_BENCH=1 ./tests/sklib-tests --gtest_filter='SentinelBench.*:InterpExperiment.*')
 ```
+
+## Update — Yoann's interpolation fill + bounded query (EXACT, but not faster)
+
+Follow-up after the pure-min negative result. Yoann specified a precise *interpolation* fill
+(`procedure_remplissage.txt`): anchor on complete entries + pinned boundaries, process
+interleaved positions low→high, interpolate each hole between its anchors. Implemented as the
+experiment `interpolated_fill` (his exact procedure) and as the lib's
+`SortedVirtualSkmerList::fill_absent_interpolated` (a generic, overflow-free order-preserving
+midpoint that yields an equivalent result). Plus a bounded query `query_skmer_batch_bounded`:
+per-column binary search + a ±W scan, W = 2·D+16 where D is the list's max per-column
+displacement (computed once at load), with a per-list delegate to the existing query if D
+exceeds a cap.
+
+Measured (k=21, m=11, random genome):
+
+| genome | entries | max displacement D | bounded query vs existing |
+|-------:|--------:|-------------------:|---------------------------|
+| 200 kb | 33 620  | 3 (midpoint 4)     | exact |
+| 1 Mb   | 171 358 | 6 (midpoint 7)     | exact |
+| 4 Mb   | 730 736 | 16 (midpoint 15)   | exact |
+
+* **Displacement is NOT 0** (it grows ~3→16 with size), so Yoann's "if 0 ⇒ scan-free" branch
+  does not trigger; the per-column key is not fully monotone (the scattered-mask obstacle).
+* The bounded query is **EXACT** for present AND absent (verified `== query_skmer_batch` at
+  scale, 0 mismatch, W=2D+16; W=D alone is too small — convergence needs ~2D).
+* **But it is NOT faster on realistic (random) data**: ~0.64–0.79× the existing query
+  (≈109/155 ns vs 86/99 ns per super-k-mer, present/absent on 2 Mb). The ±2D scan (and loss
+  of the existing query's cross-column probe multiplexing) costs more than the existing
+  `find_closest_valid_skmer` scans, which are *short* on random data. It is marginally faster
+  only on degenerate, highly repetitive inputs whose list is tiny (9–56 entries). The earlier
+  "2–3× faster" figure was the *incorrect* W=0 scan-free variant.
+
+**Conclusion.** The interpolation fill + bounded query is a faithful, exact realization of
+Yoann's idea, but it does **not** speed up queries on realistic data — the existing query is
+already efficient, and exactness forces a ±2D scan that erases the advantage. The construction
+fill is therefore kept (Yoann's procedure, realized) but the **existing query remains the CLI
+default** (faster, exact); `query_skmer_batch_bounded` ships as an available, tested method.
+A real query speedup would need an actual per-column index (O(1) hole skipping) or the
+minimizer-range index — not a bit fill.

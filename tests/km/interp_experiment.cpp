@@ -166,6 +166,121 @@ std::vector<km::Skmer<kuint>> column_aware_fill(const std::vector<km::Skmer<kuin
     return filled;
 }
 
+// Max per-column displacement = how far each entry is from its sorted position in any
+// column key (the window W a bounded query would need; 0 == fully per-column monotone).
+template <typename kuint>
+long max_col_displacement(const std::vector<km::Skmer<kuint>>& v,
+                          km::SkmerManipulator<kuint>& manip, u64 k, u64 m) {
+    using kpair = typename km::Skmer<kuint>::pair;
+    const std::vector<kpair> kmask = manip.get_k_mask();
+    const size_t n = v.size();
+    std::vector<uint32_t> ord(n);
+    long md = 0;
+    for (u64 c = 0; c <= k - m; c++) {
+        for (uint32_t z = 0; z < (uint32_t)n; z++) ord[z] = z;
+        std::stable_sort(ord.begin(), ord.end(), [&](uint32_t a, uint32_t b) {
+            return (v[a].m_pair & kmask[c]) < (v[b].m_pair & kmask[c]); });
+        for (uint32_t r = 0; r < (uint32_t)n; r++) { long d = (long)ord[r] - (long)r; if (d < 0) d = -d; if (d > md) md = d; }
+    }
+    return md;
+}
+
+// Yoann's exact procedure (procedure_remplissage.txt): hierarchical interpolation anchored
+// on COMPLETE entries + pinned boundaries (lst[0]->0b00, lst[n-1]->0b11). Process interleaved
+// nucleotide positions low->high significance; in each window between consecutive anchors,
+// resolve an entry once its highest-significance missing nucleotide reaches the current
+// position, by index-interpolating between the current anchors (writing only its missing
+// slots), then promote it to an anchor (and tighten the left endpoint).
+template <typename kuint>
+std::vector<km::Skmer<kuint>> interpolated_fill(const std::vector<km::Skmer<kuint>>& base,
+                                                km::SkmerManipulator<kuint>& manip, u64 k, u64 m) {
+    using u128 = unsigned __int128;
+    const size_t n = base.size();
+    const u64 flank = k - m;
+    std::vector<km::Skmer<kuint>> lst = base;
+    auto getv = [&](size_t i) -> u128 {
+        return (u128(lst[i].m_pair.m_value[1]) << 64) | u128(lst[i].m_pair.m_value[0]);
+    };
+    auto write2 = [&](size_t x, u64 off, unsigned val) {
+        if (off < 64) { lst[x].m_pair.m_value[0] = (lst[x].m_pair.m_value[0] & ~(u64(3) << off)) | (u64(val) << off); }
+        else { u64 o = off - 64; lst[x].m_pair.m_value[1] = (lst[x].m_pair.m_value[1] & ~(u64(3) << o)) | (u64(val) << o); }
+    };
+    auto set_missing = [&](size_t x, u128 target) {
+        const u64 pref = lst[x].m_pref_size, suff = lst[x].m_suff_size;
+        for (u64 s = 0; s + pref < flank; s++) { u64 off = 4 * s;     write2(x, off, unsigned((target >> off) & 3)); }
+        for (u64 s = 0; s + suff < flank; s++) { u64 off = 4 * s + 2; write2(x, off, unsigned((target >> off) & 3)); }
+    };
+    auto hi_missing = [&](size_t x) -> int {
+        const u64 pref = lst[x].m_pref_size, suff = lst[x].m_suff_size;
+        int hp = (pref < flank) ? int(4 * (flank - pref - 1))     : -1;
+        int hs = (suff < flank) ? int(4 * (flank - suff - 1) + 2) : -1;
+        return std::max(hp, hs);
+    };
+    std::vector<char> vb(n, 0);
+    for (size_t i = 0; i < n; i++)
+        if (lst[i].m_pref_size == (uint16_t)flank && lst[i].m_suff_size == (uint16_t)flank) vb[i] = 1;
+    if (!vb[0])     { set_missing(0, u128(0)); vb[0] = 1; }
+    if (!vb[n - 1]) { set_missing(n - 1, ~u128(0)); vb[n - 1] = 1; }
+
+    std::vector<int> offsets;            // interleaved nucleotide positions, low->high
+    for (u64 s = 0; s < flank; s++) { offsets.push_back(int(4 * s)); offsets.push_back(int(4 * s + 2)); }
+    for (int c : offsets) {
+        size_t left = 0; while (left < n && !vb[left]) left++;
+        for (size_t b = left + 1; b < n; b++) {
+            if (!vb[b]) continue;
+            size_t li = left;
+            for (size_t x = li + 1; x < b; x++) {
+                if (hi_missing(x) == c) {
+                    u128 vi = getv(li), vj = getv(b);
+                    u128 target = (vj >= vi) ? vi + (vj - vi) * u128(x - li) / u128(b - li) : vi;
+                    set_missing(x, target);
+                    vb[x] = 1; li = x;
+                }
+            }
+            left = b;
+        }
+    }
+    return lst;
+}
+
+// forward decls (defined below)
+template <typename kuint>
+std::vector<km::Skmer<kuint>> midpoint_fill(const std::vector<km::Skmer<kuint>>&, km::SkmerManipulator<kuint>&);
+template <typename kuint>
+std::vector<std::vector<uint8_t>> bounded_query(const std::vector<km::Skmer<kuint>>&,
+        km::SkmerManipulator<kuint>&, const std::vector<km::Skmer<kuint>>&, int);
+
+TEST(InterpExperiment, YoannFill) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
+    using kuint = uint64_t;
+    const u64 k = 21, m = 11;
+    for (size_t G : {size_t{200000}, size_t{1000000}, size_t{4000000}}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, random_seq(G, 5));
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        std::vector<km::Skmer<kuint>> base = L.get_list();
+        auto present = en;
+        auto absent = enumerate(manip, random_seq(G, 777));
+        auto gt_present = L.query_skmer_batch(present);
+        auto gt_absent = L.query_skmer_batch(absent);
+
+        auto yo = interpolated_fill(base, manip, k, m);
+        long disp = max_col_displacement(yo, manip, k, m);
+        long colv = per_column_violations(yo, manip, k, m);
+        long mid_disp = max_col_displacement(midpoint_fill(base, manip), manip, k, m);
+        std::cerr << "[yoann] G=" << G << " entries=" << base.size()
+                  << " yoann_max_disp=" << disp << " yoann_per_col_viol=" << colv
+                  << " midpoint_max_disp=" << mid_disp << std::endl;
+        for (int W : {0, 8, 16, 32}) {
+            long fp = mismatches(gt_present, bounded_query(yo, manip, present, W));
+            long fa = mismatches(gt_absent, bounded_query(yo, manip, absent, W));
+            std::cerr << "[yoann] G=" << G << " W=" << W
+                      << " present_mismatch=" << fp << " absent_mismatch=" << fa << std::endl;
+        }
+    }
+}
+
 // midpoint order-preserving fill (≈ Yoann's interpolation): per-entry value = achievable
 // nearest the midpoint of the carry-min and carry-max monotone envelopes.
 template <typename kuint>

@@ -275,3 +275,45 @@ TEST(SentinelSubstrate, HoleAwareQueryExactOnTinyMonotoneInput) {
     EXPECT_EQ(filled.query_skmer_batch(q), filled.query_skmer_batch_substrate(q))
         << "hole-aware query must match the existing query while the substrate is monotone";
 }
+
+// PRODUCTION PATH: fill_absent_interpolated (construction) + query_skmer_batch_bounded
+// (bounded ±W, W = list's max column displacement computed at load) must return EXACTLY the
+// same results as the existing query — every k/m and sequence shape, present and absent.
+TEST(SentinelSubstrate, BoundedQueryExactWithInterpolatedFill) {
+    using kuint = uint64_t;
+    for (const Config& c : kAllConfigs) {
+        km::SkmerManipulator<kuint> manip{c.k, c.m};
+        for (const std::string& ref : sample_sequences(c.k)) {
+            if (ref.size() < c.k) continue;
+            std::vector<km::Skmer<kuint>> en = enumerate(manip, ref);
+            if (en.empty()) continue;
+            km::sortedlist::SortedVirtualSkmerList<kuint> list(c.k, c.m);
+            list.generate_sorted_list_from_enumeration(en);
+            list.fill_absent_interpolated();
+
+            std::vector<km::Skmer<kuint>> q = en;                  // present
+            for (uint32_t seed : {7u, 88u}) {                      // + absent / mixed
+                std::vector<km::Skmer<kuint>> e = enumerate(manip, random_seq(5 * c.k, seed));
+                q.insert(q.end(), e.begin(), e.end());
+            }
+            ASSERT_EQ(list.query_skmer_batch(q), list.query_skmer_batch_bounded(q))
+                << "bounded query != existing query for k=" << c.k << " m=" << c.m;
+        }
+    }
+}
+
+// Same at (moderate) genome scale — bounded query stays exact as displacement grows.
+TEST(SentinelSubstrate, BoundedQueryExactAtScale) {
+    using kuint = uint64_t;
+    const Config c{21, 11};
+    km::SkmerManipulator<kuint> manip{c.k, c.m};
+    std::vector<km::Skmer<kuint>> en = enumerate(manip, random_seq(120000, 5));
+    km::sortedlist::SortedVirtualSkmerList<kuint> list(c.k, c.m);
+    list.generate_sorted_list_from_enumeration(en);
+    list.fill_absent_interpolated();
+    std::vector<km::Skmer<kuint>> q = en;
+    std::vector<km::Skmer<kuint>> e = enumerate(manip, random_seq(60000, 99));
+    q.insert(q.end(), e.begin(), e.end());
+    EXPECT_EQ(list.query_skmer_batch(q), list.query_skmer_batch_bounded(q))
+        << "bounded query != existing query at scale (window=" << list.query_window() << ")";
+}

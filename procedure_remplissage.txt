@@ -1,0 +1,24 @@
+Toutes les procédures ont accès à la liste lst des skmers triés. La liste fait une taille n
+on créé un vecteur de booléens vb de la taille de la liste des skmers, tous initialement faux.
+
+procedure remplir_la_liste:
+	On parcours la liste et on mets à vrai vb[i] si lst[i] est un skmer complétement rempli.
+	si lst[0] n'est pas rempli, tous les nucléotides manquants sont remplis par 0b00
+	si lst[n-1] n'est pas rempli, tous les nucléotides manquants sont remplis par 0b11
+
+	On parcours les indexes de slots c de nucléotides entrelacés du poid faible vers le poid fort:
+		Pour chaque (i;j) de enumere_fenetre:
+			remplir_colonne_dans_fenetre(c, i, j)
+
+
+procedure enumere_fenetres:
+	On énumère chaque paire (i;j) tels que vb[i] et vb[j] soient vrai mais que tous les vb[x] pour i<x<j soit faux
+
+
+procedure remplir_colonne_dans_fenetre(c, i, j):
+	# Prerequis, i et j doivent respecter la définition d'une fenetre de la procedure enumere_fenetres
+	Pour tout x entre i et j exclus:
+		Si lst[c] a son nucleotide non rempli de poid le plus fort en colonne c:
+			On rempli le nucleotides manquants du skmer comme une interpolation entre lst[i] et lst[j]
+			vb[x] devient vrai
+			i devient x

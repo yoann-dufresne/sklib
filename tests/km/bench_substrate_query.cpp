@@ -176,3 +176,41 @@ TEST(SentinelBench, QueryThroughput) {
                   << " | substrate-query mismatch_vs_gt=" << m2 << std::endl;
     }
 }
+
+// PRODUCTION benchmark: lib's fill_absent_interpolated + query_skmer_batch_bounded vs the
+// existing query_skmer_batch, on a sentinel/interpolated-filled list. Asserts identical
+// results (exactness) and reports throughput.
+TEST(SentinelBench, BoundedQueryThroughput) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
+    using kuint = uint64_t;
+    const uint64_t k = 21, m = 11;
+    const size_t G = 2000000;
+    // random + repetitive (long hole-runs: where the existing find_closest scans far)
+    std::vector<std::pair<std::string, std::string>> genomes;
+    genomes.emplace_back("random ", random_seq(G, 20260529));
+    { std::string motif = random_seq(60, 1), s; s.reserve(G); while (s.size() < G) s += motif; genomes.emplace_back("repeat60", s); }
+    { std::string motif = random_seq(300, 2), s; s.reserve(G); while (s.size() < G) s += motif; genomes.emplace_back("repeat300", s); }
+    for (auto& [glabel, genome] : genomes) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, genome);
+        km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
+        list.generate_sorted_list_from_enumeration(en);
+        list.fill_absent_interpolated();
+        std::cerr << "[boundedbench] " << glabel << " entries=" << list.size()
+                  << " window_D=" << list.query_window() << std::endl;
+
+        std::vector<km::Skmer<kuint>> present = en;
+        std::vector<km::Skmer<kuint>> absent = enumerate(manip, random_seq(G, 13));
+        for (auto* wl : {&present, &absent}) {
+            const char* name = (wl == &present) ? "present" : "absent ";
+            std::vector<std::vector<uint8_t>> r_old, r_new;
+            double ms_old = time_ms([&]{ r_old = list.query_skmer_batch(*wl); });
+            double ms_new = time_ms([&]{ r_new = list.query_skmer_batch_bounded(*wl); });
+            ASSERT_EQ(r_old, r_new) << "bounded != existing on " << name << " (" << glabel << ")";
+            std::cerr << "[boundedbench] " << name << " n=" << wl->size()
+                      << " | existing " << ms_old << " ms (" << ms_old * 1e6 / wl->size() << " ns/skmer)"
+                      << " | bounded " << ms_new << " ms (" << ms_new * 1e6 / wl->size() << " ns/skmer)"
+                      << " | speedup x" << (ms_old / ms_new) << std::endl;
+        }
+    }
+}
