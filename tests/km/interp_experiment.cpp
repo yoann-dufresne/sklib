@@ -417,6 +417,61 @@ std::vector<std::vector<uint8_t>> flagged_query(const std::vector<km::Skmer<kuin
     return out;
 }
 
+// Option 2: does making super-k-mers longer (via m / window size) cut the flag fraction?
+TEST(InterpExperiment, HolesVsMinimizer) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
+    using kuint = uint64_t;
+    const u64 k = 21;
+    const size_t G = 1000000;
+    const std::string genome = random_seq(G, 5);
+    for (u64 m : {6u, 8u, 10u, 12u, 14u, 16u}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, genome);
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        auto base = L.get_list();
+        const size_t n = base.size();
+        double sumcov = 0;
+        for (const auto& e : base) { auto b = manip.get_valid_kmer_bounds(e); if (b.second >= b.first) sumcov += double(b.second - b.first + 1); }
+        const double avgcov = n ? sumcov / n : 0;
+        auto filled = interpolated_fill(base, manip, k, m);
+        auto flag = compute_hole_flags(filled, manip, k, m);
+        long nflag = 0; for (char f : flag) nflag += f;
+        std::cerr << "[holesM] k=" << k << " m=" << m << " cols=" << (k - m + 1)
+                  << " entries=" << n
+                  << " avg_skmer_len=" << avgcov << " (" << (100.0 * avgcov / (k - m + 1)) << "% of cols)"
+                  << " flagged=" << (100.0 * nflag / n) << "%" << std::endl;
+    }
+}
+
+// Does a larger m (fewer columns) give a cheap, EXACT pure-dichotomy skip at scale?
+TEST(InterpExperiment, PureDichotomyViaLargeM) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
+    using kuint = uint64_t;
+    const u64 k = 21;
+    for (u64 m : {12u, 14u, 16u}) {
+        for (size_t G : {size_t{4000000}, size_t{8000000}}) {
+            km::SkmerManipulator<kuint> manip{k, m};
+            auto en = enumerate(manip, random_seq(G, 5));
+            km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+            L.generate_sorted_list_from_enumeration(en);
+            auto filled = interpolated_fill(L.get_list(), manip, k, m);
+            L.add_list(filled);
+            auto flag = compute_hole_flags(filled, manip, k, m);
+            long nflag = 0; for (char f : flag) nflag += f;
+            auto present = en;
+            auto absent = enumerate(manip, random_seq(G, 777));
+            long mmp = 0, mma = 0, skp = 0, ska = 0;
+            { auto gt = L.query_skmer_batch(present); mmp = mismatches(gt, flagged_query(filled, flag, manip, present, &skp)); }
+            { auto gt = L.query_skmer_batch(absent);  mma = mismatches(gt, flagged_query(filled, flag, manip, absent, &ska)); }
+            std::cerr << "[largeM] k=" << k << " m=" << m << " G=" << G
+                      << " entries=" << filled.size() << " flagged=" << (100.0 * nflag / filled.size()) << "%"
+                      << " | present mism=" << mmp << " skips/skmer=" << double(skp) / present.size()
+                      << " | absent mism=" << mma << " skips/skmer=" << double(ska) / absent.size() << std::endl;
+        }
+    }
+}
+
 TEST(InterpExperiment, FlaggedSkipQuery) {
     if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
     using kuint = uint64_t;
