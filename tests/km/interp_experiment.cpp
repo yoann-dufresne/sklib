@@ -303,11 +303,23 @@ TEST(InterpExperiment, MinimalDisplacementExamples) {
                 std::cerr << "  B[" << i + 1 << "] pref=" << yo[i + 1].m_pref_size << " suff=" << yo[i + 1].m_suff_size
                           << "  filled " << render(yo[i + 1], c) << "  | unfilled " << render(base[i + 1], c)
                           << "  key_c=0x" << std::hex << (uint64_t)(kb.m_value[0]) << std::dec << "\n";
+                // FULL unfilled m_pair (holes = 0b11) — the key the merge step (Skmer::operator<=)
+                // compared. Shows base[i] <= base[i+1] in full m_pair (holes-as-G ordering).
+                std::cerr << "    full unfilled m_pair: A=0x" << std::hex << (uint64_t)base[i].m_pair.m_value[0]
+                          << " B=0x" << (uint64_t)base[i + 1].m_pair.m_value[0] << std::dec
+                          << "  -> base ordered A<=B in full m_pair: "
+                          << ((base[i].m_pair < base[i + 1].m_pair) || (base[i].m_pair == base[i + 1].m_pair) ? "yes" : "NO")
+                          << "\n";
                 shown++;
             }
         }
     }
-    std::cerr << "[ex] total shown=" << shown << " (list size " << yo.size() << ")\n";
+    // Is the construction output (unfilled) globally ordered by full m_pair (holes = 0b11)?
+    long base_mpair_inv = 0;
+    for (size_t i = 1; i < base.size(); i++) if (base[i].m_pair < base[i - 1].m_pair) base_mpair_inv++;
+    std::cerr << "[ex] total shown=" << shown << " (list size " << yo.size() << ")"
+              << "  base full-m_pair inversions (holes=0b11) = " << base_mpair_inv
+              << " / " << base.size() << "\n";
     SUCCEED();
 }
 
