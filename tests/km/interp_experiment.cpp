@@ -166,6 +166,88 @@ std::vector<km::Skmer<kuint>> column_aware_fill(const std::vector<km::Skmer<kuin
     return filled;
 }
 
+// midpoint order-preserving fill (≈ Yoann's interpolation): per-entry value = achievable
+// nearest the midpoint of the carry-min and carry-max monotone envelopes.
+template <typename kuint>
+std::vector<km::Skmer<kuint>> midpoint_fill(const std::vector<km::Skmer<kuint>>& base,
+                                            km::SkmerManipulator<kuint>& manip) {
+    const size_t n = base.size();
+    std::vector<u64> plo(n), phi(n), amlo(n), amhi(n);
+    for (size_t i = 0; i < n; i++) {
+        auto am = manip.absent_slot_mask(base[i].m_pref_size, base[i].m_suff_size);
+        amlo[i] = am.m_value[0]; amhi[i] = am.m_value[1];
+        plo[i] = base[i].m_pair.m_value[0] & ~amlo[i];
+        phi[i] = base[i].m_pair.m_value[1] & ~amhi[i];
+    }
+    std::vector<V128> lo(n), hi(n), mid(n);
+    for (size_t i = 0; i < n; i++) { u64 tl = i ? lo[i-1].lo : 0, th = i ? lo[i-1].hi : 0; lo[i] = smallest_ge(plo[i], phi[i], amlo[i], amhi[i], tl, th); }
+    for (size_t ii = 0; ii < n; ii++) { size_t i = n-1-ii; u64 tl = ii ? hi[i+1].lo : ~u64(0), th = ii ? hi[i+1].hi : ~u64(0); hi[i] = largest_le(plo[i], phi[i], amlo[i], amhi[i], tl, th); }
+    for (size_t i = 0; i < n; i++) {
+        u64 sl = lo[i].lo + hi[i].lo; u64 cy = (sl < lo[i].lo) ? 1 : 0; u64 sh = lo[i].hi + hi[i].hi + cy;
+        u64 al = (sl >> 1) | (sh << 63), ah = sh >> 1;
+        u64 tl = al, th = ah; if (i && ge128(mid[i-1].lo, mid[i-1].hi, tl, th)) { tl = mid[i-1].lo; th = mid[i-1].hi; }
+        mid[i] = smallest_ge(plo[i], phi[i], amlo[i], amhi[i], tl, th);
+    }
+    std::vector<km::Skmer<kuint>> filled = base;
+    for (size_t i = 0; i < n; i++) { filled[i].m_pair.m_value[0] = mid[i].lo; filled[i].m_pair.m_value[1] = mid[i].hi; }
+    return filled;
+}
+
+// Hole-aware query with a bounded ±W fallback: binary-search by column key, then linear-
+// scan a window around the convergence point for a valid match.
+template <typename kuint>
+std::vector<std::vector<uint8_t>> bounded_query(const std::vector<km::Skmer<kuint>>& list,
+        km::SkmerManipulator<kuint>& manip, const std::vector<km::Skmer<kuint>>& qs, int W) {
+    const int64_t N = (int64_t)list.size();
+    std::vector<std::vector<uint8_t>> out(qs.size());
+    for (size_t qi = 0; qi < qs.size(); qi++) {
+        auto bnd = manip.get_valid_kmer_bounds(qs[qi]);
+        if (bnd.second < bnd.first) continue;
+        const uint64_t nk = bnd.second - bnd.first + 1;
+        std::vector<uint8_t> res(nk, 0);
+        for (uint64_t off = 0; off < nk; off++) {
+            const uint64_t c = bnd.first + off;
+            int64_t lo = 0, hi = N - 1, conv = 0; bool found = false;
+            while (lo <= hi) {
+                int64_t mid = lo + ((hi - lo) >> 1); conv = mid;
+                int cmp = manip.kmer_compare(qs[qi], list[mid], c);
+                if (cmp == 0) break; else if (cmp < 0) hi = mid - 1; else lo = mid + 1;
+            }
+            int64_t a = std::max<int64_t>(0, std::min(lo, conv) - W);
+            int64_t b = std::min<int64_t>(N - 1, std::max(lo, conv) + W);
+            for (int64_t i = a; i <= b; i++)
+                if (manip.has_valid_kmer(list[i], c) && manip.kmer_compare(qs[qi], list[i], c) == 0) { found = true; break; }
+            res[off] = found ? 1 : 0;
+        }
+        out[qi] = std::move(res);
+    }
+    return out;
+}
+
+TEST(InterpExperiment, BoundedFallback) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
+    using kuint = uint64_t;
+    const u64 k = 21, m = 11;
+    for (size_t G : {size_t{1000000}, size_t{4000000}}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, random_seq(G, 5));
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        auto filled = midpoint_fill(L.get_list(), manip);
+        auto present = en;
+        auto absent = enumerate(manip, random_seq(G, 777));
+        auto gt_present = L.query_skmer_batch(present);
+        auto gt_absent = L.query_skmer_batch(absent);
+        std::cerr << "[bounded] G=" << G << " entries=" << filled.size() << std::endl;
+        for (int W : {0, 8, 16, 32, 64}) {
+            long fp = mismatches(gt_present, bounded_query(filled, manip, present, W));
+            long fa = mismatches(gt_absent, bounded_query(filled, manip, absent, W));
+            std::cerr << "[bounded] G=" << G << " W=" << W
+                      << " present_mismatch=" << fp << " absent_mismatch=" << fa << std::endl;
+        }
+    }
+}
+
 TEST(InterpExperiment, ColumnAwareFill) {
     if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
     using kuint = uint64_t;
@@ -261,13 +343,28 @@ TEST(InterpExperiment, OrderPreservingFills) {
             long mono = 0;
             for (size_t i = 1; i < n; i++) if (lt128(Vv[i].lo, Vv[i].hi, Vv[i-1].lo, Vv[i-1].hi)) mono++;
             long colv = per_column_violations(filled, manip, k, m);
+            // max per-column displacement = window W a bounded ±W fallback would need to
+            // be exact (how far an entry is from its sorted position in each column key).
+            long maxdisp = 0;
+            { using kpair = typename km::Skmer<kuint>::pair;
+              const std::vector<kpair> kmask = manip.get_k_mask();
+              std::vector<uint32_t> ord(n);
+              for (u64 c2 = 0; c2 <= k - m; c2++) {
+                  for (uint32_t z = 0; z < n; z++) ord[z] = z;
+                  std::stable_sort(ord.begin(), ord.end(), [&](uint32_t a, uint32_t b) {
+                      return (filled[a].m_pair & kmask[c2]) < (filled[b].m_pair & kmask[c2]); });
+                  for (uint32_t r = 0; r < (uint32_t)n; r++) {
+                      long d = (long)ord[r] - (long)r; if (d < 0) d = -d; if (d > maxdisp) maxdisp = d;
+                  }
+              }
+            }
             km::sortedlist::SortedVirtualSkmerList<kuint> F(k, m);
             F.add_list(filled);
             long fn_present = mismatches(gt_present, F.query_skmer_batch_substrate(present));
             long fn_absent  = mismatches(gt_absent,  F.query_skmer_batch_substrate(absent));
             std::cerr << "[interp] G=" << G << " " << name
                       << " stuck=" << stuck << " mpair_inversions=" << mono
-                      << " per_col_viol=" << colv
+                      << " per_col_viol=" << colv << " max_col_displacement=" << maxdisp
                       << " substrate_query_mismatch present=" << fn_present
                       << " absent=" << fn_absent << std::endl;
         };
