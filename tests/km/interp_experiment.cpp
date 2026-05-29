@@ -323,6 +323,58 @@ TEST(InterpExperiment, MinimalDisplacementExamples) {
     SUCCEED();
 }
 
+// Count adjacent per-column inversions among entries VALID at the column only (the order the
+// current query relies on; must stay 0 for any correct list).
+template <typename kuint>
+long valid_col_violations(const std::vector<km::Skmer<kuint>>& v, km::SkmerManipulator<kuint>& manip, u64 k, u64 m) {
+    using kpair = typename km::Skmer<kuint>::pair;
+    const std::vector<kpair> kmask = manip.get_k_mask();
+    long viol = 0;
+    for (u64 c = 0; c <= k - m; c++) {
+        kpair prev{}; bool have = false;
+        for (size_t i = 0; i < v.size(); i++) {
+            if (!manip.has_valid_kmer(v[i], c)) continue;
+            kpair key{v[i].m_pair & kmask[c]};
+            if (have && key < prev) viol++;
+            prev = key; have = true;
+        }
+    }
+    return viol;
+}
+
+// Can we reach per-column displacement 0 (pure dichotomy) by changing fill and/or order?
+TEST(InterpExperiment, PureDichotomyAttempts) {
+    if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1";
+    using kuint = uint64_t;
+    const u64 k = 21, m = 11;
+    auto by_mpair = [](const km::Skmer<kuint>& a, const km::Skmer<kuint>& b) {
+        if (a.m_pair == b.m_pair) { if (a.m_pref_size == b.m_pref_size) return a.m_suff_size < b.m_suff_size; return a.m_pref_size < b.m_pref_size; }
+        return a.m_pair < b.m_pair;
+    };
+    for (size_t G : {size_t{200000}, size_t{1000000}}) {
+        km::SkmerManipulator<kuint> manip{k, m};
+        auto en = enumerate(manip, random_seq(G, 5));
+        km::sortedlist::SortedVirtualSkmerList<kuint> L(k, m);
+        L.generate_sorted_list_from_enumeration(en);
+        auto base = L.get_list();
+        auto report = [&](const char* name, const std::vector<km::Skmer<kuint>>& v) {
+            std::cerr << "[pure] G=" << G << " " << name
+                      << " max_disp(holes)=" << max_col_displacement(v, manip, k, m)
+                      << " valid_only_viol=" << valid_col_violations(v, manip, k, m) << "\n";
+        };
+        report("base(merge,unfilled)", base);
+        // (1) interpolation fill, KEEP merge order (valid order preserved)
+        report("interp+mergeorder    ", interpolated_fill(base, manip, k, m));
+        // (2) interpolation fill THEN re-sort by m_pair (does it break valid order?)
+        { auto v = interpolated_fill(base, manip, k, m); std::sort(v.begin(), v.end(), by_mpair); report("interp+resort_mpair  ", v); }
+        // (3) min-fill THEN re-sort by m_pair
+        { auto v = base; for (auto& e : v) { auto am = manip.absent_slot_mask(e.m_pref_size, e.m_suff_size); e.m_pair.m_value[0] &= ~am.m_value[0]; e.m_pair.m_value[1] &= ~am.m_value[1]; } std::sort(v.begin(), v.end(), by_mpair); report("min+resort_mpair     ", v); }
+        // (4) iterate {interp fill ; resort by m_pair}
+        { auto v = base; for (int it = 0; it < 3; it++) { v = interpolated_fill(v, manip, k, m); std::sort(v.begin(), v.end(), by_mpair); }
+          report("iter3(interp+resort) ", v); }
+    }
+}
+
 TEST(InterpExperiment, YoannFill) {
     if (std::getenv("SKLIB_BENCH") == nullptr) GTEST_SKIP() << "set SKLIB_BENCH=1 (Release build)";
     using kuint = uint64_t;
