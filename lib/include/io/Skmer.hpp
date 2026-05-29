@@ -944,15 +944,15 @@ public:
         return;
     }
 
-    std::vector<kpair > get_sp_mask()
+    std::vector<kpair > get_sp_mask() const
     {
         return this->prefix_suffix_mask;
     }
-    std::vector<kpair > get_k_mask()
+    std::vector<kpair > get_k_mask() const
     {
         return this->kmer_masks;
     }
-    std::vector<kpair > get_n_mask()
+    std::vector<kpair > get_n_mask() const
     {
         return this->nucleotide_masks;
     }

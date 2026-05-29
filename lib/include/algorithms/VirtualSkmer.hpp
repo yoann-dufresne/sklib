@@ -492,6 +492,77 @@ class SortedVirtualSkmerList {
         return result;
     }
 
+    // ---- Bounded hole-aware query (exploits fill_absent_interpolated) ----
+    // The interpolated fill makes the list nearly per-column sorted; W = the list's max
+    // per-column displacement bounds how far a true match can be from the dichotomy
+    // convergence. Binary search + ±W scan is then EXACT for present AND absent k-mers, with
+    // no unbounded find_closest_valid_skmer scan. W is computed once (cached). If W exceeds a
+    // cap (pathological list), the batch delegates to the exact existing query.
+    static constexpr int64_t QUERY_WINDOW_CAP = 4096;
+
+    int64_t query_window() const {
+        if (m_query_window != -2) return m_query_window;
+        using kpair = typename Skmer<kuint>::pair;
+        const std::vector<kpair> kmask = m_manip.get_k_mask();
+        const size_t n = m_skmer_list.size();
+        std::vector<uint32_t> ord(n);
+        int64_t md = 0;
+        for (uint64_t c = 0; c + m_manip.m <= m_manip.k && md <= QUERY_WINDOW_CAP; c++) {
+            for (uint32_t z = 0; z < static_cast<uint32_t>(n); z++) ord[z] = z;
+            std::stable_sort(ord.begin(), ord.end(), [&](uint32_t a, uint32_t b) {
+                return (m_skmer_list[a].m_pair & kmask[c]) < (m_skmer_list[b].m_pair & kmask[c]); });
+            for (uint32_t r = 0; r < static_cast<uint32_t>(n); r++) {
+                int64_t d = static_cast<int64_t>(ord[r]) - static_cast<int64_t>(r);
+                if (d < 0) d = -d;
+                if (d > md) md = d;
+            }
+        }
+        m_query_window = md;
+        return md;
+    }
+
+    std::vector<uint8_t> query_skmer_bounded(const Skmer<kuint> query, int64_t W) const {
+        auto [qs, qe] = m_manip.get_valid_kmer_bounds(query);
+        if (qe < qs) return std::vector<uint8_t>(0, 0);
+        const uint64_t nk = qe - qs + 1;
+        const int64_t N = static_cast<int64_t>(m_skmer_list.size());
+        std::vector<uint8_t> res(nk, 0);
+        if (N == 0) return res;
+        for (uint64_t off = 0; off < nk; off++) {
+            const uint64_t c = qs + off;
+            int64_t lo = 0, hi = N - 1, conv = 0; bool found = false;
+            while (lo <= hi) {
+                const int64_t mid = lo + ((hi - lo) >> 1); conv = mid;
+                const int cmp = m_manip.kmer_compare(query, m_skmer_list[mid], c);
+                if (cmp == 0) break; else if (cmp < 0) hi = mid - 1; else lo = mid + 1;
+            }
+            const int64_t a = std::max<int64_t>(0, std::min(lo, conv) - W);
+            const int64_t b = std::min<int64_t>(N - 1, std::max(lo, conv) + W);
+            for (int64_t i = a; i <= b; i++)
+                if (m_manip.has_valid_kmer(m_skmer_list[i], c) &&
+                    m_manip.kmer_compare(query, m_skmer_list[i], c) == 0) { found = true; break; }
+            res[off] = found ? 1 : 0;
+        }
+        return res;
+    }
+
+    std::vector<std::vector<uint8_t>> query_skmer_batch_bounded(std::vector<Skmer<kuint>> query_skmers) const {
+        // query_window() is the list's max per-column displacement D. A binary search on a
+        // D-displaced array converges within ~D of the target's rank, and the target is
+        // within D of its rank, so a ±(2D) scan around the convergence is exact; +16 margin.
+        const int64_t D = query_window();
+        std::vector<std::vector<uint8_t>> result(query_skmers.size());
+        if (D > QUERY_WINDOW_CAP) {  // pathological list: use the exact existing query
+            std::transform(std::execution::par, query_skmers.begin(), query_skmers.end(),
+                           result.begin(), [this](const Skmer<kuint>& q){ return this->query_skmer(q); });
+        } else {
+            const int64_t W = 2 * D + 16;
+            std::transform(std::execution::par, query_skmers.begin(), query_skmers.end(),
+                           result.begin(), [this, W](const Skmer<kuint>& q){ return this->query_skmer_bounded(q, W); });
+        }
+        return result;
+    }
+
     void query(const std::string filename, std::ostream& os = std::cout) {
         constexpr uint64_t MAX_INGESTED_SKMER {4096};
         //start enumeration from sequence
@@ -591,6 +662,61 @@ class SortedVirtualSkmerList {
         }
     }
 
+    // Order-preserving "interpolation" fill of the absent flank slots (realizes Yoann's
+    // interpolation idea, generically). Present (high) bits are fixed; the absent (low) bits
+    // are set so the full m_pair sequence stays non-decreasing and each hole sits between its
+    // order-preserving bounds: per entry, value = achievable value nearest the midpoint of the
+    // carry-min (smallest monotone completion, forward pass) and carry-max (largest, backward
+    // pass) envelopes. This makes the list NEARLY per-column sorted — small max displacement
+    // (~16 on a 4 Mb genome, k=21 m=11) — the substrate the bounded query exploits (a ±W scan
+    // around the dichotomy convergence is then exact). Two O(n) passes; no 128-bit type, so it
+    // works for any kuint. (Yoann's exact anchor-based procedure, procedure_remplissage.txt, is
+    // validated in tests/km/interp_experiment.cpp and gives an equivalent displacement.)
+    void fill_absent_interpolated() {
+        using kpair = typename Skmer<kuint>::pair;
+        const size_t n = m_skmer_list.size();
+        if (n == 0) return;
+        constexpr int W = static_cast<int>(sizeof(kuint) * 8);
+        std::vector<kuint> plo(n), phi(n), amlo(n), amhi(n);
+        for (size_t i = 0; i < n; i++) {
+            const kpair am = m_manip.absent_slot_mask(m_skmer_list[i].m_pref_size, m_skmer_list[i].m_suff_size);
+            amlo[i] = am.m_value[0]; amhi[i] = am.m_value[1];
+            plo[i] = static_cast<kuint>(m_skmer_list[i].m_pair.m_value[0] & ~amlo[i]);
+            phi[i] = static_cast<kuint>(m_skmer_list[i].m_pair.m_value[1] & ~amhi[i]);
+        }
+        auto ge = [](kuint alo, kuint ahi, kuint blo, kuint bhi) { return ahi != bhi ? ahi > bhi : alo >= blo; };
+        auto le = [](kuint alo, kuint ahi, kuint blo, kuint bhi) { return ahi != bhi ? ahi < bhi : alo <= blo; };
+        auto smallest_ge = [&](size_t i, kuint tlo, kuint thi, kuint& olo, kuint& ohi) {
+            kuint vlo = static_cast<kuint>(plo[i] | amlo[i]), vhi = static_cast<kuint>(phi[i] | amhi[i]);
+            for (int b = W - 1; b >= 0; --b) { const kuint bit = static_cast<kuint>(kuint(1) << b);
+                if (amhi[i] & bit) { const kuint nhi = static_cast<kuint>(vhi & ~bit); if (ge(vlo, nhi, tlo, thi)) vhi = nhi; } }
+            for (int b = W - 1; b >= 0; --b) { const kuint bit = static_cast<kuint>(kuint(1) << b);
+                if (amlo[i] & bit) { const kuint nlo = static_cast<kuint>(vlo & ~bit); if (ge(nlo, vhi, tlo, thi)) vlo = nlo; } }
+            olo = vlo; ohi = vhi;
+        };
+        auto largest_le = [&](size_t i, kuint tlo, kuint thi, kuint& olo, kuint& ohi) {
+            kuint vlo = static_cast<kuint>(plo[i] & ~amlo[i]), vhi = static_cast<kuint>(phi[i] & ~amhi[i]);
+            for (int b = W - 1; b >= 0; --b) { const kuint bit = static_cast<kuint>(kuint(1) << b);
+                if (amhi[i] & bit) { const kuint nhi = static_cast<kuint>(vhi | bit); if (le(vlo, nhi, tlo, thi)) vhi = nhi; } }
+            for (int b = W - 1; b >= 0; --b) { const kuint bit = static_cast<kuint>(kuint(1) << b);
+                if (amlo[i] & bit) { const kuint nlo = static_cast<kuint>(vlo | bit); if (le(nlo, vhi, tlo, thi)) vlo = nlo; } }
+            olo = vlo; ohi = vhi;
+        };
+        std::vector<kuint> loL(n), loH(n), hiL(n), hiH(n);
+        for (size_t i = 0; i < n; i++) { kuint tl = i ? loL[i-1] : kuint(0), th = i ? loH[i-1] : kuint(0); smallest_ge(i, tl, th, loL[i], loH[i]); }
+        for (size_t ii = 0; ii < n; ii++) { size_t i = n - 1 - ii; kuint tl = ii ? hiL[i+1] : static_cast<kuint>(~kuint(0)), th = ii ? hiH[i+1] : static_cast<kuint>(~kuint(0)); largest_le(i, tl, th, hiL[i], hiH[i]); }
+        kuint pl = 0, ph = 0;
+        for (size_t i = 0; i < n; i++) {
+            const kuint sl = static_cast<kuint>(loL[i] + hiL[i]); const kuint cy = (sl < loL[i]) ? kuint(1) : kuint(0);
+            const kuint sh = static_cast<kuint>(loH[i] + hiH[i] + cy);
+            const kuint al = static_cast<kuint>((sl >> 1) | (sh << (W - 1))); const kuint ah = static_cast<kuint>(sh >> 1);
+            kuint tl = al, th = ah; if (i && ge(pl, ph, tl, th)) { tl = pl; th = ph; }
+            kuint olo, ohi; smallest_ge(i, tl, th, olo, ohi);
+            m_skmer_list[i].m_pair.m_value[0] = olo; m_skmer_list[i].m_pair.m_value[1] = ohi;
+            pl = olo; ph = ohi;
+        }
+    }
+
     uint64_t k() const { return m_manip.k; }
     uint64_t m() const { return m_manip.m; }
 
@@ -644,6 +770,7 @@ class SortedVirtualSkmerList {
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
     LList m_merge_scratch;                            // Reused merge target (ping-pong with the working list)
+    mutable int64_t m_query_window{-2};               // cached bounded-query window W (-2 = uncomputed)
 
     private:
 
