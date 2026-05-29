@@ -3,9 +3,6 @@
 #include <fstream>
 #include <stdexcept>
 #include <forward_list>
-#include <execution>
-#include <future>
-#include <chrono>
 
 
 #include <algorithms/ColinearChaining.hpp>
@@ -422,74 +419,34 @@ class SortedVirtualSkmerList {
         return std::vector<uint8_t>(result, result + tot_num_kmers_to_search);
     }
 
+    // Query a group of super-k-mers, one after another, returning per-skmer results.
     std::vector<std::vector<uint8_t>> query_skmer_batch(std::vector<Skmer<kuint>> query_skmers) const{
-        const size_t size_query {query_skmers.size()};
-        std::vector<std::vector<uint8_t>> result(size_query);
-        auto start = std::chrono::high_resolution_clock::now();
-        std::transform(std::execution::par, query_skmers.begin(), query_skmers.end(), result.begin(), [this](const Skmer<kuint>&  queried_skmer){ return this->query_skmer(queried_skmer); });
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-        auto duration_s = std::chrono::duration_cast<std::chrono::seconds>(end - start);
-        // std::cerr << "[BATCHED QUERIES]:: Processed " << size_query << " elements in " << duration_s << " (" <<  duration_ns/size_query << " per element)" << std::endl;
+        std::vector<std::vector<uint8_t>> result(query_skmers.size());
+        for (size_t i {0}; i < query_skmers.size(); ++i)
+            result[i] = query_skmer(query_skmers[i]);
         return result;
     }
 
     void query(const std::string filename, std::ostream& os = std::cout) {
         constexpr uint64_t MAX_INGESTED_SKMER {4096};
-        //start enumeration from sequence
+        // Enumerate super-k-mers from the file and query them one after another,
+        // flushing results in bounded groups to keep memory flat.
         km::FileSkmerator<kuint> file_skmerator {m_manip, filename};
-        typename FileSkmerator<kuint>::Iterator it = file_skmerator.begin();
 
-        //Enumerateing the superkmers from the file
-        std::vector<km::Skmer<kuint>> skmer_bufferA;
-        std::vector<km::Skmer<kuint>> skmer_bufferB;
-        skmer_bufferA.reserve(MAX_INGESTED_SKMER);
-        skmer_bufferB.reserve(MAX_INGESTED_SKMER);
+        std::vector<km::Skmer<kuint>> buffer;
+        buffer.reserve(MAX_INGESTED_SKMER);
 
-        std::vector<km::Skmer<kuint>>* cur = &skmer_bufferA; // being filled
-        std::vector<km::Skmer<kuint>>* work = &skmer_bufferB; //to be processed
-
-        std::future<std::vector<std::vector<uint8_t>>> curr_task;
-
-        km::Skmer<kuint> current_skmer;
-        // std::cerr << "END OF INITIALIZATION" << std::endl;
         for (km::Skmer<kuint> const skmer : file_skmerator){
-          cur->emplace_back(skmer);
-          //when 1000 skmers have been loaded, dispatch query_skmer_batch
-          if (cur->size() == MAX_INGESTED_SKMER){
-
-            // if a process was already executing, expect it ends and dispatch results to outstream
-            if (curr_task.valid()){
-              km::sortedlist::util::print_query_results(curr_task.get(), os);
-            }
-            // swap the two buffers pointers
-            std::swap(cur, work);
-
-            // clear current for next calculation
-            cur->clear();
-
-            // dispatch batched query thread
-            // std::cerr << "DISPATCHING" << std::endl;
-            curr_task = std::async(std::launch::async,
-                                    &SortedVirtualSkmerList<kuint>::query_skmer_batch, // member fn
-                                    this,                         // object on which to call it
-                                    std::move(*work));
+          buffer.emplace_back(skmer);
+          if (buffer.size() == MAX_INGESTED_SKMER){
+            km::sortedlist::util::print_query_results(query_skmer_batch(buffer), os);
+            buffer.clear();
           }
         }
 
-        // taking care of the last elements in current, if present
-        if (!cur->empty()) {
-          if (curr_task.valid()){
-            km::sortedlist::util::print_query_results(curr_task.get(), os);
-          }
-        //   std::cerr << "FINAL DISPATCHING" << std::endl;
-          auto last = query_skmer_batch(*cur);
-        //   std::cerr << "LAST RESULT VECTOR SIZE: " << last.size() << std::endl;
-          km::sortedlist::util::print_query_results(last, os);
-        }
-        else if (curr_task.valid()) {
-          km::sortedlist::util::print_query_results(curr_task.get(), os);
-        }
+        // taking care of the last elements, if present
+        if (!buffer.empty())
+          km::sortedlist::util::print_query_results(query_skmer_batch(buffer), os);
     }
 
     void add_list(std::vector<Skmer<kuint>>&  list){
