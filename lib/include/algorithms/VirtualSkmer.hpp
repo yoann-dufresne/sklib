@@ -6,6 +6,7 @@
 
 
 #include <algorithms/ColinearChaining.hpp>
+#include <algorithms/SkmerPartialOrder.hpp>
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 
@@ -300,6 +301,63 @@ class SortedVirtualSkmerList {
             m_skmer_list.emplace_back(std::move(vskmer.skmer));
         }
 
+    }
+
+    // ===================== EXPERIMENTAL: partial-order reconciliation =====================
+    // Same reconciliation as generate_sorted_list_from_enumeration (identical fusions and
+    // final order), but additionally records, during each column merge, every ordering the
+    // production comparison would have settled using absent (masked) nucleotides. Those
+    // incomparable pairs are coalesced (union-find) and returned as a per-skmer group id:
+    // group_of[i] == group_of[j] means skmers i and j were never really ordered (only the
+    // mask could have separated them). m_skmer_list is filled exactly as the production path.
+    void generate_partial_list_from_enumeration(std::vector<Skmer<kuint>> const & skmer_enumeration,
+                                                std::vector<uint32_t>& group_of) {
+        uint64_t right_column_position {0};
+        uint64_t left_column_position {0};
+        km::sortedlist::util::SlidingWindow window;
+
+        km::experiment::UnionFind uf;
+
+        // 0 - first column + one virtual skmer (with a stable uid) per element
+        window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+        right_column_position++;
+
+        LList vskmer_list;
+        std::vector<uint32_t> uids;
+        vskmer_list.reserve(window.right().size());
+        uids.reserve(window.right().size());
+        for(const uint64_t el: window.right()){
+            vskmer_list.emplace_back(m_manip.get_skmer_of_kmer(skmer_enumeration[el],0),el);
+            uids.push_back(uf.make());
+        }
+
+        while(right_column_position <= m_manip.k - m_manip.m ){
+            window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+
+            std::vector<overlap> candidate_overlaps =
+                get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
+
+            std::vector<overlap> valid_overlaps;
+            if(candidate_overlaps.size() != 0)
+                valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+            else
+                valid_overlaps = candidate_overlaps;
+
+            merge_LList_column_partial(skmer_enumeration, vskmer_list, uids, window.left(),
+                                       window.right(), valid_overlaps, right_column_position, uf);
+
+            left_column_position = right_column_position;
+            right_column_position++;
+        }
+
+        m_skmer_list.clear();
+        m_skmer_list.reserve(vskmer_list.size());
+        group_of.clear();
+        group_of.reserve(vskmer_list.size());
+        for(size_t i{0}; i < vskmer_list.size(); i++){
+            m_skmer_list.emplace_back(std::move(vskmer_list[i].skmer));
+            group_of.push_back(uf.find(uids[i]));
+        }
     }
 
     std::vector<uint8_t> query_skmer(const Skmer<kuint> query) const{
@@ -750,6 +808,135 @@ class SortedVirtualSkmerList {
     // Hand the merged result back to the caller and keep the now-stale `list`
     // storage as the scratch buffer for the next column.
     std::swap(list, merged);
+}
+
+    // EXPERIMENTAL twin of merge_LList_column. The control flow is byte-for-byte identical
+    // (the same `<=` drives every branch, so fusions and the emitted order match the
+    // production merge exactly). The only additions: a stable `uid` per virtual skmer
+    // (parallel to `list`), carried through fusions and moves, and — at the two ordering
+    // comparisons — a union-find link whenever compare_real returns Incomparable (i.e. the
+    // `<=` decision rested on absent/masked nucleotides). `col_pending` defers the link of a
+    // column element kept across comparisons until it is consumed (fused or emitted).
+    void merge_LList_column_partial(std::vector<Skmer<kuint>> const & skmer_enumeration,
+                       std::vector<Virtual_skmer<kuint>>& list,
+                       std::vector<uint32_t>& uids,
+                       std::vector<uint64_t> const & left_column,
+                       std::vector<uint64_t> const & column,
+                       std::vector<overlap> const & valid_overlaps,
+                       uint64_t const column_pos,
+                       km::experiment::UnionFind& uf)
+{
+    assert(column_pos <= (m_manip.k - m_manip.m));
+
+    LList merged;
+    std::vector<uint32_t> merged_uids;
+    merged.reserve(list.size() + column.size());
+    merged_uids.reserve(list.size() + column.size());
+
+    std::vector<uint32_t> col_pending; // links awaiting the current column element's uid
+    auto resolve_pending = [&](uint32_t target) {
+        for (uint32_t u : col_pending) uf.unite(u, target);
+        col_pending.clear();
+    };
+
+    size_t list_idx = 0;
+    size_t col_idx = 0;
+    size_t overlap_idx = 0;
+
+    while (list_idx < list.size() && col_idx < column.size() &&
+           overlap_idx < valid_overlaps.size()) {
+
+        bool is_left = list[list_idx].expandable and (list[list_idx].last_id == left_column[valid_overlaps[overlap_idx].first] );
+        bool is_right = (column[col_idx] == column[valid_overlaps[overlap_idx].second] );
+
+        if (is_left && is_right) {
+            // CASE A: fuse - the list element keeps its uid, the column element is absorbed
+            list[list_idx].add_kmer(skmer_enumeration, m_manip, column[col_idx], column_pos);
+            list[list_idx].last_id = column[col_idx];
+            const uint32_t u = uids[list_idx];
+            merged.push_back(std::move(list[list_idx]));
+            merged_uids.push_back(u);
+            resolve_pending(u);
+            list_idx++; col_idx++; overlap_idx++;
+        }
+        else if (is_left) {
+            // CASE B: emit column element as a new virtual skmer
+            auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+            const uint32_t v = uf.make();
+            merged.emplace_back(skmer.m_pair, skmer.m_pref_size, skmer.m_suff_size, column[col_idx]);
+            merged_uids.push_back(v);
+            resolve_pending(v);
+            col_idx++;
+        }
+        else if (is_right) {
+            // CASE C: close list element
+            list[list_idx].expandable = false;
+            const uint32_t u = uids[list_idx];
+            merged.push_back(std::move(list[list_idx]));
+            merged_uids.push_back(u);
+            list_idx++;
+        }
+        else {
+            // CASE D: production `<=` decides the order; record the link if it is mask-decided
+            auto col_skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+            const bool incomparable =
+                km::experiment::compare_real(m_manip, list[list_idx].skmer, col_skmer) == km::experiment::RealOrder::Incomparable;
+            if (list[list_idx].skmer <= col_skmer) {
+                list[list_idx].expandable = false;
+                const uint32_t u = uids[list_idx];
+                merged.push_back(std::move(list[list_idx]));
+                merged_uids.push_back(u);
+                if (incomparable) col_pending.push_back(u); // link with the kept column element
+                list_idx++;
+            } else {
+                const uint32_t v = uf.make();
+                merged.emplace_back(col_skmer.m_pair, col_skmer.m_pref_size, col_skmer.m_suff_size, column[col_idx]);
+                merged_uids.push_back(v);
+                if (incomparable) uf.unite(v, uids[list_idx]); // link with the kept list element
+                resolve_pending(v);
+                col_idx++;
+            }
+        }
+    }
+
+    while (list_idx < list.size() && col_idx < column.size()) {
+        auto col_skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+        const bool incomparable =
+            km::experiment::compare_real(m_manip, list[list_idx].skmer, col_skmer) == km::experiment::RealOrder::Incomparable;
+        if (list[list_idx].skmer <= col_skmer) {
+            const uint32_t u = uids[list_idx];
+            merged.push_back(std::move(list[list_idx]));
+            merged_uids.push_back(u);
+            if (incomparable) col_pending.push_back(u);
+            list_idx++;
+        } else {
+            const uint32_t v = uf.make();
+            merged.emplace_back(col_skmer.m_pair, col_skmer.m_pref_size, col_skmer.m_suff_size, column[col_idx]);
+            merged_uids.push_back(v);
+            if (incomparable) uf.unite(v, uids[list_idx]);
+            resolve_pending(v);
+            col_idx++;
+        }
+    }
+
+    while (col_idx < column.size()) {
+        auto skmer = m_manip.get_skmer_of_kmer(skmer_enumeration[column[col_idx]], column_pos);
+        const uint32_t v = uf.make();
+        merged.emplace_back(skmer.m_pair, skmer.m_pref_size, skmer.m_suff_size, column[col_idx]);
+        merged_uids.push_back(v);
+        resolve_pending(v);
+        col_idx++;
+    }
+
+    while (list_idx < list.size()) {
+        const uint32_t u = uids[list_idx];
+        merged.push_back(std::move(list[list_idx]));
+        merged_uids.push_back(u);
+        list_idx++;
+    }
+
+    std::swap(list, merged);
+    std::swap(uids, merged_uids);
 }
 
 }; // end of my class

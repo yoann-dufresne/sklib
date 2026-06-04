@@ -9,6 +9,7 @@
 struct CLIResult {
     std::optional<ConstructOptions> construct;
     std::optional<QueryOptions> query;
+    std::optional<ExperimentOptions> experiment;
 };
 
 // Parse argv into a CLIResult. On a parse/validation error this exits the

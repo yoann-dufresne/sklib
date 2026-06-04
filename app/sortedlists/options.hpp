@@ -25,3 +25,12 @@ struct QueryOptions {
     std::optional<std::string> output_file;
     std::optional<std::string> sequence;
 };
+
+// EXPERIMENTAL subcommand: real-nucleotide partial sort with incomparable-skmer
+// groups, dumped to ASCII. Stops before the rest of the list-construction pipeline.
+struct ExperimentOptions {
+    std::optional<std::string> input_file;
+    std::optional<std::string> output_file;
+    int k = 0;
+    int m = 0;
+};

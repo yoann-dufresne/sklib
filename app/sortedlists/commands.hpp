@@ -9,3 +9,4 @@
 
 int run_construct(const ConstructOptions& opts);
 int run_query(const QueryOptions& opts);
+int run_experiment(const ExperimentOptions& opts);

@@ -99,6 +99,38 @@ CLIResult parse_cli(int argc, char** argv) {
         result.query = query_opts;
     });
 
+    // -----------------------
+    // experiment subcommand (EXPERIMENTAL)
+    // -----------------------
+    auto experiment = app.add_subcommand("experiment",
+        "EXPERIMENTAL: real-nucleotide partial sort that groups incomparable super-k-mers "
+        "(those orderable only via the absent-nucleotide mask) and dumps the grouped list as ASCII.");
+
+    ExperimentOptions experiment_opts;
+
+    experiment->add_option("-f,--file", experiment_opts.input_file,
+        "Input FASTA file (plain or gzip-compressed). Reads from stdin if omitted.");
+
+    experiment->add_option("-o,--output", experiment_opts.output_file,
+        "Output ASCII file. Writes to stdout if omitted.");
+
+    experiment->add_option("-k,--kmer-size", experiment_opts.k,
+        "k-mer length in nucleotides (1 <= k <= 32 with the default 64-bit backend).")
+        ->required();
+
+    experiment->add_option("-m,--minimizer-size", experiment_opts.m,
+        "Minimizer length in nucleotides (1 <= m <= k).")
+        ->required();
+
+    experiment->footer(
+        "Example:\n"
+        "  sskm experiment -k 7 -m 3 -f toy.fa -o groups.txt\n"
+    );
+
+    experiment->callback([&]() {
+        result.experiment = experiment_opts;
+    });
+
     app.require_subcommand(true);
     // -----------------------
     try {

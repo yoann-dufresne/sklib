@@ -10,6 +10,9 @@ int main(int argc, char* argv[]) {
     if (parsed.query) {
         return run_query(*parsed.query);
     }
+    if (parsed.experiment) {
+        return run_experiment(*parsed.experiment);
+    }
 
     return 0;
 }
