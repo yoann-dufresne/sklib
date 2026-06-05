@@ -1,5 +1,12 @@
 # Réduction de la RAM à la construction (`sskm construct`)
 
+> **⚠️ Mise à jour (format VSKMER_3, buckets persistés).** Depuis ce log, les buckets ne sont
+> **plus concaténés** en une liste unique : ils sont **persistés en sous-listes** dans le fichier
+> (format `VSKMER_3` avec répertoire de buckets), et la **requête route** chaque k-mer vers son
+> bucket puis ne charge que celui-ci (paresseux). L'affirmation « format de sortie inchangé /
+> `query`/`load` intacts » plus bas n'est donc **plus valable** ; voir `README.md` et le wiki.
+> Le reste de ce document reste un **log historique** de la réduction RAM à la construction (V0→V3).
+
 > **État (branche `dev`, fusionnée dans `main`).** La construction est passée d'un
 > chemin tout-en-RAM (pic O(génome)) à un chemin **bucketé sur disque** dont le pic
 > est borné par le **plus gros bucket de minimizer**, réglable via `--buckets` /
