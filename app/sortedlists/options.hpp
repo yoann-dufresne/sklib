@@ -24,4 +24,5 @@ struct QueryOptions {
     std::optional<std::string> input_file;
     std::optional<std::string> output_file;
     std::optional<std::string> sequence;
+    unsigned int threads = 8;
 };

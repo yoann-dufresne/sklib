@@ -5,6 +5,9 @@
 #include <forward_list>
 #include <algorithm>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
+#include <memory>
 
 
 #include <algorithms/ColinearChaining.hpp>
@@ -190,21 +193,26 @@ inline int64_t find_closest_valid_skmer_in_span(
 // parallel binary search per k-mer position shares probes for cache locality. Shared by the
 // in-RAM SortedVirtualSkmerList::query_skmer and the disk-backed BucketedSkmerListReader, so
 // the algorithm lives in exactly one place. Returns one flag per queried k-mer position.
+// Fills `out` with one presence flag per valid k-mer position of `query`, reusing out's capacity so
+// callers can avoid a per-query heap allocation. search_kmers_in_span() is the wrapper that returns
+// a fresh vector (in-RAM list path and single-query callers).
 template<typename kuint>
-inline std::vector<uint8_t> search_kmers_in_span(
+inline void search_kmers_in_span_into(
     const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
-    const Skmer<kuint>& query)
+    const Skmer<kuint>& query, std::vector<uint8_t>& out)
 {
     auto [query_start_position, query_end_position] = manip.get_valid_kmer_bounds(query);
 
     if(query_end_position < query_start_position) {
-        return std::vector<uint8_t>(0,0);
+        out.clear();
+        return;
     }
     const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
 
     // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST/BUCKET IS EMPTY)
     if (tot_num_kmers_to_search <= 0 || list_size == 0){
-        return std::vector<uint8_t>(std::max(0UL, tot_num_kmers_to_search), 0);
+        out.assign(std::max(0UL, tot_num_kmers_to_search), 0);
+        return;
     }
 
     // PREPARE PARAMETERS FOR SEARCH
@@ -284,7 +292,18 @@ inline std::vector<uint8_t> search_kmers_in_span(
         }
     }
 
-    return std::vector<uint8_t>(result, result + tot_num_kmers_to_search);
+    out.assign(result, result + tot_num_kmers_to_search);
+}
+
+// Wrapper returning a fresh vector (in-RAM list path and single-query callers).
+template<typename kuint>
+inline std::vector<uint8_t> search_kmers_in_span(
+    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
+    const Skmer<kuint>& query)
+{
+    std::vector<uint8_t> out;
+    search_kmers_in_span_into<kuint>(manip, list, list_size, query, out);
+    return out;
 }
 
 // VIRTUAL SUPERKMER CLASS
@@ -1063,11 +1082,29 @@ public:
     uint64_t m() const { return m_manip.m; }
     uint64_t n_buckets() const { return m_n_buckets; }
 
+    // Bucket id whose minimizer interval contains the query's φ-permuted minimizer. m_lower is
+    // strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right bucket.
+    // Const and touches only immutable routing state, so it is safe to call concurrently (the
+    // parallel query producer uses it to bucketize queries before handing them to consumers).
+    uint64_t bucket_of(const Skmer<kuint>& query) const {
+        if (m_n_buckets <= 1) return 0;
+        const uint64_t mini = static_cast<uint64_t>(m_manip.minimizer(query));
+        const auto it = std::upper_bound(m_lower.begin(), m_lower.end(), mini);
+        return static_cast<uint64_t>(it - m_lower.begin()) - 1;
+    }
+
     // Look up every k-mer of `query`, restricted to its bucket's sub-list (loaded on demand).
     std::vector<uint8_t> query_skmer(const Skmer<kuint>& query) {
         const std::vector<Skmer<kuint>>& span = bucket(bucket_of(query));
         return km::sortedlist::search_kmers_in_span<kuint>(
             m_manip, span.data(), static_cast<int64_t>(span.size()), query);
+    }
+
+    // Like query_skmer but writes flags into `out`, reusing its capacity (no per-query allocation).
+    void query_skmer_into(const Skmer<kuint>& query, std::vector<uint8_t>& out) {
+        const std::vector<Skmer<kuint>>& span = bucket(bucket_of(query));
+        km::sortedlist::search_kmers_in_span_into<kuint>(
+            m_manip, span.data(), static_cast<int64_t>(span.size()), query, out);
     }
 
     std::vector<std::vector<uint8_t>> query_skmer_batch(const std::vector<Skmer<kuint>>& query_skmers) {
@@ -1113,21 +1150,20 @@ private:
             off += static_cast<std::streamoff>(dir[b].count) * static_cast<std::streamoff>(sizeof(Skmer<kuint>));
         }
         m_cache.assign(m_n_buckets, {});
-        m_loaded.assign(m_n_buckets, 0);
+        m_loaded = std::make_unique<std::atomic<uint8_t>[]>(m_n_buckets); // value-initialized to 0
+        m_load_mtx = std::make_unique<std::mutex>();
     }
 
-    // Bucket id whose minimizer interval contains the query's φ-permuted minimizer. m_lower is
-    // strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right bucket.
-    uint64_t bucket_of(const Skmer<kuint>& query) const {
-        if (m_n_buckets <= 1) return 0;
-        const uint64_t mini = static_cast<uint64_t>(m_manip.minimizer(query));
-        const auto it = std::upper_bound(m_lower.begin(), m_lower.end(), mini);
-        return static_cast<uint64_t>(it - m_lower.begin()) - 1;
-    }
-
-    // Lazily read bucket `b`'s sub-list from disk into the cache, then return it.
+    // Lazily read bucket `b`'s sub-list from disk into the cache, then return it. Thread-safe:
+    // cache hits are lock-free (acquire-load of the per-bucket flag); the first load of a bucket
+    // takes m_load_mtx so concurrent consumers don't race on m_in / m_cache. m_cache is pre-sized
+    // and never resized, and each entry is written exactly once before its flag is released, so the
+    // returned reference stays valid for the reader's lifetime even as other buckets load.
     const std::vector<Skmer<kuint>>& bucket(uint64_t b) {
-        if (!m_loaded[b]) {
+        if (m_loaded[b].load(std::memory_order_acquire))
+            return m_cache[b];
+        std::lock_guard<std::mutex> lock(*m_load_mtx);
+        if (!m_loaded[b].load(std::memory_order_relaxed)) {
             std::vector<Skmer<kuint>>& dst = m_cache[b];
             dst.resize(m_count[b]);
             if (m_count[b]) {
@@ -1138,7 +1174,7 @@ private:
                 if (m_in.fail())
                     throw std::runtime_error("Error reading bucket payload from sorted skmer list");
             }
-            m_loaded[b] = 1;
+            m_loaded[b].store(1, std::memory_order_release);
         }
         return m_cache[b];
     }
@@ -1150,7 +1186,10 @@ private:
     std::vector<uint64_t> m_count;        // per-bucket super-k-mer count
     std::vector<std::streamoff> m_byte_offset; // per-bucket payload offset in the file
     std::vector<std::vector<Skmer<kuint>>> m_cache; // lazily-filled per-bucket sub-lists
-    std::vector<char> m_loaded;           // whether m_cache[b] is populated
+    // Per-bucket "is m_cache[b] populated" flags, atomic so query threads can check without taking
+    // the lock. Held via unique_ptr (atomics aren't movable) to keep the reader move-constructible.
+    std::unique_ptr<std::atomic<uint8_t>[]> m_loaded;
+    std::unique_ptr<std::mutex> m_load_mtx; // serializes the first disk load of each bucket
 };
 
 

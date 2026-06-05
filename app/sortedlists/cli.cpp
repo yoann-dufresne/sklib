@@ -88,6 +88,11 @@ CLIResult parse_cli(int argc, char** argv) {
     query->add_option("-o,--output", query_opts.output_file,
         "Output file for query hits. Writes to stdout if omitted.");
 
+    query->add_option("-t,--threads", query_opts.threads,
+        "Total worker threads for file (-i) queries (default 8): 1 reads and bucketizes the input, "
+        "the rest query buckets in parallel. Output stays in input order. 1 = sequential.")
+        ->check(CLI::PositiveNumber);
+
     query->add_option("sequence", query_opts.sequence,
         "Single DNA sequence to query. Mutually exclusive with -i/--input.");
 

@@ -11,12 +11,14 @@
 #include <cstdint>
 #include <fstream>
 #include <random>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include <algorithms/ParallelQuery.hpp>
 #include <algorithms/SortedSkmerListBuilder.hpp>
 
 namespace {
@@ -144,4 +146,77 @@ TEST(BucketedSkmerList, ReadsLegacyV2AsSingleBucket) {
 
     for (const auto& q : enumerate_skmers(k, m, seq))
         ASSERT_EQ(reader.query_skmer(q), truth.query_skmer(q));
+}
+
+// parallel_query() must produce byte-identical output to the sequential reader.query(), in input
+// order, for every thread count. A fresh reader per run also exercises concurrent bucket loading.
+TEST(BucketedSkmerList, ParallelQueryMatchesSequential) {
+    constexpr uint64_t k{15}, m{5};
+    const std::string present = random_dna(2000, 11);
+    const std::string absent  = random_dna(1500, 22); // mostly-absent 15-mers w.h.p.
+
+    const std::string list_path = build_list(k, m, present, 64, "par");
+
+    // Query file mixes present (1s) and absent (mostly 0s) sequences across two records.
+    const std::string qfa = ::testing::TempDir() + "par_query.fa";
+    {
+        std::ofstream f(qfa);
+        f << ">present\n" << present << "\n>absent\n" << absent << "\n";
+    }
+
+    std::stringstream expected;
+    {
+        auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(list_path);
+        reader.query(qfa, expected);
+    }
+    ASSERT_FALSE(expected.str().empty()) << "ground-truth query produced no output";
+
+    for (unsigned threads : {1u, 2u, 4u, 8u}) {
+        auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(list_path);
+        std::stringstream got;
+        km::sortedlist::parallel_query<kuint>(reader, qfa, got, threads);
+        ASSERT_EQ(expected.str(), got.str()) << "parallel output diverges at threads=" << threads;
+    }
+}
+
+// Inputs that yield no super-k-mers (records shorter than k) must produce empty output without
+// hanging or crashing the pipeline.
+TEST(BucketedSkmerList, ParallelQueryHandlesEmptyInput) {
+    constexpr uint64_t k{15}, m{5};
+    const std::string list_path = build_list(k, m, random_dna(400, 3), 8, "par_empty_src");
+
+    const std::string qfa = ::testing::TempDir() + "par_empty_query.fa";
+    {
+        std::ofstream f(qfa);
+        f << ">tooshort\n" << random_dna(k - 1, 9) << "\n"; // shorter than k -> skipped
+    }
+
+    for (unsigned threads : {2u, 8u}) {
+        auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(list_path);
+        std::stringstream got;
+        km::sortedlist::parallel_query<kuint>(reader, qfa, got, threads);
+        ASSERT_TRUE(got.str().empty()) << "expected empty output at threads=" << threads;
+    }
+}
+
+// A tiny batch size forces many batches, so the sink must reassemble many out-of-order batch
+// completions; the in-order output must still match the sequential path exactly.
+TEST(BucketedSkmerList, ParallelQueryReordersAcrossManyFlushes) {
+    constexpr uint64_t k{15}, m{5};
+    const std::string present = random_dna(4000, 31);
+    const std::string list_path = build_list(k, m, present, 64, "par_flush");
+
+    const std::string qfa = ::testing::TempDir() + "par_flush_query.fa";
+    write_fasta(qfa, present);
+
+    std::stringstream expected;
+    {
+        auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(list_path);
+        reader.query(qfa, expected);
+    }
+
+    auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(list_path);
+    std::stringstream got;
+    km::sortedlist::parallel_query<kuint>(reader, qfa, got, 8, /*batch_size=*/64);
+    ASSERT_EQ(expected.str(), got.str());
 }

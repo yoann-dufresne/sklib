@@ -11,6 +11,7 @@
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include <algorithms/ParallelQuery.hpp>
 #include <algorithms/SortedSkmerListBuilder.hpp>
 
 // Parse a human size like "2G", "512M", "4096K", or a plain byte count.
@@ -98,7 +99,12 @@ int run_query(const QueryOptions& opts) {
     }
 
     if (opts.input_file) {
-        reader.query(*opts.input_file, *os);
+        // One reader+bucketize producer plus parallel consumers when a thread budget is given;
+        // fall back to the sequential path for a single thread. Output stays in input order.
+        if (opts.threads >= 2)
+            km::sortedlist::parallel_query<kuint>(reader, *opts.input_file, *os, opts.threads);
+        else
+            reader.query(*opts.input_file, *os);
     } else {
         km::SkmerManipulator<kuint> manip{reader.k(), reader.m()};
         std::string seq = *opts.sequence;
