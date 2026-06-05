@@ -23,19 +23,25 @@ available_sklib() { [[ -x "$SSKM_BIN" ]]; }
 uses_m_sklib() { return 0; }
 
 version_sklib() {
-    local v tbb
+    local v
     v="$("$SSKM_BIN" --version 2>/dev/null | head -1)"; [[ -n "$v" ]] || v="unknown"
-    if ldd "$SSKM_BIN" 2>/dev/null | grep -qi tbb; then tbb="tbb"; else tbb="notbb"; fi
-    echo "sklib-$v($tbb)"
+    echo "sklib-$v"   # sklib is fully sequential; no TBB tag (it is not used)
 }
 
 construct_sklib() {
     local san="$1" k="$2" m="$3" wd="$4"
     IDX_PATH="$wd/index.sskm"
-    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" || return 1
+    # Optional bucket count (BUCKETS env, empty => tool default 4096). Used by the bucket sweep.
+    local bucket_args=()
+    [[ -n "${BUCKETS:-}" ]] && bucket_args=(--buckets "$BUCKETS")
+    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" "${bucket_args[@]}" || return 1
     [[ -s "$IDX_PATH" ]] || return 1
     IDX_FILE_BYTES=$(stat -c%s "$IDX_PATH")
-    IDX_PAYLOAD_BYTES=$(( IDX_FILE_BYTES - 32 ))           # 32-byte VirtualSkmer header
+    # Payload = file minus the real header. V3 header is 40 + 16*n_buckets bytes (the per-bucket
+    # directory), not the old fixed 32, so subtract the size the format actually reports.
+    local hdr
+    hdr=$(python3 "$BENCH_HELPER" binheadersize "$IDX_PATH" 2>/dev/null || echo 32)
+    IDX_PAYLOAD_BYTES=$(( IDX_FILE_BYTES - hdr ))
     N_SKMERS=$(python3 "$BENCH_HELPER" bincount "$IDX_PATH" 2>/dev/null || echo NA)
     return 0
 }

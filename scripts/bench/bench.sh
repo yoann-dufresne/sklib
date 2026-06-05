@@ -44,6 +44,7 @@ REPS="${REPS:-1}"
 SEED="${SEED:-1234}"
 SELFCHECK="${SELFCHECK:-1}"
 FRESH="${FRESH:-0}"
+BUCKETS="${BUCKETS:-}"   # sklib --buckets (empty => tool default 4096); used by the bucket sweep
 
 OUT="$BENCH_REPO_ROOT/scripts/out/bench"
 QDIR="$OUT/queries"
@@ -110,7 +111,7 @@ correctness_gate() {
 # ====================================================================
 log "datasets=[$DATASETS] km=[$KM] tools=[$TOOLS] workloads=[$WORKLOADS] threads=[$THREADS]"
 log "reps=$REPS n_query=$N_QUERY stream_bp=$STREAM_BP reads=${READS_N}x${READLEN}@${ERR} -> $CSV"
-warn "query threads use CPU affinity (taskset); needs TBB-linked sskm to scale (else serial)."
+warn "sklib is fully sequential (no parallelism); THREADS>1 only pins affinity, it does not scale."
 
 declare -A DONE_TK   # (tool|dataset|k) already measured -> skip extra m for m-independent tools
 

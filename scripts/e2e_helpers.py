@@ -16,6 +16,7 @@ Subcommands:
                                emitted k-mer is a real genome k-mer). Used to take a
                                bounded but structure-preserving self-query sample.
   bincount <list.sskm>         Print the #skmers stored in the binary header.
+  binheadersize <list.sskm>    Print the header byte size (32 for V2; 40+16*n_buckets for V3).
 
 Benchmark query-workload helpers (scripts/bench/bench.sh):
   sample_positive <fa> <k> <n> <seed>
@@ -166,6 +167,28 @@ def bincount(path):
     print(count)
 
 
+def binheadersize(path):
+    # Byte size of the on-disk header (everything before the skmer payload), so callers can
+    # compute the true payload size. VSKMER_2: magic+k+m+count = 32 B. VSKMER_3 adds
+    # n_buckets(8) + a per-bucket directory of 16 B each.
+    V2 = 0x56534B4D45525F32  # "VSKMER_2"
+    V3 = 0x56534B4D45525F33  # "VSKMER_3"
+    with open(path, "rb") as f:
+        hdr = f.read(40)
+    if len(hdr) < 32:
+        sys.exit("file too short to hold a VirtualSkmer header: " + path)
+    magic = struct.unpack("<Q", hdr[:8])[0]
+    if magic == V2:
+        print(32)
+    elif magic == V3:
+        if len(hdr) < 40:
+            sys.exit("file too short to hold a VSKMER_3 header: " + path)
+        n_buckets = struct.unpack("<Q", hdr[32:40])[0]
+        print(40 + 16 * n_buckets)
+    else:
+        sys.exit("unknown VirtualSkmer magic in: " + path)
+
+
 def _iter_records(path):
     """Yield the concatenated sequence of each FASTA record (uppercased)."""
     name = None
@@ -291,6 +314,8 @@ def main():
         prefix(sys.argv[2], sys.argv[3])
     elif cmd == "bincount":
         bincount(sys.argv[2])
+    elif cmd == "binheadersize":
+        binheadersize(sys.argv[2])
     elif cmd == "sample_positive":
         sample_positive(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
     elif cmd == "simreads":
