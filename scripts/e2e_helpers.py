@@ -17,6 +17,7 @@ Subcommands:
                                bounded but structure-preserving self-query sample.
   bincount <list.sskm>         Print the #skmers stored in the binary header.
   binheadersize <list.sskm>    Print the header byte size (32 for V2; 40+16*n_buckets for V3).
+  dropshort <fasta> <k>        Emit only FASTA records with sequence length >= k (feeds CBL).
 
 Benchmark query-workload helpers (scripts/bench/bench.sh):
   sample_positive <fa> <k> <n> <seed>
@@ -206,6 +207,18 @@ def _iter_records(path):
         yield "".join(parts).upper()
 
 
+def dropshort(path, k):
+    # Emit only records whose sequence length >= k. Records shorter than k hold no
+    # k-mers, so dropping them is k-mer-set-neutral. Used to feed CBL, which aborts on
+    # any sequence shorter than K (e.g. 1-bp fragments left between N-runs by sanitize),
+    # unlike the other tools that simply skip short records.
+    i = 0
+    for seq in _iter_records(path):
+        if len(seq) >= k:
+            sys.stdout.write(">%d\n%s\n" % (i, seq))
+            i += 1
+
+
 def _load_seqs(path, min_len):
     """Load records >= min_len into memory; return (seqs, cumulative_positions).
 
@@ -316,6 +329,8 @@ def main():
         bincount(sys.argv[2])
     elif cmd == "binheadersize":
         binheadersize(sys.argv[2])
+    elif cmd == "dropshort":
+        dropshort(sys.argv[2], int(sys.argv[3]))
     elif cmd == "sample_positive":
         sample_positive(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
     elif cmd == "simreads":

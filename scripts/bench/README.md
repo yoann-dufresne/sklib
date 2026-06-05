@@ -95,9 +95,10 @@ Single machine (`Intel Core Ultra 7 165H`), **single-thread**, sklib **v0.3.0** 
 `VSKMER_3` format, default `--buckets 4096`). Each cell is the full **FASTA → index** cost:
 *sshash* includes BCALM2 unitig generation, *bqf* includes KMC s-mer counting. **Query** =
 `positive` workload (scattered, all-present), **1 thread**, peak RSS during the lookup. `bqf`
-is **approximate** (false positives); `cbl` is exact but **omitted on chr1** (its ~0.02
-Mkmer/s query would take hours, and it OOMs building chr1). Regenerate from `results.csv`
-with `python3 scripts/bench/compare.py` (tables) or `plots.py` (figures).
+is **approximate** (false positives). `cbl` aborts on input sequences shorter than `K`, so its
+construct input is pre-filtered to drop sub-`K` fragments (k-mer-set-neutral; `dropshort`) — it
+then builds on chr1 too, using up to ~9 GB at `k=31`. Regenerate from `results.csv` with
+`python3 scripts/bench/compare.py` (tables) or `plots.py` (figures).
 
 Columns: **c.t** = construct time (s) · **c.RAM** = construct peak RSS (MB) · **idx** =
 index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = query time (s) ·
@@ -130,6 +131,7 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sshash | 105.8 | 1654 | 1016.6 | 72.7 | 0.59 | 974 |
 |  | sbwt | 54.6 | 1862 | 147.8 | 10.6 | 0.23 | 170 |
 |  | bqf | 30.5 | 1920 | 83.9 | 6.0 | 0.13 | 84 |
+|  | cbl | 70.0 | 561 | 345.6 | 24.7 | 1.31 | 345 |
 
 ### k=21, m=11
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
@@ -158,6 +160,7 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sshash | 35.4 | 1069 | 363.6 | 15.3 | 0.30 | 351 |
 |  | sbwt | 88.0 | 1926 | 250.2 | 10.5 | 0.38 | 267 |
 |  | bqf | 66.7 | 1810 | 536.9 | 22.6 | 0.37 | 516 |
+|  | cbl | 78.1 | 1842 | 758.5 | 32.0 | 2.95 | 1485 |
 
 ### k=31, m=15
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
@@ -186,6 +189,7 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sshash | 26.5 | 735 | 246.7 | 9.7 | 0.23 | 240 |
 |  | sbwt | 103.1 | 1948 | 269.0 | 10.5 | 0.55 | 285 |
 |  | bqf | 66.9 | 1811 | 536.9 | 21.0 | 0.56 | 516 |
+|  | cbl | 102.7 | 9223 | 1448.5 | 56.8 | 9.28 | 7843 |
 
 **Reading.** sklib keeps the **lowest construction RAM in every cell** (≈3–9× below the best
 competitor on the big genomes — e.g. chr1 `k=21`: 206 MB vs 1069–1926 MB), and construction
@@ -208,7 +212,7 @@ Build them once with `bash scripts/bench/tools/setup.sh` (clones + builds into
 | `sshash` | exact dictionary | BCALM2 unitigs | `--canonical`; k≤31; build = bcalm(1 core)+build. ⚠ segfaults on **negative** lookups at small k on large/saturated genomes (reproduced at k=15 on C. elegans) — SSHash is meant for k≳20; the harness skips the failed query rows. |
 | `sbwt` | exact membership | sanitized FASTA | `--add-reverse-complements`; default `plain-matrix` variant; k≤32. For SBWT's best *space*, rebuild with `-march=native` and set `SBWT_VARIANT=mef-matrix` (BMI2). |
 | `bqf` | **approximate** (false positives) | KMC s-mer dump | compiled per-(k,z); `BQF_S` holds the indexed s-mer size ≈constant across k (z=k−s, default s=18); stores s-mers, virtualizes k-mers |
-| `cbl` | exact set + set ops | sanitized FASTA | compiled per-K (**odd** K only); needs nightly Rust **and** `apt install libclang-dev libstdc++-12-dev` |
+| `cbl` | exact set + set ops | sanitized FASTA | compiled per-K (**odd** K only); needs nightly Rust **and** `apt install libclang-dev libstdc++-12-dev`. ⚠ aborts on any sequence shorter than K, so the wrapper pre-filters sub-K records (`dropshort`) before building |
 
 `bcalm` is infrastructure (unitig generation), not a benchmarked tool. Competitors are
 built once per `(dataset,k)` (they ignore sklib's `m` — see `uses_m_*` in `tools.sh`).

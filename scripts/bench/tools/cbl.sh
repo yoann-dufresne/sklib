@@ -45,7 +45,12 @@ construct_cbl() {
     (( k % 2 == 1 )) || { warn "cbl: K must be odd (k=$k), skipping"; return 1; }
     bin="$(_cbl_binary "$k")" || return 1
     IDX_PATH="$wd/index.cbl"
-    run_timed "$bin" build "$san" -o "$IDX_PATH" --canonical || { warn "cbl: build failed"; return 1; }
+    # CBL aborts on any sequence shorter than K ("Sequence size (1) is smaller than K"),
+    # e.g. 1-bp fragments left between N-runs by sanitize on human chromosomes. Drop sub-K
+    # records first; they hold no k-mers, so the indexed k-mer set is unchanged.
+    local cbl_in="$wd/cbl_input.fa"
+    python3 "$BENCH_HELPER" dropshort "$san" "$k" > "$cbl_in" || { warn "cbl: dropshort failed"; return 1; }
+    run_timed "$bin" build "$cbl_in" -o "$IDX_PATH" --canonical || { warn "cbl: build failed"; return 1; }
     [[ -s "$IDX_PATH" ]] || return 1
     CBL_BIN_CACHED="$bin"
     IDX_FILE_BYTES=$(stat -c%s "$IDX_PATH"); IDX_PAYLOAD_BYTES="$IDX_FILE_BYTES"; N_SKMERS=NA
