@@ -75,7 +75,16 @@ int run_construct(const ConstructOptions& opts) {
 int run_query(const QueryOptions& opts) {
     using kuint = uint64_t;
 
-    auto list = km::sortedlist::VirtualSkmerSerializer<kuint>::load(opts.list_file);
+    // Open the bucketed sorted list. The reader routes each query to its minimizer-prefix
+    // bucket and loads only that bucket's sub-list from disk on demand.
+    km::sortedlist::BucketedSkmerListReader<kuint> reader = [&]{
+        try {
+            return km::sortedlist::BucketedSkmerListReader<kuint>::open(opts.list_file);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            std::exit(1);
+        }
+    }();
 
     std::ofstream out_file;
     std::ostream* os = &std::cout;
@@ -89,9 +98,9 @@ int run_query(const QueryOptions& opts) {
     }
 
     if (opts.input_file) {
-        list.query(*opts.input_file, *os);
+        reader.query(*opts.input_file, *os);
     } else {
-        km::SkmerManipulator<kuint> manip{list.k(), list.m()};
+        km::SkmerManipulator<kuint> manip{reader.k(), reader.m()};
         std::string seq = *opts.sequence;
         km::SeqSkmerator<kuint> seq_skmerator{manip, seq};
 
@@ -100,7 +109,7 @@ int run_query(const QueryOptions& opts) {
             skmers.push_back(s);
         }
 
-        auto results = list.query_skmer_batch(skmers);
+        auto results = reader.query_skmer_batch(skmers);
         km::sortedlist::util::print_query_results(results, *os);
     }
 

@@ -3,6 +3,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <forward_list>
+#include <algorithm>
+#include <cstdint>
 
 
 #include <algorithms/ColinearChaining.hpp>
@@ -32,6 +34,10 @@ namespace util
 // carry the previous magic, so load() rejects them (and vice-versa) instead of silently
 // returning wrong query results.
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER = 0x56534B4D45525F32ULL; // "VSKMER_2" in ASCII
+// Bumped to "VSKMER_3" when the on-disk layout gained a per-bucket directory: the sorted
+// list is split into minimizer-prefix buckets, each a separately queryable sub-list. A V2
+// file stays readable as a single bucket spanning the whole list (see load() / the reader).
+constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V3 = 0x56534B4D45525F33ULL; // "VSKMER_3" in ASCII
 constexpr uint64_t MAX_POSSIBLE_KMERS = 64;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
@@ -144,6 +150,141 @@ inline void print_query_results(const std::vector<std::vector<uint8_t>> & result
     }
 }
 
+}
+
+// One per-bucket directory entry of the VSKMER_3 on-disk format. `mini_lower_bound` is the
+// inclusive lower bound (in φ-permuted minimizer space) of the bucket's minimizer interval;
+// entries are stored for every bucket (empty ones too) in strictly increasing order so a
+// query routes with a single upper_bound. `count` is the bucket's super-k-mer count, from
+// which the reader derives byte offsets by prefix sum.
+struct BucketDirEntry {
+    uint64_t mini_lower_bound;
+    uint64_t count;
+};
+static_assert(sizeof(BucketDirEntry) == 2 * sizeof(uint64_t), "BucketDirEntry must be tightly packed");
+
+// Walk outward from `position_in_list` (down to `minimum`, then up to `maximum`) to the
+// closest super-k-mer that actually carries a k-mer at `kmer_position_in_skmer`. Span-based
+// twin of the former SortedVirtualSkmerList member, so the search below works on any
+// contiguous skmer range (the whole in-RAM list or a single lazily-loaded bucket).
+template<typename kuint>
+inline int64_t find_closest_valid_skmer_in_span(
+    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list,
+    const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum,
+    const uint64_t kmer_position_in_skmer)
+{
+    // `i` is unsigned, so the down-scan guards on `i == minimum` (a `>= minimum` test would
+    // wrap past 0 to 2^64-1 and read out of bounds).
+    for (uint64_t i {position_in_list}; ; i--){
+        if (manip.has_valid_kmer(list[i], kmer_position_in_skmer)) return (int64_t)i;
+        if (i == minimum) break;
+    }
+    for (uint64_t i {position_in_list}; i <= maximum; i++){
+        if (manip.has_valid_kmer(list[i], kmer_position_in_skmer)) return (int64_t)i;
+    }
+    return -1L;
+}
+
+// Per-column dichotomic search: for every valid k-mer position of `query`, binary-search the
+// sorted skmer range [list, list+list_size) and report whether that k-mer is present. One
+// parallel binary search per k-mer position shares probes for cache locality. Shared by the
+// in-RAM SortedVirtualSkmerList::query_skmer and the disk-backed BucketedSkmerListReader, so
+// the algorithm lives in exactly one place. Returns one flag per queried k-mer position.
+template<typename kuint>
+inline std::vector<uint8_t> search_kmers_in_span(
+    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
+    const Skmer<kuint>& query)
+{
+    auto [query_start_position, query_end_position] = manip.get_valid_kmer_bounds(query);
+
+    if(query_end_position < query_start_position) {
+        return std::vector<uint8_t>(0,0);
+    }
+    const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
+
+    // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST/BUCKET IS EMPTY)
+    if (tot_num_kmers_to_search <= 0 || list_size == 0){
+        return std::vector<uint8_t>(std::max(0UL, tot_num_kmers_to_search), 0);
+    }
+
+    // PREPARE PARAMETERS FOR SEARCH
+    uint64_t current_priority_offset {0};
+    uint64_t searchable_position_count {tot_num_kmers_to_search};
+    uint64_t num_kmers_to_search {tot_num_kmers_to_search};
+    uint64_t current_searched_position_in_skmer;
+    int64_t mean {0};
+
+    // USING SMALL STACK ALLOCATED ARRAYS FOR FAST QUERY
+    uint8_t result[km::sortedlist::util::MAX_POSSIBLE_KMERS] = {0};//'bool' to be returned
+    uint8_t keep_searching[km::sortedlist::util::MAX_POSSIBLE_KMERS]; // keep track of which k-mers have been searched yet
+    std::pair<int64_t,int64_t> binary_search_boundaries[km::sortedlist::util::MAX_POSSIBLE_KMERS];
+    uint64_t positions_to_search[km::sortedlist::util::MAX_POSSIBLE_KMERS];
+    // ARRAYS INITIALIZATION
+    std::fill_n(keep_searching, tot_num_kmers_to_search, 1);
+    std::fill_n(binary_search_boundaries, tot_num_kmers_to_search,
+        std::make_pair(0LL, static_cast<int64_t>(list_size - 1)));
+    for(size_t i {0}; i < tot_num_kmers_to_search; i++){
+        positions_to_search[i] = i;
+    }
+    // START BINARY SEARCH
+    while(num_kmers_to_search > 0){
+        // VERIFY THAT THE CURRENT PRIORITY_POSITION IS STILL VALID AND UPDATE
+        if (keep_searching[current_priority_offset] == 0) {
+            current_priority_offset = km::sortedlist::util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
+        }
+
+        // UPDATE MEAN
+        const int64_t old_mean {mean};
+        mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
+        if (mean == old_mean){
+            int64_t new_pos = find_closest_valid_skmer_in_span(manip, list, mean, binary_search_boundaries[current_priority_offset].first, binary_search_boundaries[current_priority_offset].second, query_start_position + current_priority_offset);
+            if (new_pos < 0){
+                // there are no positions left, flag as not found and continue
+                km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
+                num_kmers_to_search--;
+                continue;
+            }
+            mean = (uint64_t)new_pos;
+        }
+
+        // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
+        searchable_position_count = km::sortedlist::util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
+
+        auto [queried_start_position, queried_end_position] = manip.get_valid_kmer_bounds(list[mean]);
+
+        for(uint64_t i {0}; i < searchable_position_count; i++){
+            const uint64_t offset {positions_to_search[i]};
+            current_searched_position_in_skmer = query_start_position + offset;
+            if(current_searched_position_in_skmer >= queried_start_position && current_searched_position_in_skmer <= queried_end_position){
+
+                const int kmer_comparison {manip.kmer_compare(query, list[mean], current_searched_position_in_skmer)};
+                if (kmer_comparison == 0){
+                    // FOUND. SET RESULT TO TRUE, KEEP_SEARCHING TO FALSE, UPDATE PRIORITY POSITION IF NECESSARY
+                    km::sortedlist::util::setTrue(result[offset]);
+                    km::sortedlist::util::setFalse(keep_searching[offset]);
+                    num_kmers_to_search--;
+                    if (current_searched_position_in_skmer == current_priority_offset){
+                        current_priority_offset = km::sortedlist::util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
+                    }
+                    continue;
+                }
+                else if (kmer_comparison < 0){
+                    // UPDATE BINARY SEARCH UPPER BOUNDARY FOR THIS POSITION
+                    binary_search_boundaries[offset].second = mean - 1;
+                }
+                else{
+                    // UPDATE BINARY SEARCH LOWER BOUNDARY FOR THIS POSITION
+                    binary_search_boundaries[offset].first = mean + 1;
+                }
+                if (binary_search_boundaries[offset].first > binary_search_boundaries[offset].second) {
+                    km::sortedlist::util::setFalse(keep_searching[offset]);
+                    num_kmers_to_search--;
+                }
+            }
+        }
+    }
+
+    return std::vector<uint8_t>(result, result + tot_num_kmers_to_search);
 }
 
 // VIRTUAL SUPERKMER CLASS
@@ -302,121 +443,10 @@ class SortedVirtualSkmerList {
 
     }
 
+    // Thin wrapper over the shared span search on the whole in-RAM list.
     std::vector<uint8_t> query_skmer(const Skmer<kuint> query) const{
-        // 1 CHECK BOUNDARIES SKMER TO EVALUATE WHICH KMERS INSIDE TO QUERY
-        // std::cerr << "I AM IN" << std::endl;
-
-        auto [query_start_position, query_end_position] = m_manip.get_valid_kmer_bounds(query);
-        km::SkmerPrettyPrinter<kuint> pp {m_manip.k, m_manip.m};
-        pp << query;
-        // std::cerr << pp << " ";
-        // std::cerr << "skmer properties[ PREFIX:" << query.m_pref_size << "; SUFFIX: " << query.m_suff_size << "; PAIR: " << query.m_pair << std::endl;
-        // std::cerr << "query_start_position: " << query_start_position << "; query_end_position: " << query_end_position << std::endl;
-
-        if(query_end_position < query_start_position) {
-            // std::cerr << "RETURNING EMPTY" << std::endl;
-            return std::vector<uint8_t>(0,0);
-        }
-        const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
-
-        // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST IS EMPTY)
-        if (tot_num_kmers_to_search <= 0 || m_skmer_list.empty()){
-            return std::vector<uint8_t>(std::max(0UL, tot_num_kmers_to_search), 0);
-        }
-
-        // PREPARE PARAMETERS FOR SEARCH
-        uint64_t current_priority_offset {0};
-        uint64_t searchable_position_count {tot_num_kmers_to_search};
-        uint64_t num_kmers_to_search {tot_num_kmers_to_search};
-        uint64_t current_searched_position_in_skmer;
-        int64_t mean {0};
-
-        // USING SMALL STACK ALLOCATED ARRAYS FOR FAST QUERY
-        uint8_t result[km::sortedlist::util::MAX_POSSIBLE_KMERS] = {0};//'bool' to be returned
-        uint8_t keep_searching[km::sortedlist::util::MAX_POSSIBLE_KMERS]; // keep track of which k-mers have been searched yet
-        std::pair<int64_t,int64_t> binary_search_boundaries[km::sortedlist::util::MAX_POSSIBLE_KMERS];
-        uint64_t positions_to_search[km::sortedlist::util::MAX_POSSIBLE_KMERS];
-        // std::cerr << "INITIALZING ARRAYS" << std::endl;
-        // std::cerr << "LIST SIZE: " << m_skmer_list.size() << "; tot_num_kmers_to_search: " << tot_num_kmers_to_search << std::endl;
-        // ARRAYS INITIALIZATION
-        const int64_t list_size = m_skmer_list.size();
-        std::fill_n(keep_searching, tot_num_kmers_to_search, 1);
-        std::fill_n(binary_search_boundaries, tot_num_kmers_to_search,
-            std::make_pair(0LL, static_cast<int64_t>(list_size - 1)));
-        for(size_t i {0}; i < tot_num_kmers_to_search; i++){
-            positions_to_search[i] = i;
-        }
-        // std::cout << "STARTIG BYNARY SEARCH" << std::endl;
-        // 2 START BINARY SEARCH
-        while(num_kmers_to_search > 0){
-            // VERIFY THAT THE CURRENT PRIORITY_POSITION IS STILL VALID AND UPDATE
-            if (keep_searching[current_priority_offset] == 0) {
-                current_priority_offset = km::sortedlist::util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
-            }
-
-            // UPDATE MEAN
-            const int64_t old_mean {mean};
-            mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
-            if (mean == old_mean){
-                int64_t new_pos = find_closest_valid_skmer(mean, binary_search_boundaries[current_priority_offset].first, binary_search_boundaries[current_priority_offset].second, query_start_position + current_priority_offset);
-                // std::cout << "new_pos: " << new_pos << std::endl;
-                if (new_pos < 0){
-                    // there are no positions left, flag as not found and continue
-                    km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
-                    num_kmers_to_search--;
-                    continue;
-                }
-                mean = (uint64_t)new_pos;
-            }
-
-            // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
-            searchable_position_count = km::sortedlist::util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
-
-            auto [queried_start_position, queried_end_position] = m_manip.get_valid_kmer_bounds(m_skmer_list[mean]);
-            // std::cout << "searchable_position_count: " << searchable_position_count << "; num_kmers_to_search: " << num_kmers_to_search << std::endl;
-            // std::cout << "mean: " << mean << "; old_mean: " << old_mean << std::endl;
-            // std::cout << "current_priority_offset: " << current_priority_offset << std::endl;
-            // std::cout << "QUERIED KMER START POSITION: " << queried_start_position << "; QUERIED KMER END POSITION: " << queried_end_position << std::endl;
-            // for(size_t i {0}; i < tot_num_kmers_to_search; i++){
-            //     std::cout << "[" << binary_search_boundaries[i].first << "," << binary_search_boundaries[i].second << "] - ";
-            // }
-            // std::cout << std::endl;
-
-            for(uint64_t i {0}; i < searchable_position_count; i++){
-                const uint64_t offset {positions_to_search[i]};
-                current_searched_position_in_skmer = query_start_position + offset;
-                // std::cout << "offset: " << offset << "; current_searched_position_in_skmer: " << current_searched_position_in_skmer << std::endl;
-                if(current_searched_position_in_skmer >= queried_start_position && current_searched_position_in_skmer <= queried_end_position){
-
-                    const int kmer_comparison {m_manip.kmer_compare(query, m_skmer_list[mean], current_searched_position_in_skmer)};
-                    // std::cout << "kmer comparion: " << kmer_comparison << std::endl;
-                    if (kmer_comparison == 0){
-                        // FOUND. SET RESULT TO TRUE, KEEP_SEARCHING TO FALSE, UPDATE PRIORITY POSITION IF NECESSARY
-                        km::sortedlist::util::setTrue(result[offset]);
-                        km::sortedlist::util::setFalse(keep_searching[offset]);
-                        num_kmers_to_search--;
-                        if (current_searched_position_in_skmer == current_priority_offset){
-                            current_priority_offset = km::sortedlist::util::get_new_priority_value(current_priority_offset, positions_to_search, searchable_position_count, keep_searching, tot_num_kmers_to_search);
-                        }
-                        continue;
-                    }
-                    else if (kmer_comparison < 0){
-                        // UPDATE BINARY SEARCH UPPER BOUNDARY FOR THIS POSITION
-                        binary_search_boundaries[offset].second = mean - 1;
-                    }
-                    else{
-                        // UPDATE BINARY SEARCH LOWER BOUNDARY FOR THIS POSITION
-                        binary_search_boundaries[offset].first = mean + 1;
-                    }
-                    if (binary_search_boundaries[offset].first > binary_search_boundaries[offset].second) {
-                        km::sortedlist::util::setFalse(keep_searching[offset]);
-                        num_kmers_to_search--;
-                    }
-                }
-            }
-        }
-
-        return std::vector<uint8_t>(result, result + tot_num_kmers_to_search);
+        return km::sortedlist::search_kmers_in_span<kuint>(
+            m_manip, m_skmer_list.data(), static_cast<int64_t>(m_skmer_list.size()), query);
     }
 
     // Query a group of super-k-mers, one after another, returning per-skmer results.
@@ -603,19 +633,10 @@ class SortedVirtualSkmerList {
         return candidate_overlaps;
     }
 
+    // Thin wrapper over the shared span helper, kept for the in-RAM list and its tests.
     int64_t find_closest_valid_skmer(const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum, const uint64_t kmer_position_in_skmer) const{
-        // Scan down to `minimum` inclusive. `i` is unsigned, so guard the loop
-        // with an explicit `i == minimum` break: a `i >= minimum` condition is
-        // always true once minimum == 0 and `i--` would wrap past 0 to 2^64-1,
-        // reading m_skmer_list out of bounds.
-        for (uint64_t i {position_in_list}; ; i--){
-            if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;
-            if (i == minimum) break;
-        }
-        for (uint64_t i {position_in_list}; i <= maximum; i++){
-            if (m_manip.has_valid_kmer(m_skmer_list[i], kmer_position_in_skmer)) return (int64_t)i;
-        }
-        return -1UL;
+        return km::sortedlist::find_closest_valid_skmer_in_span<kuint>(
+            m_manip, m_skmer_list.data(), position_in_list, minimum, maximum, kmer_position_in_skmer);
     }
 
     // Take a pair of Virtual skmer columns (their position), the valid overlaps from the colinear chaining, the skmers in input. It outputs a linked-list of Virtual skmers
@@ -767,16 +788,17 @@ public:
             return outFile.close();
         }
 
-        // ENDIANESS CHECKING INTEGER
-        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER), sizeof(uint64_t));
-
-        // Write k and m
+        // VSKMER_3 header with a single bucket covering the whole list (lower bound 0).
+        // Written inline with no seek, so non-seekable targets like /dev/stdout still work.
+        const uint64_t count = list.size();
+        const uint64_t n_buckets = 1;
+        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.k), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.m), sizeof(uint64_t));
-
-        // Write count
-        uint64_t count = list.size();
         outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
+        const BucketDirEntry only{0, count};
+        outFile.write(reinterpret_cast<const char*>(&only), sizeof(BucketDirEntry));
 
         if (!outFile) {
             std::cerr << "Error writing header to file: " << filename << std::endl;
@@ -794,20 +816,32 @@ public:
         return outFile.close();
     }
 
-    // ---- Incremental binary serialization ----
-    // Lets a caller stream the payload out in several blocks (e.g. one per
-    // minimizer bucket) without ever holding the whole list in RAM. The header
-    // layout matches save(): ENDIANNESS(8) + k(8) + m(8) + count(8), then the
-    // raw Skmer payload. The total count is unknown when the header is written,
-    // so write a placeholder and patch_count() it at the end. Requires a
-    // seekable (regular) output file.
-    static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t); // after endianness, k, m
+    // ---- Incremental binary serialization (VSKMER_3, bucketed) ----
+    // Streams the payload out one minimizer bucket at a time without ever holding the whole
+    // list in RAM. Header layout: ENDIANNESS(8) + k(8) + m(8) + count(8) + n_buckets(8), then
+    // the per-bucket directory (n_buckets × BucketDirEntry), then the raw Skmer payload in
+    // bucket-id order. The total count and the directory are unknown when the header is
+    // written, so reserve them and patch at the end. Requires a seekable (regular) file.
+    static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t);     // after endianness, k, m
+    static constexpr std::streamoff DIRECTORY_OFFSET = 5 * sizeof(uint64_t); // after endianness, k, m, count, n_buckets
 
-    static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count) {
-        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER), sizeof(uint64_t));
+    // Byte size of the header (everything before the skmer payload) for a bucket count.
+    static std::streamoff header_bytes(uint64_t n_buckets) {
+        return DIRECTORY_OFFSET +
+               static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry));
+    }
+
+    static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count, uint64_t n_buckets) {
+        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&k), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&m), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
+        // Reserve the directory; patch_directory() fills it once per-bucket counts are known.
+        const std::vector<BucketDirEntry> placeholder(n_buckets, BucketDirEntry{0, 0});
+        if (n_buckets)
+            out.write(reinterpret_cast<const char*>(placeholder.data()),
+                      static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
     }
 
     static void append_payload(std::ofstream& out, const std::vector<Skmer<kuint>>& list) {
@@ -819,6 +853,15 @@ public:
     static void patch_count(std::ofstream& out, uint64_t total) {
         out.seekp(COUNT_OFFSET, std::ios::beg);
         out.write(reinterpret_cast<const char*>(&total), sizeof(uint64_t));
+    }
+
+    // Overwrite the reserved directory with the final per-bucket entries (one per bucket id,
+    // empty buckets included, in increasing minimizer-lower-bound order).
+    static void patch_directory(std::ofstream& out, const std::vector<BucketDirEntry>& dir) {
+        out.seekp(DIRECTORY_OFFSET, std::ios::beg);
+        if (!dir.empty())
+            out.write(reinterpret_cast<const char*>(dir.data()),
+                      static_cast<std::streamsize>(dir.size() * sizeof(BucketDirEntry)));
     }
 
     static void save_ascii(const SortedVirtualSkmerList<kuint>& list, const std::string& filename) {
@@ -901,10 +944,15 @@ public:
             throw std::runtime_error("Error reading magic number from file: " + filename);
         }
 
-        // Check endianness
-        if (read_endianess_int != km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
+        // Accept both VSKMER_2 (single global list) and VSKMER_3 (bucketed). load() returns
+        // the whole concatenated list either way (it ignores the bucket directory); the lazy
+        // per-bucket reader lives in BucketedSkmerListReader.
+        const bool is_v3 = (read_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3);
+        const bool is_v2 = (read_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER);
+        if (!is_v2 && !is_v3) {
             uint64_t swapped_endianess_int = km::sortedlist::util::swap_endian(read_endianess_int);
-            if (swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER) {
+            if (swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER ||
+                swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3) {
                 throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
             } else {
                 throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
@@ -928,6 +976,17 @@ public:
             throw std::runtime_error("Error reading count from file: " + filename);
         }
 
+        if (is_v3) {
+            // Skip n_buckets + the per-bucket directory; we read the full payload below.
+            uint64_t n_buckets;
+            inFile.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
+            if (inFile.fail()) {
+                throw std::runtime_error("Error reading bucket count from file: " + filename);
+            }
+            inFile.seekg(static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry)),
+                         std::ios::cur);
+        }
+
         // Read the skmer data
         m_virtual_skmer_list.m_skmer_list.reserve(count);
         m_virtual_skmer_list.m_skmer_list.resize(count);
@@ -940,6 +999,158 @@ public:
         inFile.close();
         return m_virtual_skmer_list;
     }
+};
+
+
+// Disk-backed, lazily-loaded reader over a bucketed (VSKMER_3) sorted skmer list. Each query
+// is routed to its minimizer-prefix bucket and only that bucket's sub-list is read from disk
+// (and cached), so query RAM is bounded by the touched buckets, not the whole index. A
+// VSKMER_2 file is read as a single bucket spanning the whole list (queries load it all on
+// first touch). Move-only (owns an ifstream); obtained via open().
+template<typename kuint>
+class BucketedSkmerListReader {
+public:
+    static BucketedSkmerListReader open(const std::string& filename) {
+        std::ifstream in(filename, std::ios::binary);
+        if (in.fail())
+            throw std::runtime_error("Error opening file for reading: " + filename);
+
+        uint64_t magic;
+        in.read(reinterpret_cast<char*>(&magic), sizeof(uint64_t));
+        if (in.fail())
+            throw std::runtime_error("Error reading magic number from file: " + filename);
+
+        const bool is_v3 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3);
+        const bool is_v2 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER);
+        if (!is_v2 && !is_v3) {
+            const uint64_t swapped = km::sortedlist::util::swap_endian(magic);
+            if (swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER ||
+                swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3)
+                throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
+            throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
+        }
+
+        uint64_t file_k, file_m, count;
+        in.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
+        in.read(reinterpret_cast<char*>(&file_m), sizeof(uint64_t));
+        in.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
+        if (in.fail())
+            throw std::runtime_error("Error reading header from file: " + filename);
+
+        std::vector<BucketDirEntry> dir;
+        std::streamoff payload_start;
+        if (is_v3) {
+            uint64_t n_buckets;
+            in.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
+            if (in.fail())
+                throw std::runtime_error("Error reading bucket count from file: " + filename);
+            dir.resize(n_buckets);
+            if (n_buckets)
+                in.read(reinterpret_cast<char*>(dir.data()),
+                        static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
+            if (in.fail())
+                throw std::runtime_error("Error reading bucket directory from file: " + filename);
+            payload_start = VirtualSkmerSerializer<kuint>::header_bytes(n_buckets);
+        } else {
+            dir.push_back(BucketDirEntry{0, count});
+            payload_start = static_cast<std::streamoff>(4 * sizeof(uint64_t));
+        }
+
+        return BucketedSkmerListReader(file_k, file_m, std::move(in), std::move(dir), payload_start);
+    }
+
+    uint64_t k() const { return m_manip.k; }
+    uint64_t m() const { return m_manip.m; }
+    uint64_t n_buckets() const { return m_n_buckets; }
+
+    // Look up every k-mer of `query`, restricted to its bucket's sub-list (loaded on demand).
+    std::vector<uint8_t> query_skmer(const Skmer<kuint>& query) {
+        const std::vector<Skmer<kuint>>& span = bucket(bucket_of(query));
+        return km::sortedlist::search_kmers_in_span<kuint>(
+            m_manip, span.data(), static_cast<int64_t>(span.size()), query);
+    }
+
+    std::vector<std::vector<uint8_t>> query_skmer_batch(const std::vector<Skmer<kuint>>& query_skmers) {
+        std::vector<std::vector<uint8_t>> result(query_skmers.size());
+        for (size_t i {0}; i < query_skmers.size(); ++i)
+            result[i] = query_skmer(query_skmers[i]);
+        return result;
+    }
+
+    // Enumerate super-k-mers from a file and query them, flushing results in bounded groups.
+    void query(const std::string& filename, std::ostream& os = std::cout) {
+        constexpr uint64_t MAX_INGESTED_SKMER {4096};
+        km::FileSkmerator<kuint> file_skmerator {m_manip, filename};
+
+        std::vector<km::Skmer<kuint>> buffer;
+        buffer.reserve(MAX_INGESTED_SKMER);
+
+        for (km::Skmer<kuint> const skmer : file_skmerator){
+            buffer.emplace_back(skmer);
+            if (buffer.size() == MAX_INGESTED_SKMER){
+                km::sortedlist::util::print_query_results(query_skmer_batch(buffer), os);
+                buffer.clear();
+            }
+        }
+
+        if (!buffer.empty())
+            km::sortedlist::util::print_query_results(query_skmer_batch(buffer), os);
+    }
+
+private:
+    BucketedSkmerListReader(uint64_t k, uint64_t m, std::ifstream&& in,
+                            std::vector<BucketDirEntry> dir, std::streamoff payload_start)
+        : m_manip(k, m), m_in(std::move(in)), m_n_buckets(dir.size())
+    {
+        m_lower.resize(m_n_buckets);
+        m_count.resize(m_n_buckets);
+        m_byte_offset.resize(m_n_buckets);
+        std::streamoff off = payload_start;
+        for (uint64_t b {0}; b < m_n_buckets; ++b) {
+            m_lower[b] = dir[b].mini_lower_bound;
+            m_count[b] = dir[b].count;
+            m_byte_offset[b] = off;
+            off += static_cast<std::streamoff>(dir[b].count) * static_cast<std::streamoff>(sizeof(Skmer<kuint>));
+        }
+        m_cache.assign(m_n_buckets, {});
+        m_loaded.assign(m_n_buckets, 0);
+    }
+
+    // Bucket id whose minimizer interval contains the query's φ-permuted minimizer. m_lower is
+    // strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right bucket.
+    uint64_t bucket_of(const Skmer<kuint>& query) const {
+        if (m_n_buckets <= 1) return 0;
+        const uint64_t mini = static_cast<uint64_t>(m_manip.minimizer(query));
+        const auto it = std::upper_bound(m_lower.begin(), m_lower.end(), mini);
+        return static_cast<uint64_t>(it - m_lower.begin()) - 1;
+    }
+
+    // Lazily read bucket `b`'s sub-list from disk into the cache, then return it.
+    const std::vector<Skmer<kuint>>& bucket(uint64_t b) {
+        if (!m_loaded[b]) {
+            std::vector<Skmer<kuint>>& dst = m_cache[b];
+            dst.resize(m_count[b]);
+            if (m_count[b]) {
+                m_in.clear(); // drop any EOF/fail flag from a previous read
+                m_in.seekg(m_byte_offset[b], std::ios::beg);
+                m_in.read(reinterpret_cast<char*>(dst.data()),
+                          static_cast<std::streamsize>(m_count[b] * sizeof(Skmer<kuint>)));
+                if (m_in.fail())
+                    throw std::runtime_error("Error reading bucket payload from sorted skmer list");
+            }
+            m_loaded[b] = 1;
+        }
+        return m_cache[b];
+    }
+
+    SkmerManipulator<kuint> m_manip;
+    std::ifstream m_in;
+    uint64_t m_n_buckets {1};
+    std::vector<uint64_t> m_lower;        // per-bucket minimizer lower bound (routing table)
+    std::vector<uint64_t> m_count;        // per-bucket super-k-mer count
+    std::vector<std::streamoff> m_byte_offset; // per-bucket payload offset in the file
+    std::vector<std::vector<Skmer<kuint>>> m_cache; // lazily-filled per-bucket sub-lists
+    std::vector<char> m_loaded;           // whether m_cache[b] is populated
 };
 
 

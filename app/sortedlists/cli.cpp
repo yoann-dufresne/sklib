@@ -45,9 +45,11 @@ CLIResult parse_cli(int argc, char** argv) {
         "Write the output as human-readable ASCII instead of the default binary format.");
 
     construct->add_option("--buckets", construct_opts.buckets,
-        "Number of on-disk minimizer buckets for the low-memory construction path "
-        "(default 4096, rounded down to a power of two). More buckets => lower peak "
-        "RAM. Use 1 for a single bucket. Binary output to a regular file only.");
+        "Number of minimizer buckets (default 4096, rounded down to a power of two). "
+        "Splits the list into that many independently-sorted sub-lists, partitioned by the "
+        "high-order bits of the minimizer; query routes to one sub-list. More buckets => "
+        "lower peak construction RAM and a faster query. Use 1 for a single list. "
+        "Binary output to a regular file only.");
 
     construct->add_option("--max-ram", construct_opts.max_ram,
         "Approximate target peak RAM for construction (e.g. 2G, 512M). When set, a "

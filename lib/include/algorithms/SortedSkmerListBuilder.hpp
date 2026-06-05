@@ -86,11 +86,13 @@ struct TmpDirGuard {
     }
 };
 
-// Holds a minimizer -> bucket-id mapping plus the bucket count.
+// Holds a minimizer -> bucket-id mapping plus the bucket count, and the inverse
+// bucket-id -> minimizer lower bound used to fill the on-disk routing directory.
 template<typename kuint>
 struct Bucketing {
     uint64_t n_buckets;
     std::function<uint64_t(kuint)> bucket_of;
+    std::function<uint64_t(uint64_t)> lower_bound_of; // inclusive minimizer lower bound of a bucket
 };
 
 // Empirical phase-2 peak bytes per *raw* (pre-dedup) super-k-mer in a bucket.
@@ -112,10 +114,16 @@ Bucketing<kuint> make_prefix_bucketing(uint64_t m, uint64_t requested_buckets) {
     const uint64_t effective_bits = std::min<uint64_t>(bucket_bits, mini_bits);
     const uint64_t n_buckets = uint64_t{1} << effective_bits;
     const uint64_t shift = mini_bits - effective_bits;
-    return Bucketing<kuint>{ n_buckets, [shift, n_buckets](kuint mini) -> uint64_t {
-        if (n_buckets == 1) return 0;
-        return static_cast<uint64_t>(mini >> shift);
-    }};
+    return Bucketing<kuint>{ n_buckets,
+        [shift, n_buckets](kuint mini) -> uint64_t {
+            if (n_buckets == 1) return 0;
+            return static_cast<uint64_t>(mini >> shift);
+        },
+        // Bucket b covers the minimizer interval [b << shift, (b+1) << shift); its lower bound
+        // is b << shift (0 for b == 0, so every minimizer routes into some bucket).
+        [shift](uint64_t id) -> uint64_t {
+            return static_cast<uint64_t>(id) << shift;
+        }};
 }
 
 // Strategy A v2: a histogram pass over the minimizers builds contiguous
@@ -150,7 +158,9 @@ Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
     }
 
     if (total == 0)
-        return Bucketing<kuint>{ 1, [](kuint) -> uint64_t { return 0; } };
+        return Bucketing<kuint>{ 1,
+            [](kuint) -> uint64_t { return 0; },
+            [](uint64_t) -> uint64_t { return 0; } };
 
     // Target raw skmers per bucket from the RAM budget, capped so the bucket
     // count stays bounded.
@@ -171,10 +181,14 @@ Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
 
     const uint64_t n_buckets = starts.size();
     return Bucketing<kuint>{ n_buckets,
-        [low, starts = std::move(starts)](kuint mini) -> uint64_t {
+        [low, starts](kuint mini) -> uint64_t {
             const uint64_t cell = (low >= 64) ? 0 : static_cast<uint64_t>(mini >> low);
             return static_cast<uint64_t>(
                 std::upper_bound(starts.begin(), starts.end(), cell) - starts.begin() - 1);
+        },
+        // Bucket b starts at cell `starts[b]`, i.e. minimizer value starts[b] << low.
+        [low, starts](uint64_t id) -> uint64_t {
+            return (low >= 64) ? 0 : (static_cast<uint64_t>(starts[id]) << low);
         }};
 }
 
@@ -252,9 +266,15 @@ void build_bucketed(const SortedListBuildParams& params) {
         std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
         if (out.fail())
             throw std::runtime_error("Error opening output file for writing: " + output_path);
-        km::sortedlist::VirtualSkmerSerializer<kuint>::write_header(out, k, m, 0);
+        km::sortedlist::VirtualSkmerSerializer<kuint>::write_header(out, k, m, 0, n_buckets);
         if (out.fail())
             throw std::runtime_error("Error writing header to file: " + output_path);
+
+        // Per-bucket directory: lower bound for every bucket (incl. empty ones, so routing
+        // covers the whole minimizer space), counts patched in as each bucket is built.
+        std::vector<km::sortedlist::BucketDirEntry> dir(n_buckets);
+        for (uint64_t id{0}; id < n_buckets; id++)
+            dir[id] = km::sortedlist::BucketDirEntry{ bucketing.lower_bound_of(id), 0 };
 
         uint64_t total = 0;
         for (uint64_t id{0}; id < n_buckets; id++) {
@@ -271,15 +291,17 @@ void build_bucketed(const SortedListBuildParams& params) {
             km::sortedlist::VirtualSkmerSerializer<kuint>::append_payload(out, sub.get_list());
             if (out.fail())
                 throw std::runtime_error("Error writing skmers to file: " + output_path);
+            dir[id].count = sub.size(); // final (deduped) sub-list size, what the reader offsets on
             total += sub.size();
 
             std::error_code ec;
             fs::remove(bpath, ec); // free disk as we go
         }
 
+        km::sortedlist::VirtualSkmerSerializer<kuint>::patch_directory(out, dir);
         km::sortedlist::VirtualSkmerSerializer<kuint>::patch_count(out, total);
         if (out.fail())
-            throw std::runtime_error("Error patching count in file: " + output_path);
+            throw std::runtime_error("Error patching header/directory in file: " + output_path);
         out.close();
     }
 }
