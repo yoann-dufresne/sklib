@@ -27,20 +27,9 @@ target_compile_options(build_type_flags INTERFACE
   $<IF:$<BOOL:${PORTABLE_BUILD}>,-march=x86-64,-march=native>
 )
 
-find_package(TBB QUIET)
-if(TBB_FOUND)
-  target_link_libraries(build_type_flags INTERFACE TBB::tbb)
-else()
-  # Try pkg-config as fallback
-  find_package(PkgConfig QUIET)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(TBB tbb)
-    if(TBB_FOUND)
-      target_link_libraries(build_type_flags INTERFACE ${TBB_LIBRARIES})
-      target_include_directories(build_type_flags INTERFACE ${TBB_INCLUDE_DIRS})
-    endif()
-  endif()
-endif()
+# No TBB: the code is fully sequential (no std::execution / parallel STL). The earlier
+# unconditional TBB link was a vestige of a removed std::execution::par query path (commit
+# 7f9b957 made queries fully sequential); linking it only added an unused shared-lib dependency.
 
 add_library(warning_flags INTERFACE)
 target_compile_options(warning_flags INTERFACE
