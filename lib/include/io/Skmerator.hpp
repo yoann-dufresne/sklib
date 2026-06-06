@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <memory>
+#include <algorithm>
 #include <kseq++/seqio.hpp>
 
 #include <io/Skmer.hpp>
@@ -166,6 +167,38 @@ public:
         friend class FileSkmerator<kuint>;
 
     public:
+        // Re-initialize this iterator in place over its bound sequence (m_seq), reusing the
+        // already-allocated skmer buffers instead of reallocating them. FileSkmerator calls this
+        // to advance to the next record without reconstructing the per-sequence iterator -- the
+        // dominant cost of 1-k-mer-per-record query workloads. The resulting state is identical to
+        // a freshly constructed Iterator over the same sequence (buffers cleared to match the
+        // value-initialized construction), so the produced super-k-mers are byte-for-byte the same.
+        void reset()
+        {
+            m_remaining_nucleotides = static_cast<int64_t>(m_seq.length());
+            m_consumed = false;
+            m_isend = false;
+            m_current_minimizer = ~static_cast<kuint>(0);
+            m_ptr_current = m_manip.k - m_manip.m;
+            m_ptr_min = 0;
+            m_ptr_last_round = 0;
+            m_split_pending.clear();
+            m_split_idx = 0;
+            // Buffers keep their capacity (size 2k-m, constant for a given manipulator); clearing
+            // them reproduces a fresh value-initialized construction exactly.
+            std::fill(m_skmer_buffer_array.begin(), m_skmer_buffer_array.end(), Skmer<kuint>{});
+            std::fill(m_skmer_orientation.begin(), m_skmer_orientation.end(), false);
+
+            if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
+            {
+                m_consumed = true;
+                m_isend = true;
+                return;
+            }
+            this->init_seq();
+            this->operator++();
+        }
+
         // Return kmer by value
         Skmer<kuint> operator*() const
         {
@@ -627,7 +660,10 @@ public:
         // Construct an iterator without control on the file stream
         Iterator(FileSkmerator<kuint>& skmerator, std::unique_ptr<klibpp::SeqStreamIn> stream_ptr)
             : m_rator(skmerator), m_ptr(std::move(stream_ptr))
-            , m_seq_rator(skmerator.m_manip), m_skmer_iterator(m_seq_rator.begin())
+            // Bind the per-sequence enumerator to m_record.seq once. kseq reuses that string
+            // object across records (only its contents change), so the binding stays valid and we
+            // can re-prime the iterator in place per record instead of rebuilding it.
+            , m_seq_rator(skmerator.m_manip, m_record.seq), m_skmer_iterator(m_seq_rator.begin())
         {
             if (m_ptr == nullptr)
                 return;
@@ -651,8 +687,9 @@ public:
                         continue;
                     }
 
-                    m_seq_rator = SeqSkmerator<kuint>(m_rator.m_manip, m_record.seq);
-                    m_skmer_iterator = m_seq_rator.begin();
+                    // Re-prime the (already-bound) per-sequence iterator in place over the new
+                    // m_record.seq contents -- reuses the skmer buffers, no reallocation.
+                    m_skmer_iterator.reset();
 
                 }
                 else
