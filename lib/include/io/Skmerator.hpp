@@ -177,6 +177,16 @@ public:
         // m_rator.m_yielded_skmer. Normal case: a single canonicalized+permuted piece. If
         // the minimizer is an RC-palindrome, the contained k-mers may not share a canonical
         // orientation, so split into per-k-mer canonical pieces and queue all but the first.
+        //
+        // LIMITATION (small minimizers): this only handles the RC-palindrome case. When a
+        // (non-palindromic) minimizer m-mer *repeats* within a k-mer's span -- common when m is
+        // tiny, since there are only 4^m distinct m-mers -- the forward and reverse-complement
+        // scans select different occurrences, so the super-k-mer decomposition is not strand
+        // invariant and a k-mer can be stored on one strand but queried on the other (false
+        // negative). The rate falls off sharply with m (frequent at m<=5, ~1e-5 by m=7, smaller
+        // beyond) and the k-mer *set* is still correct (only orientations differ), so it is not
+        // caught by set-equality checks. The CLI refuses m < MIN_SAFE_MINIMIZER (commands.cpp);
+        // a full fix would make minimizer-occurrence selection strand invariant.
         void finalize_and_yield()
         {
             m_split_pending.clear();

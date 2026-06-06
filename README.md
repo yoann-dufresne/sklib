@@ -45,8 +45,10 @@ The `sskm` tool (built to `build/bin/sskm`) exposes the library's two primary op
 
 ### Parameters `k` and `m`
 
-* `k` — k-mer length in nucleotides. With the default 64-bit backend the packed 2-bit encoding allows `1 ≤ k ≤ 32`.
-* `m` — minimizer length in nucleotides, with `1 ≤ m ≤ k`. Smaller `m` produces longer skmers (more shared central nucleotides per group); typical values sit around `m ≈ k/2`.
+* `k` — k-mer length in nucleotides. The record integer width is selected automatically (`uint32_t`/`uint64_t`/`__uint128_t`) from the packed skmer size, so roughly `1 ≤ k ≤ 63` (a skmer needs `2·(2k−m)` bits, capped at the 256-bit `__uint128_t` pair).
+* `m` — minimizer length in nucleotides, with `7 ≤ m ≤ k`. Smaller `m` produces longer skmers (more shared central nucleotides per group); typical values sit around `m ≈ k/2`.
+
+> **Known limitation — minimizer length.** The super-k-mer orientation is only strand-invariant when the minimizer is long enough not to repeat within a k-mer. With a very short minimizer the forward and reverse-complement framings can differ, so a k-mer stored on one strand may be queried on the other and reported as a **false negative** (the k-mer *set* stays correct — only orientations differ). The rate is frequent for `m ≤ 5`, ~1e-5 at `m = 7`, and smaller beyond; the CLI therefore **refuses `m < 7`**. Use `m ≥ 7` (the range validated exact against KMC on 200M+ k-mers).
 
 ### `sskm construct`
 
