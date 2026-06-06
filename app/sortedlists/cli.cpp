@@ -34,7 +34,9 @@ CLIResult parse_cli(int argc, char** argv) {
         "Output sorted skmer list. Writes to stdout if omitted.");
 
     construct->add_option("-k,--kmer-size", construct_opts.k,
-        "k-mer length in nucleotides (1 <= k <= 32 with the default 64-bit backend).")
+        "k-mer length in nucleotides. The record integer width is selected automatically "
+        "(uint32/uint64/__uint128) from k and m; the only limit is that a skmer fits the widest "
+        "256-bit pair, i.e. 2*(2k-m) <= 256 (so k up to ~63 at small m, more as m grows).")
         ->required();
 
     construct->add_option("-m,--minimizer-size", construct_opts.m,
