@@ -35,16 +35,6 @@ static uint64_t parse_size(const std::string& s) {
     return static_cast<uint64_t>(value * static_cast<double>(mult));
 }
 
-// Minimum minimizer length the CLI will build/query. Shorter minimizers do not pin a
-// strand-invariant super-k-mer orientation: a tiny minimizer repeats within a k-mer, so the
-// forward and reverse-complement scans frame it at a different occurrence and a k-mer can be
-// stored on one strand but queried on the other -> false-negative queries. The effect is
-// frequent for m<=5, drops sharply with m, and is negligible (~1e-5, but not exactly zero) for
-// m>=7 -- which is also the range validated exact against KMC on 200M+ k-mers. This is a property
-// of the minimizer scheme (it affects construction too), independent of the V4 storage format.
-// The library entry points stay permissive; the guard lives at the CLI boundary only.
-static constexpr uint64_t MIN_SAFE_MINIMIZER = 7;
-
 int run_construct(const ConstructOptions& opts) {
     km::sortedlist::SortedListBuildParams params;
     params.k = static_cast<uint64_t>(opts.k);
@@ -80,13 +70,6 @@ int run_construct(const ConstructOptions& opts) {
             std::cerr << "Require 1 <= m <= k" << std::endl;
             return 1;
         }
-        if (m < MIN_SAFE_MINIMIZER) {
-            std::cerr << "Refusing -m " << m << ": minimizers shorter than " << MIN_SAFE_MINIMIZER
-                      << " produce strand-inconsistent super-k-mers, so some present k-mers are "
-                         "reported absent at query time. Use -m >= " << MIN_SAFE_MINIMIZER << "."
-                      << std::endl;
-            return 1;
-        }
         // Generation needs the full 2*(2k-m) bits (the whole minimizer drives selection + bucket);
         // storage needs only 2*(2k-m)-b once the bucket id absorbs the top b φ-minimizer bits.
         // Pick the smallest precompiled integer width for each, then instantiate the build.
@@ -117,13 +100,6 @@ int run_query(const QueryOptions& opts) {
         std::cerr << e.what() << std::endl;
         return 1;
     }
-    // A list built with a too-short minimizer (e.g. via the library, which is permissive) can
-    // return false negatives regardless of how it is queried; warn so the result is not trusted.
-    if (hdr.m > 0 && hdr.m < MIN_SAFE_MINIMIZER)
-        std::cerr << "Warning: this list was built with m=" << hdr.m << " (< " << MIN_SAFE_MINIMIZER
-                  << "); some present k-mers may be reported absent (strand-inconsistent "
-                     "super-k-mers from a too-short minimizer)." << std::endl;
-
     std::ofstream out_file;
     std::ostream* os = &std::cout;
     if (opts.output_file) {

@@ -829,6 +829,185 @@ public:
     }
 
 
+    // ===== Strand-invariant per-k-mer canonical framing (v0.4.2) =====
+    // Fixes the residual short-minimizer false negatives: when the minimal central m-mer (the
+    // minimizer) repeats inside a k-mer, the sliding window's leftmost-style occurrence choice is
+    // not mirror-symmetric (the forward and reverse-complement scans pick mirror occurrences ->
+    // different storage column -> false negative). The routines below re-derive each k-mer's frame
+    // from its own nucleotides using a symmetric rule (minimal phi-rank; tie -> most central; tie
+    // -> smaller full canonical interleaved value), so construction-in-context and isolated-query
+    // produce identical, strand-invariant records.
+
+    /** Bit shift of linear super-k-mer position `p` (0 = sequence start) inside the interleaved
+     * m_pair. The encoding interleaves positions outward from the centre: position `p` sits in
+     * prefix slot `p` (bits [4p:4p+1]) for the first ceil((2k-m)/2) positions, otherwise in suffix
+     * slot (2k-m-1-p) (bits [4*(2k-m-1-p)+2 : +3]). Decode and encode share this map, so a
+     * decode -> encode round-trip is correct by construction (see SkmerManipulator tests). **/
+    uint64_t slot_shift(uint64_t p) const
+    {
+        const uint64_t pref_slots {(sk_size + 1) / 2};                 // ceil((2k-m)/2)
+        return (p < pref_slots) ? (4 * p) : (4 * (sk_size - 1 - p) + 2);
+    }
+
+    /** Decode a super-k-mer to its present nucleotides in linear 5'->3' order (this orientation):
+     * prefix, then minimizer, then suffix. Length L = pref+m+suff; the minimizer is S[pref..pref+m-1]. **/
+    std::vector<kuint> decode_to_nucleotides(const Skmer<kuint>& sk) const
+    {
+        const uint64_t pref {sk.m_pref_size}, suff {sk.m_suff_size};
+        const uint64_t L {pref + m + suff};
+        const uint64_t offset {k - m - pref};                          // absolute linear start
+        std::vector<kuint> S(L);
+        for (uint64_t i {0}; i < L; i++)
+            S[i] = static_cast<kuint>(sk.m_pair >> slot_shift(offset + i)) & kuint{0b11};
+        return S;
+    }
+
+    /** Build the forward (this-orientation) super-k-mer covering S[start..end] with the minimizer
+     * m-mer at absolute index `mini_abs` (prefix = S[start..mini_abs-1], suffix = S[mini_abs+m..end]).
+     * Absent slots are set to 0b11. Result is not yet canonical / phi-permuted. **/
+    Skmer<kuint> build_skmer_from_nucleotides(const std::vector<kuint>& S,
+                                              uint64_t start, uint64_t end, uint64_t mini_abs) const
+    {
+        const uint16_t pref {static_cast<uint16_t>(mini_abs - start)};
+        const uint16_t suff {static_cast<uint16_t>(end - mini_abs - m + 1)};
+        const uint64_t base {k - m - pref};                            // piece's absolute linear start
+        const uint64_t L {static_cast<uint64_t>(pref) + m + suff};
+        kpair pair {};
+        for (uint64_t i {0}; i < L; i++)
+            pair |= kpair(static_cast<kuint>(S[start + i])) << slot_shift(base + i);
+        Skmer<kuint> out {pair, pref, suff};
+        mask_absent_nucleotides(out);
+        return out;
+    }
+
+    /** Cheap, allocation-free ambiguity test on a (raw-canonical) super-k-mer: true if the minimizer
+     * is an RC-palindrome (orientation not pinned), or its canonical m-mer value occurs at >=2 of the
+     * super-k-mer's m-mer positions (occurrence not pinned). The unique non-palindrome case (false)
+     * is the fast path: the whole super-k-mer is already each k-mer's canonical frame. **/
+    bool minimizer_is_ambiguous(const Skmer<kuint>& sk) const
+    {
+        const uint64_t pref {sk.m_pref_size};
+        const uint64_t L {pref + m + sk.m_suff_size};
+        if (L < m) return false;
+        const uint64_t offset {k - m - pref};
+        // Decode the present nucleotides once into a stack buffer, reading each from the two pair
+        // words with a plain shift (the pair `>>` operator is branch-heavy and was the per-yield
+        // hot spot). 2k-m <= pair-bit-width/2, so the buffer and all bit offsets fit.
+        uint8_t S[2 * sizeof(kuint) * 8];
+        const kuint w_lo {sk.m_pair.m_value[0]};
+        const kuint w_hi {sk.m_pair.m_value[1]};
+        constexpr uint64_t W {sizeof(kuint) * 8};
+        for (uint64_t i {0}; i < L; i++)
+        {
+            const uint64_t b {slot_shift(offset + i)};
+            S[i] = static_cast<uint8_t>((b < W ? (w_lo >> b) : (w_hi >> (b - W))) & kuint{0b11});
+        }
+        // The minimizer sits at the centre (present index `pref`); its canonical value is the
+        // super-k-mer's minimizer. A position "is the minimizer" iff its forward m-mer equals the
+        // canonical value or its reverse complement (canonical-value equality, packing-independent),
+        // so we precompute both and need no per-position reverse-complement.
+        kuint center {0};
+        for (uint64_t t {0}; t < m; t++) center |= static_cast<kuint>(S[pref + t]) << (2 * t);
+        const kuint canon {std::min(center, rc_mmer(center))};
+        const kuint rc_canon {rc_mmer(canon)};
+        if (canon == rc_canon) return true;                            // palindrome -> orientation ambiguous
+        // Roll the forward m-mer along the buffer and count occurrences of the minimizer value.
+        const uint64_t hi {2 * (m - 1)};
+        kuint fwd {0};
+        for (uint64_t t {0}; t < m; t++) fwd |= static_cast<kuint>(S[t]) << (2 * t);
+        uint64_t count {0};
+        for (uint64_t pos {0}; ; pos++)
+        {
+            if ((fwd == canon || fwd == rc_canon) && ++count >= 2) return true;
+            if (pos + m >= L) break;
+            fwd = (fwd >> 2) | (static_cast<kuint>(S[pos + m]) << hi);
+        }
+        return false;
+    }
+
+    /** Strand-invariant minimizer occurrence for the k-mer S[start..start+k-1]: (1) minimal
+     * phi(canonical m-mer) rank; (2) tie -> most central position (|2j-(k-m)| minimal, mirror-
+     * symmetric); (3) tie (mirror pair) -> smaller full canonical interleaved value. Writes the
+     * absolute occurrence index and the canonical orientation of that frame. **/
+    void choose_kmer_minimizer(const std::vector<kuint>& S, uint64_t start,
+                               uint64_t& occ_abs, orientation_t& orient) const
+    {
+        const uint64_t span {k - m};                                   // last minimizer position in the k-mer
+        // Build every candidate framing once. The rank is phi(canonical central m-mer) read with
+        // the SAME interleaved packing as the sliding window's minimizer_rank (via minimizer() on
+        // the canonicalized piece), so the ambiguous path and the fast path select identically — a
+        // non-ambiguous k-mer then gets the same frame whichever path handles it.
+        std::vector<Skmer<kuint>> fwd(span + 1);
+        std::vector<Skmer<kuint>> canon(span + 1);
+        std::vector<kuint> rank(span + 1);
+        for (uint64_t j {0}; j <= span; j++)
+        {
+            fwd[j] = build_skmer_from_nucleotides(S, start, start + k - 1, start + j);
+            canon[j] = fwd[j];
+            canonicalize(canon[j]);
+            rank[j] = phi(minimizer(canon[j]));
+        }
+        kuint best_rank {rank[0]};
+        for (uint64_t j {1}; j <= span; j++) best_rank = std::min(best_rank, rank[j]);
+        // (2) most central among minimal-rank positions, then (3) smaller full canonical value.
+        uint64_t best_j {span + 1};
+        uint64_t best_central {~uint64_t{0}};
+        for (uint64_t j {0}; j <= span; j++)
+        {
+            if (rank[j] != best_rank) continue;
+            const int64_t sd {static_cast<int64_t>(2 * j) - static_cast<int64_t>(span)};
+            const uint64_t d {static_cast<uint64_t>(sd < 0 ? -sd : sd)};
+            if (best_j > span || d < best_central
+                || (d == best_central && canon[j].m_pair < canon[best_j].m_pair))
+            {
+                best_central = d;
+                best_j = j;
+            }
+        }
+        occ_abs = start + best_j;
+        orient = (reverse_complement(fwd[best_j]).m_pair < fwd[best_j].m_pair) ? reverse_c : forward_c;
+    }
+
+    /** Re-derive the strand-invariant canonical frame of every k-mer in `sk`, then regroup
+     * consecutive k-mers that share the same minimizer occurrence and orientation into compact
+     * super-k-mers. Each emitted piece is canonical + phi-permuted (ready for the sorted list).
+     * Used only on the rare ambiguous super-k-mer; the common case takes the fast path. **/
+    void canonical_pieces(const Skmer<kuint>& sk, std::vector<Skmer<kuint>>& out) const
+    {
+        const std::vector<kuint> S {decode_to_nucleotides(sk)};
+        const uint64_t L {S.size()};
+        if (L < k) return;
+        const uint64_t nk {L - k + 1};
+        std::vector<uint64_t> occ(nk);
+        std::vector<uint8_t> orient(nk);                               // not vector<bool> (proxy refs)
+        for (uint64_t i {0}; i < nk; i++)
+        {
+            orientation_t o;
+            choose_kmer_minimizer(S, i, occ[i], o);
+            orient[i] = static_cast<uint8_t>(o);
+        }
+        uint64_t g0 {0};
+        for (uint64_t i {1}; i <= nk; i++)
+        {
+            const bool same {i < nk && occ[i] == occ[g0] && orient[i] == orient[g0]};
+            if (!same)
+            {
+                // group [g0, i-1]: nucleotides S[g0 .. (i-1)+k-1], shared minimizer at occ[g0].
+                // Put the piece in the orientation all its k-mers agreed on (orient[g0]) rather than
+                // re-canonicalizing the whole piece: with a palindrome (flank-decided) minimizer the
+                // whole-piece orientation can differ from the per-k-mer ones, which would store a
+                // k-mer in an orientation its isolated query never reproduces.
+                Skmer<kuint> piece {build_skmer_from_nucleotides(S, g0, (i - 1) + k - 1, occ[g0])};
+                if (orient[g0] == static_cast<uint8_t>(reverse_c))
+                    piece = reverse_complement(piece);
+                permute_minimizer_slot(piece);
+                out.push_back(piece);
+                g0 = i;
+            }
+        }
+    }
+
+
     /** Compare 2 kmers included in 2 skmers.
      * @param first_skmer First kmer is included in this skmer
      * @param first_kmer_pos Position of the fist kmer in the first skmer. 0 is the kmer that contains the whole prefix.

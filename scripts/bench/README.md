@@ -91,8 +91,8 @@ includes the per-bucket directory (`40 + 16·n_buckets` bytes, reported by
 
 ## Cross-tool comparison (current run)
 
-Single machine (`Intel Core Ultra 7 165H`), **single-thread**, sklib **v0.3.0** (bucketed
-`VSKMER_3` format, default `--buckets 4096`). Each cell is the full **FASTA → index** cost:
+Single machine (`Intel Core Ultra 7 165H`), **single-thread**, sklib **v0.4.2** (bucketed
+`VSKMER_4` format, default `--buckets 4096`). Each cell is the full **FASTA → index** cost:
 *sshash* includes BCALM2 unitig generation, *bqf* includes KMC s-mer counting. **Query** =
 `positive` workload (scattered, all-present), **1 thread**, peak RSS during the lookup. `bqf`
 is **approximate** (false positives). `cbl` aborts on input sequences shorter than `K`, so its
@@ -107,27 +107,27 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 ### k=15, m=7
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
 |---|---|--:|--:|--:|--:|--:|--:|
-| ecoli (4.6 Mbp) | **sklib** | 1.1 | 29 | 46.4 | 83.0 | 0.20 | 49 |
+| ecoli (4.6 Mbp) | **sklib** | 1.3 | 23 | 30.9 | 55.4 | 0.19 | 35 |
 |  | sshash | 1.6 | 44 | 9.5 | 17.0 | 0.06 | 13 |
 |  | sbwt | 2.5 | 91 | 6.9 | 12.4 | 0.09 | 36 |
 |  | bqf | 1.5 | 74 | 13.6 | 24.4 | 0.09 | 17 |
 |  | cbl | 1.2 | 150 | 21.0 | 37.6 | 0.22 | 135 |
-| yeast (12 Mbp) | **sklib** | 3.1 | 27 | 125.2 | 91.2 | 0.27 | 124 |
+| yeast (12 Mbp) | **sklib** | 3.5 | 20 | 83.4 | 60.8 | 0.25 | 85 |
 |  | sshash | 8.2 | 152 | 36.9 | 26.9 | 0.11 | 39 |
 |  | sbwt | 6.0 | 167 | 15.5 | 11.3 | 0.11 | 44 |
 |  | bqf | 3.2 | 139 | 25.2 | 18.3 | 0.10 | 28 |
 |  | cbl | 3.0 | 164 | 41.8 | 30.5 | 0.32 | 152 |
-| chr21 (40 Mbp) | **sklib** | 9.6 | 63 | 338.6 | 99.6 | 0.43 | 328 |
+| chr21 (40 Mbp) | **sklib** | 10.6 | 56 | 225.7 | 66.4 | 0.37 | 222 |
 |  | sshash | 18.6 | 431 | 151.9 | 44.7 | 0.18 | 149 |
 |  | sbwt | 13.1 | 441 | 36.7 | 10.8 | 0.13 | 64 |
 |  | bqf | 8.3 | 372 | 46.1 | 13.6 | 0.11 | 48 |
 |  | cbl | 9.5 | 243 | 91.3 | 26.9 | 0.49 | 184 |
-| celegans (100 Mbp) | **sklib** | 25.5 | 72 | 788.8 | 104.1 | 0.77 | 756 |
+| celegans (100 Mbp) | **sklib** | 26.7 | 65 | 525.8 | 69.4 | 0.64 | 509 |
 |  | sshash | 62.1 | 1013 | 428.3 | 56.5 | 0.33 | 413 |
 |  | sbwt | 33.0 | 1016 | 80.6 | 10.6 | 0.20 | 106 |
 |  | bqf | 18.6 | 846 | 83.9 | 11.1 | 0.14 | 84 |
 |  | cbl | 29.0 | 360 | 191.8 | 25.3 | 0.90 | 247 |
-| chr1 (230 Mbp) | **sklib** | 54.9 | 208 | 1548.9 | 110.8 | 1.26 | 1480 |
+| chr1 (230 Mbp) | **sklib** | 57.6 | 199 | 1032.6 | 73.9 | 0.98 | 991 |
 |  | sshash | 105.8 | 1654 | 1016.6 | 72.7 | 0.59 | 974 |
 |  | sbwt | 54.6 | 1862 | 147.8 | 10.6 | 0.23 | 170 |
 |  | bqf | 30.5 | 1920 | 83.9 | 6.0 | 0.13 | 84 |
@@ -136,27 +136,27 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 ### k=21, m=11
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
 |---|---|--:|--:|--:|--:|--:|--:|
-| ecoli (4.6 Mbp) | **sklib** | 1.0 | 27 | 21.2 | 37.2 | 0.09 | 25 |
+| ecoli (4.6 Mbp) | **sklib** | 1.0 | 23 | 14.2 | 24.8 | 0.10 | 19 |
 |  | sshash | 0.8 | 54 | 5.8 | 10.2 | 0.02 | 10 |
 |  | sbwt | 2.7 | 102 | 7.0 | 12.3 | 0.09 | 36 |
 |  | bqf | 1.6 | 72 | 22.0 | 38.8 | 0.07 | 25 |
 |  | cbl | 1.2 | 145 | 24.7 | 43.4 | 0.19 | 129 |
-| yeast (12 Mbp) | **sklib** | 2.6 | 25 | 59.2 | 41.1 | 0.20 | 61 |
+| yeast (12 Mbp) | **sklib** | 2.9 | 20 | 39.5 | 27.4 | 0.20 | 44 |
 |  | sshash | 1.7 | 93 | 15.7 | 10.9 | 0.06 | 19 |
 |  | sbwt | 6.6 | 198 | 16.1 | 11.2 | 0.14 | 44 |
 |  | bqf | 4.4 | 131 | 41.9 | 29.2 | 0.15 | 44 |
 |  | cbl | 2.9 | 170 | 53.7 | 37.4 | 0.35 | 156 |
-| chr21 (40 Mbp) | **sklib** | 8.2 | 61 | 195.2 | 47.7 | 0.28 | 191 |
+| chr21 (40 Mbp) | **sklib** | 9.3 | 55 | 130.1 | 31.8 | 0.28 | 130 |
 |  | sshash | 5.5 | 205 | 53.1 | 13.0 | 0.11 | 55 |
 |  | sbwt | 15.7 | 428 | 44.0 | 10.8 | 0.23 | 71 |
 |  | bqf | 12.3 | 342 | 79.7 | 19.5 | 0.17 | 80 |
 |  | cbl | 9.3 | 307 | 140.0 | 34.2 | 0.58 | 236 |
-| celegans (100 Mbp) | **sklib** | 23.6 | 70 | 628.1 | 55.1 | 0.48 | 603 |
+| celegans (100 Mbp) | **sklib** | 24.2 | 64 | 418.8 | 36.7 | 0.43 | 406 |
 |  | sshash | 17.8 | 524 | 159.1 | 14.0 | 0.18 | 156 |
 |  | sbwt | 49.1 | 1031 | 120.8 | 10.6 | 0.32 | 144 |
 |  | bqf | 34.5 | 794 | 285.2 | 25.0 | 0.28 | 276 |
 |  | cbl | 34.8 | 1154 | 363.7 | 31.9 | 1.94 | 973 |
-| chr1 (230 Mbp) | **sklib** | 50.4 | 206 | 1399.0 | 59.0 | 0.80 | 1336 |
+| chr1 (230 Mbp) | **sklib** | 54.7 | 197 | 932.5 | 39.3 | 0.65 | 896 |
 |  | sshash | 35.4 | 1069 | 363.6 | 15.3 | 0.30 | 351 |
 |  | sbwt | 88.0 | 1926 | 250.2 | 10.5 | 0.38 | 267 |
 |  | bqf | 66.7 | 1810 | 536.9 | 22.6 | 0.37 | 516 |
@@ -165,34 +165,34 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 ### k=31, m=15
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
 |---|---|--:|--:|--:|--:|--:|--:|
-| ecoli (4.6 Mbp) | **sklib** | 0.9 | 22 | 12.3 | 21.4 | 0.19 | 16 |
+| ecoli (4.6 Mbp) | **sklib** | 1.0 | 23 | 12.3 | 21.4 | 0.25 | 18 |
 |  | sshash | 0.5 | 36 | 4.1 | 7.1 | 0.05 | 8 |
 |  | sbwt | 2.9 | 182 | 7.0 | 12.3 | 0.16 | 36 |
 |  | bqf | 1.5 | 71 | 22.0 | 38.7 | 0.21 | 25 |
 |  | cbl | 1.0 | 152 | 36.9 | 64.9 | 0.24 | 130 |
-| yeast (12 Mbp) | **sklib** | 2.4 | 19 | 31.2 | 21.6 | 0.21 | 34 |
+| yeast (12 Mbp) | **sklib** | 2.7 | 19 | 31.2 | 21.6 | 0.28 | 36 |
 |  | sshash | 1.4 | 83 | 10.6 | 7.3 | 0.07 | 14 |
 |  | sbwt | 7.0 | 408 | 16.2 | 11.2 | 0.19 | 44 |
 |  | bqf | 4.1 | 130 | 41.9 | 29.0 | 0.29 | 44 |
 |  | cbl | 2.8 | 211 | 87.0 | 60.2 | 0.37 | 182 |
-| chr21 (40 Mbp) | **sklib** | 8.0 | 55 | 98.9 | 22.8 | 0.26 | 99 |
+| chr21 (40 Mbp) | **sklib** | 9.1 | 55 | 98.9 | 22.8 | 0.33 | 100 |
 |  | sshash | 3.5 | 136 | 38.0 | 8.8 | 0.11 | 40 |
 |  | sbwt | 18.4 | 1255 | 46.5 | 10.7 | 0.31 | 73 |
 |  | bqf | 12.5 | 342 | 79.7 | 18.4 | 0.32 | 80 |
 |  | cbl | 9.6 | 618 | 250.0 | 57.8 | 0.79 | 485 |
-| celegans (100 Mbp) | **sklib** | 21.3 | 64 | 276.7 | 23.5 | 0.33 | 268 |
+| celegans (100 Mbp) | **sklib** | 23.4 | 65 | 276.7 | 23.5 | 0.40 | 270 |
 |  | sshash | 11.2 | 369 | 97.9 | 8.3 | 0.15 | 97 |
 |  | sbwt | 54.6 | 1948 | 124.4 | 10.6 | 0.46 | 148 |
 |  | bqf | 34.5 | 794 | 285.2 | 24.3 | 0.48 | 276 |
 |  | cbl | 46.6 | 4976 | 673.8 | 57.3 | 5.68 | 4264 |
-| chr1 (230 Mbp) | **sklib** | 49.5 | 199 | 619.5 | 24.3 | 0.52 | 594 |
+| chr1 (230 Mbp) | **sklib** | 52.7 | 199 | 619.4 | 24.3 | 0.56 | 595 |
 |  | sshash | 26.5 | 735 | 246.7 | 9.7 | 0.23 | 240 |
 |  | sbwt | 103.1 | 1948 | 269.0 | 10.5 | 0.55 | 285 |
 |  | bqf | 66.9 | 1811 | 536.9 | 21.0 | 0.56 | 516 |
 |  | cbl | 102.7 | 9223 | 1448.5 | 56.8 | 9.28 | 7843 |
 
 **Reading.** sklib keeps the **lowest construction RAM in every cell** (≈3–9× below the best
-competitor on the big genomes — e.g. chr1 `k=21`: 206 MB vs 1069–1926 MB), and construction
+competitor on the big genomes — e.g. chr1 `k=21`: 198 MB vs 1069–1926 MB), and construction
 time is mid-pack (faster than sbwt/bqf, near sshash). The trade-offs are **index size** and
 **query**: as a sorted super-k-mer list (24 B/super-k-mer) it is far less compact than the
 exact dictionaries (sbwt ≈10–12 b/km, sshash 7–17 b/km) or the approximate filter (bqf),

@@ -174,19 +174,20 @@ public:
         }
 
         // Build the canonical, φ-permuted yield from the (already masked) super-k-mer in
-        // m_rator.m_yielded_skmer. Normal case: a single canonicalized+permuted piece. If
-        // the minimizer is an RC-palindrome, the contained k-mers may not share a canonical
-        // orientation, so split into per-k-mer canonical pieces and queue all but the first.
+        // m_rator.m_yielded_skmer.
         //
-        // LIMITATION (small minimizers): this only handles the RC-palindrome case. When a
-        // (non-palindromic) minimizer m-mer *repeats* within a k-mer's span -- common when m is
-        // tiny, since there are only 4^m distinct m-mers -- the forward and reverse-complement
-        // scans select different occurrences, so the super-k-mer decomposition is not strand
-        // invariant and a k-mer can be stored on one strand but queried on the other (false
-        // negative). The rate falls off sharply with m (frequent at m<=5, ~1e-5 by m=7, smaller
-        // beyond) and the k-mer *set* is still correct (only orientations differ), so it is not
-        // caught by set-equality checks. The CLI refuses m < MIN_SAFE_MINIMIZER (commands.cpp);
-        // a full fix would make minimizer-occurrence selection strand invariant.
+        // Fast path (the common case): when the minimizer occurs once in the super-k-mer span and
+        // is not an RC-palindrome, the whole super-k-mer is already each contained k-mer's
+        // strand-invariant canonical frame -- emit a single canonicalized+permuted piece.
+        //
+        // Ambiguous path: when the minimizer is an RC-palindrome (orientation not pinned) or
+        // repeats within the span (occurrence not pinned), the occurrence/orientation must be
+        // chosen strand-invariantly per k-mer, or a k-mer stored on one strand would be queried on
+        // the other (false negative). canonical_pieces() re-derives each k-mer's frame from its own
+        // nucleotides (minimal φ-rank; tie -> most central; tie -> smaller full interleaved value)
+        // and regroups consecutive same-frame k-mers into compact super-k-mers. Construction and
+        // query both reach this, so they stay consistent at any m (this is the v0.4.2 fix that
+        // retired the old m>=7 CLI guard).
         void finalize_and_yield()
         {
             m_split_pending.clear();
@@ -195,25 +196,18 @@ public:
             Skmer<kuint>& sk {m_rator.m_yielded_skmer};
             m_manip.canonicalize(sk); // raw canonical orientation (RC works on raw layout)
 
-            if (!m_manip.minimizer_is_rc_palindrome(m_manip.minimizer(sk)))
+            if (!m_manip.minimizer_is_ambiguous(sk))
             {
                 m_manip.permute_minimizer_slot(sk);
                 return;
             }
 
-            // RC-palindrome minimizer: emit each contained k-mer in its own canonical frame.
-            auto const bounds {m_manip.get_valid_kmer_bounds(sk)};
-            if (bounds.first > bounds.second) // defensive: no valid k-mer -> keep whole
+            // Ambiguous minimizer: re-frame per k-mer, strand-invariantly, then regroup.
+            m_manip.canonical_pieces(sk, m_split_pending);
+            if (m_split_pending.empty()) // defensive: no contained k-mer -> keep whole
             {
                 m_manip.permute_minimizer_slot(sk);
                 return;
-            }
-            for (uint64_t pos{bounds.first} ; pos<=bounds.second ; pos++)
-            {
-                Skmer<kuint> single {m_manip.get_skmer_of_kmer(sk, pos)};
-                m_manip.canonicalize(single);
-                m_manip.permute_minimizer_slot(single);
-                m_split_pending.push_back(single);
             }
             m_rator.m_yielded_skmer = m_split_pending[0];
             m_split_idx = 1;
