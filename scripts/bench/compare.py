@@ -43,7 +43,7 @@ def main():
     ap.add_argument("--km", default="21,11")
     ap.add_argument("--datasets", default="ecoli yeast celegans chr21 chr1")
     ap.add_argument("--threads", default="1")
-    ap.add_argument("--tools", default="sklib sshash sbwt cbl bqf")
+    ap.add_argument("--tools", default="sklib sshash sbwt cbl bqf fmsi")
     ap.add_argument("--since", default="", help="only show a dataset if its sklib construct row timestamp >= this")
     args = ap.parse_args()
     k, m = args.km.split(",")

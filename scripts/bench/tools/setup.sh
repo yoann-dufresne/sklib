@@ -82,7 +82,23 @@ setup_cbl() {
     record CBL_SRC "$TOOLS_SRC/CBL"   # K-specialized; wrapper builds per-k binaries
 }
 
-TOOLS=("$@"); [[ ${#TOOLS[@]} -eq 0 ]] && TOOLS=(bcalm sshash sbwt bqf cbl)
+# ---------------------------------------------------------------- fmsi (+ kmercamel)
+setup_fmsi() {
+    # FMSI indexes a masked superstring computed by KmerCamel (separate repo, NOT a submodule).
+    clone fmsi      https://github.com/OndrejSladky/fmsi      || return 1
+    clone kmercamel https://github.com/OndrejSladky/kmercamel || return 1
+    local fbin="$TOOLS_SRC/fmsi/fmsi" kbin="$TOOLS_SRC/kmercamel/kmercamel"
+    [[ -x "$fbin" ]] || { say "fmsi: building";      ( cd "$TOOLS_SRC/fmsi"      && run make -j"$JOBS" ); }
+    [[ -x "$kbin" ]] || { say "kmercamel: building"; ( cd "$TOOLS_SRC/kmercamel" && run make -j"$JOBS" ); }
+    [[ -x "$fbin" ]] && record FMSI_BIN      "$fbin" || say "fmsi: BUILD FAILED (see log)"
+    # KmerCamel needs GLPK (glpk.h / -lglpk) for the mask-optimization ILP; on Debian/Ubuntu
+    # this is 'apt install libglpk-dev' (needs sudo). Its Makefile's /opt/homebrew paths are
+    # harmless on Linux (gcc ignores missing -I/-L dirs).
+    [[ -x "$kbin" ]] && record KMERCAMEL_BIN "$kbin" \
+        || say "kmercamel: BUILD FAILED -- install GLPK ('apt install libglpk-dev'), then re-run; see log"
+}
+
+TOOLS=("$@"); [[ ${#TOOLS[@]} -eq 0 ]] && TOOLS=(bcalm sshash sbwt bqf cbl fmsi)
 : > "$ENV_FILE"
 for t in "${TOOLS[@]}"; do
     say "=== $t ==="

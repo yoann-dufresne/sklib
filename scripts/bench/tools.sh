@@ -57,7 +57,7 @@ _stub_version() { echo "n/a"; }
 _stub_construct() { warn "construct: '$1' wrapper not implemented yet"; return 1; }
 _stub_query()    { return 1; }
 
-for _t in sshash bqf cbl sbwt bcalm; do
+for _t in sshash bqf cbl sbwt bcalm fmsi; do
     eval "available_$_t() { _stub_unavail; }"
     eval "version_$_t()   { _stub_version; }"
     eval "construct_$_t() { _stub_construct $_t; }"

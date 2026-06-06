@@ -93,9 +93,10 @@ includes the per-bucket directory (`40 + 16·n_buckets` bytes, reported by
 
 Single machine (`Intel Core Ultra 7 165H`), **single-thread**, sklib **v0.4.2** (bucketed
 `VSKMER_4` format, default `--buckets 4096`). Each cell is the full **FASTA → index** cost:
-*sshash* includes BCALM2 unitig generation, *bqf* includes KMC s-mer counting. **Query** =
-`positive` workload (scattered, all-present), **1 thread**, peak RSS during the lookup. `bqf`
-is **approximate** (false positives). `cbl` aborts on input sequences shorter than `K`, so its
+*sshash* includes BCALM2 unitig generation, *bqf* includes KMC s-mer counting, *fmsi* includes
+the KmerCamel masked-superstring computation. **Query** = `positive` workload (scattered,
+all-present), **1 thread**, peak RSS during the lookup. `bqf` is **approximate** (false
+positives); `fmsi` is indexed without the optional kLCP (`-x`), its compact space point. `cbl` aborts on input sequences shorter than `K`, so its
 construct input is pre-filtered to drop sub-`K` fragments (k-mer-set-neutral; `dropshort`) — it
 then builds on chr1 too, using up to ~9 GB at `k=31`. Regenerate from `results.csv` with
 `python3 scripts/bench/compare.py` (tables) or `plots.py` (figures).
@@ -112,26 +113,31 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sbwt | 2.5 | 91 | 6.9 | 12.4 | 0.09 | 36 |
 |  | bqf | 1.5 | 74 | 13.6 | 24.4 | 0.09 | 17 |
 |  | cbl | 1.2 | 150 | 21.0 | 37.6 | 0.22 | 135 |
+|  | fmsi | 2.6 | 87 | 1.2 | 2.2 | 0.12 | 5 |
 | yeast (12 Mbp) | **sklib** | 3.5 | 20 | 83.4 | 60.8 | 0.25 | 85 |
 |  | sshash | 8.2 | 152 | 36.9 | 26.9 | 0.11 | 39 |
 |  | sbwt | 6.0 | 167 | 15.5 | 11.3 | 0.11 | 44 |
 |  | bqf | 3.2 | 139 | 25.2 | 18.3 | 0.10 | 28 |
 |  | cbl | 3.0 | 164 | 41.8 | 30.5 | 0.32 | 152 |
+|  | fmsi | 8.4 | 200 | 3.1 | 2.3 | 0.14 | 7 |
 | chr21 (40 Mbp) | **sklib** | 10.6 | 56 | 225.7 | 66.4 | 0.37 | 222 |
 |  | sshash | 18.6 | 431 | 151.9 | 44.7 | 0.18 | 149 |
 |  | sbwt | 13.1 | 441 | 36.7 | 10.8 | 0.13 | 64 |
 |  | bqf | 8.3 | 372 | 46.1 | 13.6 | 0.11 | 48 |
 |  | cbl | 9.5 | 243 | 91.3 | 26.9 | 0.49 | 184 |
+|  | fmsi | 31.5 | 795 | 8.7 | 2.6 | 0.18 | 13 |
 | celegans (100 Mbp) | **sklib** | 26.7 | 65 | 525.8 | 69.4 | 0.64 | 509 |
 |  | sshash | 62.1 | 1013 | 428.3 | 56.5 | 0.33 | 413 |
 |  | sbwt | 33.0 | 1016 | 80.6 | 10.6 | 0.20 | 106 |
 |  | bqf | 18.6 | 846 | 83.9 | 11.1 | 0.14 | 84 |
 |  | cbl | 29.0 | 360 | 191.8 | 25.3 | 0.90 | 247 |
+|  | fmsi | 89.6 | 1808 | 20.8 | 2.7 | 0.25 | 25 |
 | chr1 (230 Mbp) | **sklib** | 57.6 | 199 | 1032.6 | 73.9 | 0.98 | 991 |
 |  | sshash | 105.8 | 1654 | 1016.6 | 72.7 | 0.59 | 974 |
 |  | sbwt | 54.6 | 1862 | 147.8 | 10.6 | 0.23 | 170 |
 |  | bqf | 30.5 | 1920 | 83.9 | 6.0 | 0.13 | 84 |
 |  | cbl | 70.0 | 561 | 345.6 | 24.7 | 1.31 | 345 |
+|  | fmsi | 207.7 | 3925 | 40.4 | 2.9 | 0.36 | 44 |
 
 ### k=21, m=11
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
@@ -141,26 +147,31 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sbwt | 2.7 | 102 | 7.0 | 12.3 | 0.09 | 36 |
 |  | bqf | 1.6 | 72 | 22.0 | 38.8 | 0.07 | 25 |
 |  | cbl | 1.2 | 145 | 24.7 | 43.4 | 0.19 | 129 |
+|  | fmsi | 2.5 | 82 | 1.2 | 2.1 | 0.08 | 5 |
 | yeast (12 Mbp) | **sklib** | 2.9 | 20 | 39.5 | 27.4 | 0.20 | 44 |
 |  | sshash | 1.7 | 93 | 15.7 | 10.9 | 0.06 | 19 |
 |  | sbwt | 6.6 | 198 | 16.1 | 11.2 | 0.14 | 44 |
 |  | bqf | 4.4 | 131 | 41.9 | 29.2 | 0.15 | 44 |
 |  | cbl | 2.9 | 170 | 53.7 | 37.4 | 0.35 | 156 |
+|  | fmsi | 7.6 | 202 | 3.1 | 2.1 | 0.17 | 7 |
 | chr21 (40 Mbp) | **sklib** | 9.3 | 55 | 130.1 | 31.8 | 0.28 | 130 |
 |  | sshash | 5.5 | 205 | 53.1 | 13.0 | 0.11 | 55 |
 |  | sbwt | 15.7 | 428 | 44.0 | 10.8 | 0.23 | 71 |
 |  | bqf | 12.3 | 342 | 79.7 | 19.5 | 0.17 | 80 |
 |  | cbl | 9.3 | 307 | 140.0 | 34.2 | 0.58 | 236 |
+|  | fmsi | 26.6 | 591 | 9.3 | 2.3 | 0.21 | 13 |
 | celegans (100 Mbp) | **sklib** | 24.2 | 64 | 418.8 | 36.7 | 0.43 | 406 |
 |  | sshash | 17.8 | 524 | 159.1 | 14.0 | 0.18 | 156 |
 |  | sbwt | 49.1 | 1031 | 120.8 | 10.6 | 0.32 | 144 |
 |  | bqf | 34.5 | 794 | 285.2 | 25.0 | 0.28 | 276 |
 |  | cbl | 34.8 | 1154 | 363.7 | 31.9 | 1.94 | 973 |
+|  | fmsi | 86.5 | 1514 | 25.4 | 2.2 | 0.33 | 29 |
 | chr1 (230 Mbp) | **sklib** | 54.7 | 197 | 932.5 | 39.3 | 0.65 | 896 |
 |  | sshash | 35.4 | 1069 | 363.6 | 15.3 | 0.30 | 351 |
 |  | sbwt | 88.0 | 1926 | 250.2 | 10.5 | 0.38 | 267 |
 |  | bqf | 66.7 | 1810 | 536.9 | 22.6 | 0.37 | 516 |
 |  | cbl | 78.1 | 1842 | 758.5 | 32.0 | 2.95 | 1485 |
+|  | fmsi | 214.1 | 3192 | 54.3 | 2.3 | 0.58 | 59 |
 
 ### k=31, m=15
 | dataset | tool | c.t | c.RAM | idx (MB) | b/km | q.t | q.RAM |
@@ -170,37 +181,48 @@ index size on disk (MB) · **b/km** = bits per k-mer (payload) · **q.t** = quer
 |  | sbwt | 2.9 | 182 | 7.0 | 12.3 | 0.16 | 36 |
 |  | bqf | 1.5 | 71 | 22.0 | 38.7 | 0.21 | 25 |
 |  | cbl | 1.0 | 152 | 36.9 | 64.9 | 0.24 | 130 |
+|  | fmsi | 2.5 | 82 | 1.2 | 2.1 | 0.21 | 5 |
 | yeast (12 Mbp) | **sklib** | 2.7 | 19 | 31.2 | 21.6 | 0.28 | 36 |
 |  | sshash | 1.4 | 83 | 10.6 | 7.3 | 0.07 | 14 |
 |  | sbwt | 7.0 | 408 | 16.2 | 11.2 | 0.19 | 44 |
 |  | bqf | 4.1 | 130 | 41.9 | 29.0 | 0.29 | 44 |
 |  | cbl | 2.8 | 211 | 87.0 | 60.2 | 0.37 | 182 |
+|  | fmsi | 7.7 | 203 | 3.1 | 2.1 | 0.24 | 7 |
 | chr21 (40 Mbp) | **sklib** | 9.1 | 55 | 98.9 | 22.8 | 0.33 | 100 |
 |  | sshash | 3.5 | 136 | 38.0 | 8.8 | 0.11 | 40 |
 |  | sbwt | 18.4 | 1255 | 46.5 | 10.7 | 0.31 | 73 |
 |  | bqf | 12.5 | 342 | 79.7 | 18.4 | 0.32 | 80 |
 |  | cbl | 9.6 | 618 | 250.0 | 57.8 | 0.79 | 485 |
+|  | fmsi | 27.7 | 579 | 9.7 | 2.2 | 0.28 | 14 |
 | celegans (100 Mbp) | **sklib** | 23.4 | 65 | 276.7 | 23.5 | 0.40 | 270 |
 |  | sshash | 11.2 | 369 | 97.9 | 8.3 | 0.15 | 97 |
 |  | sbwt | 54.6 | 1948 | 124.4 | 10.6 | 0.46 | 148 |
 |  | bqf | 34.5 | 794 | 285.2 | 24.3 | 0.48 | 276 |
 |  | cbl | 46.6 | 4976 | 673.8 | 57.3 | 5.68 | 4264 |
+|  | fmsi | 84.9 | 1550 | 25.8 | 2.2 | 0.57 | 30 |
 | chr1 (230 Mbp) | **sklib** | 52.7 | 199 | 619.4 | 24.3 | 0.56 | 595 |
 |  | sshash | 26.5 | 735 | 246.7 | 9.7 | 0.23 | 240 |
 |  | sbwt | 103.1 | 1948 | 269.0 | 10.5 | 0.55 | 285 |
 |  | bqf | 66.9 | 1811 | 536.9 | 21.0 | 0.56 | 516 |
 |  | cbl | 102.7 | 9223 | 1448.5 | 56.8 | 9.28 | 7843 |
+|  | fmsi | 222.2 | 3414 | 57.5 | 2.3 | 0.85 | 62 |
 
 **Reading.** sklib keeps the **lowest construction RAM in every cell** (≈3–9× below the best
-competitor on the big genomes — e.g. chr1 `k=21`: 198 MB vs 1069–1926 MB), and construction
+competitor on the big genomes — e.g. chr1 `k=21`: 198 MB vs 1069–3192 MB), and construction
 time is mid-pack (faster than sbwt/bqf, near sshash). The trade-offs are **index size** and
 **query**: as a sorted super-k-mer list (24 B/super-k-mer) it is far less compact than the
-exact dictionaries (sbwt ≈10–12 b/km, sshash 7–17 b/km) or the approximate filter (bqf),
-though b/km improves sharply as `k−m` grows (longer super-k-mers → better compaction); and its
-query — now a **per-bucket dichotomic search** (no longer a linear scan) — still trails
-sshash/bqf in throughput and uses the most query RAM, because genome-wide `positive`/`random`
-workloads touch every bucket and so load most of the index (localized queries load only the
-buckets they hit).
+exact dictionaries (sbwt ≈10–12 b/km, sshash 7–17 b/km), **fmsi** (≈2.1–2.9 b/km — the most
+compact here, 2–5× below sbwt/sshash, via masked superstrings + the Masked BWT), or the
+approximate filter (bqf), though b/km improves sharply as `k−m` grows (longer super-k-mers →
+better compaction); and its query — now a **per-bucket dichotomic search** (no longer a linear
+scan) — still trails sshash/bqf in throughput and uses the most query RAM, because genome-wide
+`positive`/`random` workloads touch every bucket and so load most of the index (localized
+queries load only the buckets they hit).
+
+**fmsi** sits at the **opposite corner from sklib**: the smallest index by far (≈2 b/km) and
+very low query RAM, but the **highest construction RAM** (up to ~3.9 GB on chr1, ≈16–28× sklib
+and growing with genome size) and the slowest construction (greedy KmerCamel), since the
+masked-superstring step holds the whole k-mer set in memory.
 
 ## Competitors
 Build them once with `bash scripts/bench/tools/setup.sh` (clones + builds into
@@ -213,6 +235,7 @@ Build them once with `bash scripts/bench/tools/setup.sh` (clones + builds into
 | `sbwt` | exact membership | sanitized FASTA | `--add-reverse-complements`; default `plain-matrix` variant; k≤32. For SBWT's best *space*, rebuild with `-march=native` and set `SBWT_VARIANT=mef-matrix` (BMI2). |
 | `bqf` | **approximate** (false positives) | KMC s-mer dump | compiled per-(k,z); `BQF_S` holds the indexed s-mer size ≈constant across k (z=k−s, default s=18); stores s-mers, virtualizes k-mers |
 | `cbl` | exact set + set ops | sanitized FASTA | compiled per-K (**odd** K only); needs nightly Rust **and** `apt install libclang-dev libstdc++-12-dev`. ⚠ aborts on any sequence shorter than K, so the wrapper pre-filters sub-K records (`dropshort`) before building |
+| `fmsi` | exact membership (masked superstring + Masked BWT) | KmerCamel masked superstring | canonical (KmerCamel bidirectional default; no `-u`); k≤127, **any parity**. Two-stage build = `kmercamel compute -M` (max-ones mask) + `fmsi index`; `setup.sh` also clones/builds **KmerCamel** (separate repo). ⚠ KmerCamel needs `apt install libglpk-dev` (GLPK, for the mask-optimization ILP). Indexed `-x` (no kLCP) for the compact/fair space point; for accelerated streaming, drop `-x` and add query `-S`. |
 
 `bcalm` is infrastructure (unitig generation), not a benchmarked tool. Competitors are
 built once per `(dataset,k)` (they ignore sklib's `m` — see `uses_m_*` in `tools.sh`).
