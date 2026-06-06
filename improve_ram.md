@@ -1,10 +1,14 @@
 # Réduction de la RAM à la construction (`sskm construct`)
 
-> **⚠️ Mise à jour (format VSKMER_3, buckets persistés).** Depuis ce log, les buckets ne sont
-> **plus concaténés** en une liste unique : ils sont **persistés en sous-listes** dans le fichier
-> (format `VSKMER_3` avec répertoire de buckets), et la **requête route** chaque k-mer vers son
-> bucket puis ne charge que celui-ci (paresseux). L'affirmation « format de sortie inchangé /
-> `query`/`load` intacts » plus bas n'est donc **plus valable** ; voir `README.md` et le wiki.
+> **⚠️ Mise à jour (format VSKMER_4, buckets persistés, requête parallèle).** Depuis ce log, les
+> buckets ne sont **plus concaténés** en une liste unique : ils sont **persistés en sous-listes**
+> dans le fichier (format `VSKMER_4` avec répertoire de buckets), et la **requête route** chaque
+> k-mer vers son bucket puis ne charge que celui-ci (paresseux). Depuis, chaque enregistrement est
+> aussi **quotienté** (les `b = log2(buckets)` bits de poids fort du φ-minimizer, communs au bucket,
+> sont retirés) et stocké dans la **plus petite largeur d'entier** (`uint32`/`uint64`/`__uint128`)
+> qui convient ; et la **requête sur fichier est multi-thread** (`-t`, défaut 8). L'affirmation
+> « format de sortie inchangé / `query`/`load` intacts » plus bas n'est donc **plus valable** ; voir
+> `README.md`, le wiki, et **§7** ci-dessous.
 > Le reste de ce document reste un **log historique** de la réduction RAM à la construction (V0→V3).
 
 > **État (branche `dev`, fusionnée dans `main`).** La construction est passée d'un
@@ -34,7 +38,8 @@
 > Ce document liste désormais **ce qui reste à faire**. §0 résume le livré ;
 > §1 garde les invariants de correction (fondation des optimisations futures) ;
 > §2 décrit les nouvelles propositions ; §3 la validation ; §4 le statut ;
-> §5 le benchmark final ; §6 l'ordre φ (V3).
+> §5 le benchmark final ; §6 l'ordre φ (V3) ; §7 le format V4 (quotient + largeur) et la requête
+> parallèle.
 
 ---
 
@@ -269,3 +274,42 @@ exactement égal à KMC : 32 720 485 k-mers).
 
 ⇒ φ est repositionné comme optimisation de **compression + correction** (et RAM **sur les gros
 génomes répétitifs**), pas comme un gain RAM universel.
+
+---
+
+## 7. V4 — records quotientés + largeur d'entier sélectionnée, et requête parallèle
+
+**Quotient de préfixe minimizer + largeur runtime (format `VSKMER_4`).** Un bucket regroupe les
+super-k-mers partageant les `b = min(log2(buckets), 2m)` bits de poids fort du φ-minimizer ; ces bits
+sont **constants dans le bucket** (impliqués par l'id de bucket) et **retirés de chaque
+enregistrement** (quotienting, sans perte pour la requête : les bits retirés sont égaux pour tous les
+records du bucket). Un record ne porte donc plus que `2·(2k−m) − b` bits, stockés dans la **plus
+petite** des largeurs `uint32_t` / `uint64_t` / `__uint128_t` dont la paire (64 / 128 / 256 bits)
+suffit (`select_width_bytes`, `WidthDispatch.hpp`). La génération reste en pleine largeur (le
+minimizer entier pilote le bucketing et l'algo de colonnes) ; `truncate_skmer` rétrograde chaque
+record à l'écriture, et la requête tronque ses k-mers de la même façon (manipulateur quotient-aware
+`SkmerManipulator(k, m, b)`). Le header `VSKMER_4` ajoute `store_width` et `quotient_bits`.
+
+Effet mesuré : à `--buckets 4096`, `k ≤ 21` tombe en `uint32_t` ⇒ **index et RAM de requête −33 %**,
+débit mono-thread **+11–27 %** ; `k = 31` reste en `uint64_t` (parité). `--max-ram` (buckets
+adaptatifs, pas un préfixe en puissance de deux) garde la disposition **pleine largeur non
+quotientée** (`b = 0`). Les fichiers `VSKMER_3` / `VSKMER_2` restent lisibles (64 bits, `b = 0`).
+
+**Requête sur fichier multi-thread (`parallel_query`, `ParallelQuery.hpp`).** Le parallélisme (retiré
+en V2 pour une baseline propre) est **réintroduit au niveau fichier**, bibliothèque standard
+uniquement (aucune dépendance TBB) : 1 producteur lit / route / tronque l'entrée en lots **dans
+l'ordre d'entrée** sur une file bornée ; `n_threads − 1` consommateurs interrogent le lecteur partagé
+(thread-safe — chaque bucket chargé une fois sous verrou, hits sans verrou) en réutilisant un buffer
+de résultat (`query_into`) ; un `OrderedSink` réémet les lots **dans l'ordre d'entrée**. Sortie
+**byte-identique** au séquentiel, ~**3×** plus rapide sur charges réelles ; la recherche dichotomique
+reste le coût dominant. `-t 1` (et la voie séquence positionnelle) utilise `sequential_query`. CLI :
+`-t/--threads`, défaut 8.
+
+**Correction (v0.4.2) — cadrage par k-mer invariant par brin.** Indépendant du format : quand le
+minimizer est **ambigu** (palindrome reverse-complement, ou **répété** dans la fenêtre), le choix
+d'occurrence « leftmost » n'est pas symétrique-miroir → un k-mer stocké sur un brin pouvait être
+recadré à une autre colonne lors d'une requête sur l'autre brin (faux négatif, fréquent à petit `m`,
+~1e-5 à `m = 7`). `finalize_and_yield` recadre chaque k-mer ambigu par **φ-rang → plus central →
+plus petite valeur canonique** (`canonical_pieces` / `choose_kmer_minimizer`). Requêtes **exactes à
+tout `m`** ⇒ l'ancien garde `m ≥ 7` (`MIN_SAFE_MINIMIZER`) est supprimé. Format inchangé
+(`VSKMER_4`), mais **reconstruire** tout index antérieur à v0.4.2 (rares k-mers ambigus mal cadrés).

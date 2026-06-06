@@ -10,7 +10,9 @@
 - [X] QUERY A STREAM OF KMERS FROM THE LIST
 - [X] UPDATE QUERY STRATEGY FOR CACHE LOCALITY (bucketed routing + lazy per-bucket load)
 - [ ] ADD UNIQUENESS AFTER K-MER COLUMN SORTING
-- [ ] PARELLALIZE QUERY ON MULTIPLE CORES (deferred — sklib is sequential by design for now)
+- [X] PARALLELIZE QUERY ON MULTIPLE CORES (file -i path: std::thread producer/consumer, -t/--threads default 8, output in input order, byte-identical to sequential — ParallelQuery.hpp)
+- [X] BUCKETED VSKMER_4 FORMAT: per-record minimizer-prefix quotienting + runtime-selected integer width (uint32/uint64/uint128)
+- [X] STRAND-INVARIANT PER-K-MER FRAMING (v0.4.2): exact queries at any m; removed the m>=7 minimizer guard
 - [ ] CI/CD WITH GITHUB ACTIONS
 - [ ] DIFF BETWEEN 2 PRECOMPUTED LISTS
 - [ ] MERGE OF 2 PRECOMPUTED LISTS
