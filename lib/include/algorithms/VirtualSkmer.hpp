@@ -259,6 +259,19 @@ inline void search_kmers_in_span_into(
             mean = (uint64_t)new_pos;
         }
 
+        // Software-prefetch the two binary-search children of `mean` for the priority offset.
+        // The next probe is (almost always) one of them, so issuing the record loads now hides
+        // their memory latency: at large N / long-record workloads the bucket working set spills
+        // the caches and each probe is otherwise an L3 miss (the dominant remaining query cost).
+        {
+            const int64_t plo {binary_search_boundaries[current_priority_offset].first};
+            const int64_t phi {binary_search_boundaries[current_priority_offset].second};
+            if (plo <= phi) {
+                __builtin_prefetch(&list[(plo + mean) >> 1], 0, 1);
+                __builtin_prefetch(&list[(mean + phi) >> 1], 0, 1);
+            }
+        }
+
         // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
         searchable_position_count = km::sortedlist::util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
 
