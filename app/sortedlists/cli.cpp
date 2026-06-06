@@ -109,6 +109,42 @@ CLIResult parse_cli(int argc, char** argv) {
         result.query = query_opts;
     });
 
+    // -----------------------
+    // setop subcommand
+    // -----------------------
+    auto setop = app.add_subcommand("setop",
+        "Set operations between two sorted skmer lists A and B. Both must be built with the same k, m "
+        "and --buckets. diff is asymmetric: A \\ B.");
+
+    SetOpOptions setop_opts;
+
+    setop->add_option("--op", setop_opts.op,
+        "Operation: intersection | union | diff | intersection_size | union_size | diff_size. "
+        "The *_size variants print only the cardinality and never materialize a list.")
+        ->required()
+        ->check(CLI::IsMember({"intersection", "union", "diff",
+                               "intersection_size", "union_size", "diff_size"}));
+
+    setop->add_option("-a,--list-a", setop_opts.list_a,
+        "First sorted skmer list (A).")->required();
+
+    setop->add_option("-b,--list-b", setop_opts.list_b,
+        "Second sorted skmer list (B).")->required();
+
+    setop->add_option("-o,--output", setop_opts.output_file,
+        "Output sorted skmer list for the result (required for intersection/union/diff; "
+        "ignored by the *_size variants, which print a count to stdout).");
+
+    setop->footer(
+        "Examples:\n"
+        "  sskm setop --op intersection -a a.sskm -b b.sskm -o inter.sskm\n"
+        "  sskm setop --op diff_size -a a.sskm -b b.sskm\n"
+    );
+
+    setop->callback([&]() {
+        result.setop = setop_opts;
+    });
+
     app.require_subcommand(true);
     // -----------------------
     try {
@@ -126,6 +162,17 @@ CLIResult parse_cli(int argc, char** argv) {
         }
         if(!query_opts.sequence && !query_opts.input_file) {
             throw CLI::ValidationError("Provide a sequence or -i");
+        }
+    }
+
+    // -----------------------
+    // setop subcommand
+    // -----------------------
+    if (result.setop) {
+        const bool is_size = setop_opts.op.size() > 5 &&
+            setop_opts.op.compare(setop_opts.op.size() - 5, 5, "_size") == 0;
+        if (!is_size && !setop_opts.output_file) {
+            throw CLI::ValidationError("setop " + setop_opts.op + " materializes a list; provide -o/--output");
         }
     }
 

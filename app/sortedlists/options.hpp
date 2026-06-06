@@ -26,3 +26,12 @@ struct QueryOptions {
     std::optional<std::string> sequence;
     unsigned int threads = 8;
 };
+
+struct SetOpOptions {
+    // One of: intersection, union, diff, intersection_size, union_size, diff_size.
+    // diff is asymmetric: A \ B (k-mers of A absent from B).
+    std::string op;
+    std::string list_a;                      // -a/--list-a
+    std::string list_b;                      // -b/--list-b
+    std::optional<std::string> output_file;  // -o/--output (required for the materializing ops)
+};

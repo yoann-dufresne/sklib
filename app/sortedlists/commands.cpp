@@ -14,6 +14,7 @@
 #include <algorithms/VirtualSkmer.hpp>
 #include <algorithms/ParallelQuery.hpp>
 #include <algorithms/SortedSkmerListBuilder.hpp>
+#include <algorithms/SetOperations.hpp>
 #include <algorithms/WidthDispatch.hpp>
 
 // Parse a human size like "2G", "512M", "4096K", or a plain byte count.
@@ -80,6 +81,58 @@ int run_construct(const ConstructOptions& opts) {
             km::sortedlist::dispatch_width_bytes(store_w, [&]<typename store>() {
                 km::sortedlist::build_sorted_list<gen, store>(params, b);
             });
+        });
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return 1;
+    }
+
+    return 0;
+}
+
+int run_setop(const SetOpOptions& opts) {
+    // Peek both headers to learn k/m and the stored record width before instantiating the readers.
+    // Both lists share parameters (set_operations re-validates k/m/buckets), so a single width
+    // dispatch on the common store width suffices — the merge runs entirely at that width, never
+    // parsing new sequences, so no generation width is needed.
+    km::sortedlist::ListHeaderInfo ha, hb;
+    try {
+        ha = km::sortedlist::read_list_header(opts.list_a);
+        hb = km::sortedlist::read_list_header(opts.list_b);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return 1;
+    }
+    if (ha.store_width_bytes != hb.store_width_bytes) {
+        std::cerr << "set operation: lists store records at different widths ("
+                  << ha.store_width_bytes << " vs " << hb.store_width_bytes
+                  << " bytes); rebuild both with identical k/m/--buckets" << std::endl;
+        return 1;
+    }
+    const uint64_t store_w = ha.store_width_bytes;
+
+    const bool is_size = opts.op.size() > 5 &&
+        opts.op.compare(opts.op.size() - 5, 5, "_size") == 0;
+
+    try {
+        km::sortedlist::dispatch_width_bytes(store_w, [&]<typename store>() {
+            auto A = km::sortedlist::BucketedSkmerListReader<store>::open(opts.list_a);
+            auto B = km::sortedlist::BucketedSkmerListReader<store>::open(opts.list_b);
+
+            if (opts.op == "intersection_size") {
+                std::cout << km::sortedlist::intersection_size<store>(A, B) << std::endl;
+            } else if (opts.op == "union_size") {
+                std::cout << km::sortedlist::union_size<store>(A, B) << std::endl;
+            } else if (opts.op == "diff_size") {
+                std::cout << km::sortedlist::diff_size<store>(A, B) << std::endl;
+            } else {
+                const std::string& out = *opts.output_file;
+                uint64_t n {0};
+                if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out);
+                else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out);
+                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out);
+                std::cerr << opts.op << ": wrote " << n << " k-mers to " << out << std::endl;
+            }
         });
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;

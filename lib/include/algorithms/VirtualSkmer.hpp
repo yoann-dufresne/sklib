@@ -374,8 +374,11 @@ class SortedVirtualSkmerList {
 
     public:
 
-    // Constructor with manipulator
-    SortedVirtualSkmerList(uint64_t k, uint64_t m) : m_manip(k, m) {}
+    // Constructor with manipulator. `b` (quotient bits) is forwarded to the manipulator so the
+    // virtual-skmer build can re-compact records already truncated to a quotiented storage width
+    // (b>0): generate_sorted_list_from_enumeration then drives kmer_compare/get_skmer_of_kmer on the
+    // truncated masks. b defaults to 0 (full-width, unchanged behaviour for every existing caller).
+    SortedVirtualSkmerList(uint64_t k, uint64_t m, uint64_t b = 0) : m_manip(k, m, b) {}
 
     void print_list() const{
         km::sortedlist::util::print_vector(m_skmer_list);
@@ -1152,6 +1155,23 @@ public:
     uint64_t m() const { return m_manip.m; }
     uint64_t n_buckets() const { return m_n_buckets; }
     uint64_t quotient_bits() const { return m_quotient_bits; }
+
+    // Set-operation support: a merge walks both lists bucket by bucket, so it needs the same lazy,
+    // cached per-bucket span the query path uses (load_bucket wraps the private loader) plus the
+    // directory entries to assemble the output file. bucket_count/bucket_lower are the on-disk
+    // {count, mini_lower_bound} of bucket `b`; with matching construction parameters the two lists'
+    // directories are identical, which set_operations validates before merging.
+    const std::vector<Skmer<kuint>>& load_bucket(uint64_t b) { return bucket(b); }
+    uint64_t bucket_count(uint64_t b) const { return m_count[b]; }
+    uint64_t bucket_lower(uint64_t b) const { return m_lower[b]; }
+
+    // Drop bucket `b`'s cached sub-list so a one-pass consumer that touches every bucket once (a set
+    // operation) keeps only the buckets in flight resident instead of the whole list. NOT thread-safe
+    // and meant for sequential batch use only: it races with the lock-free cache-hit path of bucket().
+    void release_bucket(uint64_t b) {
+        std::vector<Skmer<kuint>>().swap(m_cache[b]);
+        m_loaded[b].store(0, std::memory_order_relaxed);
+    }
 
     // Bucket id whose minimizer interval contains the given FULL φ-permuted minimizer value.
     // m_lower is strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right
