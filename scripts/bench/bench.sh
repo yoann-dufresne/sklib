@@ -49,7 +49,7 @@ BUCKETS="${BUCKETS:-}"   # sklib --buckets (empty => tool default 4096); used by
 OUT="$BENCH_REPO_ROOT/scripts/out/bench"
 QDIR="$OUT/queries"
 WORK="$OUT/work"
-CSV="$OUT/results.csv"
+CSV="${CSV:-$OUT/results.csv}"   # override to route a run (e.g. a before/after build) to its own file
 mkdir -p "$QDIR" "$WORK"
 
 need_tools kmc kmc_tools /usr/bin/time python3 curl gzip awk sort taskset
@@ -61,7 +61,7 @@ CSV_HEADER="timestamp,host,cpu,commit,tool,tool_version,dataset,dataset_bp,disti
 
 HOST="$(hostname)"
 CPU="$(csv_escape "$(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)")"
-COMMIT="$(git -C "$BENCH_REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo NA)"
+COMMIT="${COMMIT:-$(git -C "$BENCH_REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo NA)}"
 NPROC="$(nproc)"
 
 emit_row() {

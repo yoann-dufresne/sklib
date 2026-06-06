@@ -171,9 +171,11 @@ def bincount(path):
 def binheadersize(path):
     # Byte size of the on-disk header (everything before the skmer payload), so callers can
     # compute the true payload size. VSKMER_2: magic+k+m+count = 32 B. VSKMER_3 adds
-    # n_buckets(8) + a per-bucket directory of 16 B each.
+    # n_buckets(8) + a per-bucket directory of 16 B each (40 + 16*n_buckets). VSKMER_4 also
+    # records store_width(8) + quotient_bits(8) before the directory (56 + 16*n_buckets).
     V2 = 0x56534B4D45525F32  # "VSKMER_2"
     V3 = 0x56534B4D45525F33  # "VSKMER_3"
+    V4 = 0x56534B4D45525F34  # "VSKMER_4"
     with open(path, "rb") as f:
         hdr = f.read(40)
     if len(hdr) < 32:
@@ -181,11 +183,12 @@ def binheadersize(path):
     magic = struct.unpack("<Q", hdr[:8])[0]
     if magic == V2:
         print(32)
-    elif magic == V3:
+    elif magic in (V3, V4):
         if len(hdr) < 40:
-            sys.exit("file too short to hold a VSKMER_3 header: " + path)
+            sys.exit("file too short to hold a bucketed VirtualSkmer header: " + path)
         n_buckets = struct.unpack("<Q", hdr[32:40])[0]
-        print(40 + 16 * n_buckets)
+        base = 40 if magic == V3 else 56
+        print(base + 16 * n_buckets)
     else:
         sys.exit("unknown VirtualSkmer magic in: " + path)
 

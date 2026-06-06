@@ -43,8 +43,8 @@ SELFQUERY_BP="${SELFQUERY_BP:-10000}"
 SEED="${SEED:-1234}"
 KEEP="${KEEP:-0}"
 
-REL_BIN="$REPO_ROOT/build/bin/sskm"
-DBG_BIN="$REPO_ROOT/build-debug/bin/sskm"
+REL_BIN="${REL_BIN:-$REPO_ROOT/build/bin/sskm}"
+DBG_BIN="${DBG_BIN:-$REPO_ROOT/build-debug/bin/sskm}"
 HELPER="$SCRIPT_DIR/e2e_helpers.py"
 # tests/sequences_2_fa.sh is a bash `while read` loop -- far too slow for the ~30M
 # skmer lines a human chromosome produces -- so we wrap lines into FASTA with awk.
@@ -284,9 +284,10 @@ run_one() {
     local acount fsize sz
     acount=$(head -1 "$ascii" | awk '{print $3}')
     fsize=$(stat -c%s "$sskm")
-    if [[ "$nskmers" == "$acount" ]] && awk "BEGIN{exit !(($fsize-32)%$nskmers==0)}"; then
-        sz=$(( (fsize-32)/nskmers ))
-        ok "serialization: binary count == ASCII count == $nskmers (sizeof Skmer=${sz}B)"
+    local bhdr; bhdr=$(python3 "$HELPER" binheadersize "$sskm" 2>/dev/null || echo 32)
+    if [[ "$nskmers" == "$acount" ]] && awk "BEGIN{exit !(($fsize-$bhdr)%$nskmers==0)}"; then
+        sz=$(( (fsize-bhdr)/nskmers ))
+        ok "serialization: binary count == ASCII count == $nskmers (sizeof Skmer=${sz}B, header=${bhdr}B)"
     else
         bad "serialization: count mismatch (binary=$nskmers ascii=$acount filesize=$fsize)"
     fi

@@ -41,6 +41,10 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER = 0x56534B4D45525F32ULL; // "VSKMER
 // list is split into minimizer-prefix buckets, each a separately queryable sub-list. A V2
 // file stays readable as a single bucket spanning the whole list (see load() / the reader).
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V3 = 0x56534B4D45525F33ULL; // "VSKMER_3" in ASCII
+// Bumped to "VSKMER_4" when records became width-selectable and minimizer-prefix quotiented: the
+// header now carries the record integer width (store_width, in bytes: 4/8/16) and the quotient bit
+// count b (top-b φ-minimizer bits dropped, implied by the bucket id). V2/V3 read as 8-byte, b=0.
+constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V4 = 0x56534B4D45525F34ULL; // "VSKMER_4" in ASCII
 constexpr uint64_t MAX_POSSIBLE_KMERS = 64;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
@@ -807,15 +811,21 @@ public:
             return outFile.close();
         }
 
-        // VSKMER_3 header with a single bucket covering the whole list (lower bound 0).
-        // Written inline with no seek, so non-seekable targets like /dev/stdout still work.
+        // VSKMER_4 header with a single bucket covering the whole list (lower bound 0). The record
+        // width (this kuint) is recorded so the query side re-selects it; the in-RAM path never
+        // quotients, so b = 0. Written inline with no seek, so non-seekable targets like
+        // /dev/stdout still work.
         const uint64_t count = list.size();
         const uint64_t n_buckets = 1;
-        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3), sizeof(uint64_t));
+        const uint64_t store_width = sizeof(kuint);
+        const uint64_t quotient_bits = 0;
+        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.k), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.m), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&store_width), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&quotient_bits), sizeof(uint64_t));
         const BucketDirEntry only{0, count};
         outFile.write(reinterpret_cast<const char*>(&only), sizeof(BucketDirEntry));
 
@@ -835,14 +845,16 @@ public:
         return outFile.close();
     }
 
-    // ---- Incremental binary serialization (VSKMER_3, bucketed) ----
+    // ---- Incremental binary serialization (VSKMER_4, bucketed) ----
     // Streams the payload out one minimizer bucket at a time without ever holding the whole
-    // list in RAM. Header layout: ENDIANNESS(8) + k(8) + m(8) + count(8) + n_buckets(8), then
-    // the per-bucket directory (n_buckets × BucketDirEntry), then the raw Skmer payload in
-    // bucket-id order. The total count and the directory are unknown when the header is
-    // written, so reserve them and patch at the end. Requires a seekable (regular) file.
-    static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t);     // after endianness, k, m
-    static constexpr std::streamoff DIRECTORY_OFFSET = 5 * sizeof(uint64_t); // after endianness, k, m, count, n_buckets
+    // list in RAM. Header layout: MAGIC(8) + k(8) + m(8) + count(8) + n_buckets(8) +
+    // store_width(8) + quotient_bits(8), then the per-bucket directory (n_buckets ×
+    // BucketDirEntry), then the raw Skmer<store> payload in bucket-id order. The total count and
+    // the directory are unknown when the header is written, so reserve them and patch at the end.
+    // Requires a seekable (regular) file.
+    static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t);     // after magic, k, m
+    // after magic, k, m, count, n_buckets, store_width, quotient_bits
+    static constexpr std::streamoff DIRECTORY_OFFSET = 7 * sizeof(uint64_t);
 
     // Byte size of the header (everything before the skmer payload) for a bucket count.
     static std::streamoff header_bytes(uint64_t n_buckets) {
@@ -850,12 +862,18 @@ public:
                static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry));
     }
 
-    static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count, uint64_t n_buckets) {
-        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3), sizeof(uint64_t));
+    // store_width = record integer width in bytes (sizeof(kuint)); quotient_bits = b (top-b
+    // φ-minimizer bits dropped from each record, implied by the bucket id).
+    static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count,
+                             uint64_t n_buckets, uint64_t store_width = sizeof(kuint),
+                             uint64_t quotient_bits = 0) {
+        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&k), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&m), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&store_width), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&quotient_bits), sizeof(uint64_t));
         // Reserve the directory; patch_directory() fills it once per-bucket counts are known.
         const std::vector<BucketDirEntry> placeholder(n_buckets, BucketDirEntry{0, 0});
         if (n_buckets)
@@ -966,12 +984,14 @@ public:
         // Accept both VSKMER_2 (single global list) and VSKMER_3 (bucketed). load() returns
         // the whole concatenated list either way (it ignores the bucket directory); the lazy
         // per-bucket reader lives in BucketedSkmerListReader.
+        const bool is_v4 = (read_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4);
         const bool is_v3 = (read_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3);
         const bool is_v2 = (read_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER);
-        if (!is_v2 && !is_v3) {
+        if (!is_v2 && !is_v3 && !is_v4) {
             uint64_t swapped_endianess_int = km::sortedlist::util::swap_endian(read_endianess_int);
             if (swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER ||
-                swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3) {
+                swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3 ||
+                swapped_endianess_int == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4) {
                 throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
             } else {
                 throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
@@ -995,8 +1015,28 @@ public:
             throw std::runtime_error("Error reading count from file: " + filename);
         }
 
-        if (is_v3) {
+        if (is_v4) {
+            // Skip n_buckets + width/quotient + the per-bucket directory; we read the full payload
+            // below. load() returns one concatenated globally-sorted list, which only holds for a
+            // non-quotiented file (b==0); a quotiented list must be queried per-bucket.
+            uint64_t n_buckets, store_width, quotient_bits;
+            inFile.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
+            inFile.read(reinterpret_cast<char*>(&store_width), sizeof(uint64_t));
+            inFile.read(reinterpret_cast<char*>(&quotient_bits), sizeof(uint64_t));
+            if (inFile.fail())
+                throw std::runtime_error("Error reading V4 header from file: " + filename);
+            if (store_width != sizeof(kuint))
+                throw std::runtime_error("Record width mismatch: file stores " + std::to_string(store_width) +
+                                         "-byte skmers but load() was instantiated for " + std::to_string(sizeof(kuint)));
+            if (quotient_bits != 0)
+                throw std::runtime_error("load() cannot read a quotiented list (b=" + std::to_string(quotient_bits) +
+                                         ") as one global list; query it via BucketedSkmerListReader");
+            inFile.seekg(static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry)),
+                         std::ios::cur);
+        } else if (is_v3) {
             // Skip n_buckets + the per-bucket directory; we read the full payload below.
+            if (sizeof(kuint) != 8)
+                throw std::runtime_error("VSKMER_3 files hold 64-bit records; load with kuint=uint64_t");
             uint64_t n_buckets;
             inFile.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
             if (inFile.fail()) {
@@ -1004,6 +1044,10 @@ public:
             }
             inFile.seekg(static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry)),
                          std::ios::cur);
+        } else {
+            // V2: no n_buckets, no directory; 64-bit records only.
+            if (sizeof(kuint) != 8)
+                throw std::runtime_error("VSKMER_2 files hold 64-bit records; load with kuint=uint64_t");
         }
 
         // Read the skmer data
@@ -1039,12 +1083,14 @@ public:
         if (in.fail())
             throw std::runtime_error("Error reading magic number from file: " + filename);
 
+        const bool is_v4 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4);
         const bool is_v3 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3);
         const bool is_v2 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER);
-        if (!is_v2 && !is_v3) {
+        if (!is_v2 && !is_v3 && !is_v4) {
             const uint64_t swapped = km::sortedlist::util::swap_endian(magic);
             if (swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER ||
-                swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3)
+                swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3 ||
+                swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4)
                 throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
             throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
         }
@@ -1058,7 +1104,27 @@ public:
 
         std::vector<BucketDirEntry> dir;
         std::streamoff payload_start;
-        if (is_v3) {
+        uint64_t quotient_bits = 0;
+        if (is_v4) {
+            uint64_t n_buckets, store_width;
+            in.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
+            in.read(reinterpret_cast<char*>(&store_width), sizeof(uint64_t));
+            in.read(reinterpret_cast<char*>(&quotient_bits), sizeof(uint64_t));
+            if (in.fail())
+                throw std::runtime_error("Error reading V4 header from file: " + filename);
+            if (store_width != sizeof(kuint))
+                throw std::runtime_error("Record width mismatch: file stores " + std::to_string(store_width) +
+                                         "-byte skmers but the reader was instantiated for " + std::to_string(sizeof(kuint)));
+            dir.resize(n_buckets);
+            if (n_buckets)
+                in.read(reinterpret_cast<char*>(dir.data()),
+                        static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
+            if (in.fail())
+                throw std::runtime_error("Error reading bucket directory from file: " + filename);
+            payload_start = VirtualSkmerSerializer<kuint>::header_bytes(n_buckets);
+        } else if (is_v3) {
+            if (sizeof(kuint) != 8)
+                throw std::runtime_error("VSKMER_3 files hold 64-bit records; open with kuint=uint64_t");
             uint64_t n_buckets;
             in.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
             if (in.fail())
@@ -1069,42 +1135,69 @@ public:
                         static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
             if (in.fail())
                 throw std::runtime_error("Error reading bucket directory from file: " + filename);
-            payload_start = VirtualSkmerSerializer<kuint>::header_bytes(n_buckets);
+            // V3 directory begins after magic,k,m,count,n_buckets (5 × u64) — not the V4 header size.
+            payload_start = static_cast<std::streamoff>(5 * sizeof(uint64_t)) +
+                            static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry));
         } else {
+            if (sizeof(kuint) != 8)
+                throw std::runtime_error("VSKMER_2 files hold 64-bit records; open with kuint=uint64_t");
             dir.push_back(BucketDirEntry{0, count});
             payload_start = static_cast<std::streamoff>(4 * sizeof(uint64_t));
         }
 
-        return BucketedSkmerListReader(file_k, file_m, std::move(in), std::move(dir), payload_start);
+        return BucketedSkmerListReader(file_k, file_m, quotient_bits, std::move(in), std::move(dir), payload_start);
     }
 
     uint64_t k() const { return m_manip.k; }
     uint64_t m() const { return m_manip.m; }
     uint64_t n_buckets() const { return m_n_buckets; }
+    uint64_t quotient_bits() const { return m_quotient_bits; }
 
-    // Bucket id whose minimizer interval contains the query's φ-permuted minimizer. m_lower is
-    // strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right bucket.
-    // Const and touches only immutable routing state, so it is safe to call concurrently (the
-    // parallel query producer uses it to bucketize queries before handing them to consumers).
-    uint64_t bucket_of(const Skmer<kuint>& query) const {
+    // Bucket id whose minimizer interval contains the given FULL φ-permuted minimizer value.
+    // m_lower is strictly increasing with m_lower[0] == 0, so upper_bound() - 1 lands on the right
+    // bucket. Const and touches only immutable routing state, so it is safe to call concurrently
+    // (the parallel query producer uses it to bucketize queries before handing them to consumers).
+    uint64_t bucket_of_phi_min(uint64_t phi_min) const {
         if (m_n_buckets <= 1) return 0;
-        const uint64_t mini = static_cast<uint64_t>(m_manip.minimizer(query));
-        const auto it = std::upper_bound(m_lower.begin(), m_lower.end(), mini);
+        const auto it = std::upper_bound(m_lower.begin(), m_lower.end(), phi_min);
         return static_cast<uint64_t>(it - m_lower.begin()) - 1;
     }
 
-    // Look up every k-mer of `query`, restricted to its bucket's sub-list (loaded on demand).
+    // Bucket id for a FULL (un-truncated) skmer — its minimizer slot still carries all 2m bits, so
+    // routing is exact even on a quotiented list. (A truncated record has lost the top-b bits and
+    // must be routed via bucket_of_phi_min with the full minimizer computed before truncation.)
+    uint64_t bucket_of(const Skmer<kuint>& query) const {
+        return bucket_of_phi_min(static_cast<uint64_t>(m_manip.minimizer(query)));
+    }
+
+    // Look up every k-mer of `query` (a FULL, un-truncated skmer), restricted to its bucket's
+    // sub-list (loaded on demand). Routes on the full minimizer, then down-converts the query to
+    // the stored (quotiented) representation before searching. With b == 0 the truncation is a
+    // width-preserving copy, so this matches the pre-quotient behaviour exactly.
     std::vector<uint8_t> query_skmer(const Skmer<kuint>& query) {
-        const std::vector<Skmer<kuint>>& span = bucket(bucket_of(query));
+        const uint64_t bid {bucket_of(query)};
+        const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
+        const std::vector<Skmer<kuint>>& span = bucket(bid);
         return km::sortedlist::search_kmers_in_span<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), query);
+            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc);
     }
 
     // Like query_skmer but writes flags into `out`, reusing its capacity (no per-query allocation).
     void query_skmer_into(const Skmer<kuint>& query, std::vector<uint8_t>& out) {
-        const std::vector<Skmer<kuint>>& span = bucket(bucket_of(query));
+        const uint64_t bid {bucket_of(query)};
+        const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
+        const std::vector<Skmer<kuint>>& span = bucket(bid);
         km::sortedlist::search_kmers_in_span_into<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), query, out);
+            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, out);
+    }
+
+    // Driver path for gen > store (the wide query is parsed and routed elsewhere): search a known
+    // bucket with an ALREADY-truncated store-width query. `bucket_id` must come from the full
+    // minimizer (bucket_of_phi_min) computed before down-conversion.
+    void query_into(uint64_t bucket_id, const Skmer<kuint>& truncated_query, std::vector<uint8_t>& out) {
+        const std::vector<Skmer<kuint>>& span = bucket(bucket_id);
+        km::sortedlist::search_kmers_in_span_into<kuint>(
+            m_manip, span.data(), static_cast<int64_t>(span.size()), truncated_query, out);
     }
 
     std::vector<std::vector<uint8_t>> query_skmer_batch(const std::vector<Skmer<kuint>>& query_skmers) {
@@ -1135,9 +1228,9 @@ public:
     }
 
 private:
-    BucketedSkmerListReader(uint64_t k, uint64_t m, std::ifstream&& in,
+    BucketedSkmerListReader(uint64_t k, uint64_t m, uint64_t quotient_bits, std::ifstream&& in,
                             std::vector<BucketDirEntry> dir, std::streamoff payload_start)
-        : m_manip(k, m), m_in(std::move(in)), m_n_buckets(dir.size())
+        : m_manip(k, m, quotient_bits), m_quotient_bits(quotient_bits), m_in(std::move(in)), m_n_buckets(dir.size())
     {
         m_lower.resize(m_n_buckets);
         m_count.resize(m_n_buckets);
@@ -1180,6 +1273,7 @@ private:
     }
 
     SkmerManipulator<kuint> m_manip;
+    uint64_t m_quotient_bits {0};            // top-b φ-minimizer bits dropped from stored records
     std::ifstream m_in;
     uint64_t m_n_buckets {1};
     std::vector<uint64_t> m_lower;        // per-bucket minimizer lower bound (routing table)
@@ -1191,6 +1285,63 @@ private:
     std::unique_ptr<std::atomic<uint8_t>[]> m_loaded;
     std::unique_ptr<std::mutex> m_load_mtx; // serializes the first disk load of each bucket
 };
+
+
+// Minimal, width-agnostic view of a list-file header. Lets the CLI/query side read k/m and the
+// record width before instantiating a width-specific reader (the templates can't be chosen until
+// the width is known). V2/V3 files report store_width_bytes = 8 and quotient_bits = 0.
+struct ListHeaderInfo {
+    uint64_t k {0};
+    uint64_t m {0};
+    uint64_t count {0};
+    uint64_t n_buckets {1};
+    uint64_t store_width_bytes {8};
+    uint64_t quotient_bits {0};
+};
+
+inline ListHeaderInfo read_list_header(const std::string& filename) {
+    std::ifstream in(filename, std::ios::binary);
+    if (in.fail())
+        throw std::runtime_error("Error opening file for reading: " + filename);
+
+    uint64_t magic;
+    in.read(reinterpret_cast<char*>(&magic), sizeof(uint64_t));
+    if (in.fail())
+        throw std::runtime_error("Error reading magic number from file: " + filename);
+
+    const bool is_v4 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4);
+    const bool is_v3 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3);
+    const bool is_v2 = (magic == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER);
+    if (!is_v2 && !is_v3 && !is_v4) {
+        const uint64_t swapped = km::sortedlist::util::swap_endian(magic);
+        if (swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER ||
+            swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3 ||
+            swapped == km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V4)
+            throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness");
+        throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch");
+    }
+
+    ListHeaderInfo info{};
+    in.read(reinterpret_cast<char*>(&info.k), sizeof(uint64_t));
+    in.read(reinterpret_cast<char*>(&info.m), sizeof(uint64_t));
+    in.read(reinterpret_cast<char*>(&info.count), sizeof(uint64_t));
+    if (is_v4) {
+        in.read(reinterpret_cast<char*>(&info.n_buckets), sizeof(uint64_t));
+        in.read(reinterpret_cast<char*>(&info.store_width_bytes), sizeof(uint64_t));
+        in.read(reinterpret_cast<char*>(&info.quotient_bits), sizeof(uint64_t));
+    } else if (is_v3) {
+        in.read(reinterpret_cast<char*>(&info.n_buckets), sizeof(uint64_t));
+        info.store_width_bytes = 8;
+        info.quotient_bits = 0;
+    } else { // V2
+        info.n_buckets = 1;
+        info.store_width_bytes = 8;
+        info.quotient_bits = 0;
+    }
+    if (in.fail())
+        throw std::runtime_error("Error reading header from file: " + filename);
+    return info;
+}
 
 
 } // namespace sortedlist

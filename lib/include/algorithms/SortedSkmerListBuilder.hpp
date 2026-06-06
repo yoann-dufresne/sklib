@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <functional>
 #include <cstdint>
+#include <cassert>
+#include <cstring>
 #include <stdexcept>
 #include <unistd.h>
 
@@ -11,6 +13,7 @@
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
 #include <algorithms/SkmerBucketWriter.hpp>
+#include <algorithms/WidthDispatch.hpp>
 
 #ifndef SORTEDSKMERLISTBUILDER_H
 #define SORTEDSKMERLISTBUILDER_H
@@ -199,27 +202,40 @@ Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
 // by a monotone prefix/interval of the minimizer, so concatenating them in
 // increasing id order reproduces the global sorted list. Peak RAM is bounded by
 // the largest bucket rather than by the whole genome.
-template<typename kuint>
-void build_bucketed(const SortedListBuildParams& params) {
+template<typename gen, typename store = gen>
+void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits = 0) {
     namespace fs = std::filesystem;
 
     const uint64_t k = params.k;
     const uint64_t m = params.m;
+    const uint64_t b = quotient_bits;
     const std::string& input_path  = params.input_path;
     const std::string& output_path = params.output_path;
 
-    km::SkmerManipulator<kuint> manip{k, m};
+    // Generation always runs at the full `gen` width (it needs every minimizer bit to pick the
+    // minimizer and compute its bucket); only the final per-bucket records are down-converted to
+    // the narrower `store` type before they hit disk.
+    km::SkmerManipulator<gen> manip{k, m};
 
     // ---- choose the minimizer -> bucket mapping ----
     // Adaptive bucketing (A v2) reads the input twice; the caller only sets
     // max_ram_bytes > 0 when that is possible (a real input file). Otherwise we
     // fall back to the fixed prefix bucketing (A v1).
     const bool use_adaptive = params.max_ram_bytes > 0;
-    Bucketing<kuint> bucketing = use_adaptive
-        ? make_adaptive_bucketing<kuint>(manip, input_path, m, params.max_ram_bytes)
-        : make_prefix_bucketing<kuint>(m, params.buckets);
+    Bucketing<gen> bucketing = use_adaptive
+        ? make_adaptive_bucketing<gen>(manip, input_path, m, params.max_ram_bytes)
+        : make_prefix_bucketing<gen>(m, params.buckets);
     const uint64_t n_buckets = bucketing.n_buckets;
     const auto& bucket_of = bucketing.bucket_of;
+
+    // Quotienting (b>0) drops the top b φ-minimizer bits of each record; those bits must be exactly
+    // the uniform b-bit prefix that defines the bucket (power-of-two prefix bucketing). Adaptive
+    // buckets have no single b, so they stay full-width (b==0). The retained 2*(2k-m)-b bits must
+    // fit the store pair (the caller sizes `store` accordingly).
+    assert((b == 0 || (!use_adaptive && n_buckets == (uint64_t{1} << b))) &&
+           "quotient bits must match a power-of-two prefix bucketing");
+    assert(2 * (2 * k - m) - b <= 2 * sizeof(store) * 8 &&
+           "store type too narrow for the retained skmer bits");
 
     // Scale the phase-1 write buffer down for tiny RAM budgets so it does not
     // dominate the requested budget.
@@ -241,18 +257,18 @@ void build_bucketed(const SortedListBuildParams& params) {
     // max(phase-1 buffers, largest bucket) rather than their sum.
     std::vector<uint64_t> counts(n_buckets, 0);
     {
-        km::sortedlist::SkmerBucketWriter<kuint> writer{tmp_dir, n_buckets, writer_budget};
-        km::FileSkmerator<kuint> file_skmerator{manip, input_path};
+        km::sortedlist::SkmerBucketWriter<gen> writer{tmp_dir, n_buckets, writer_budget};
+        km::FileSkmerator<gen> file_skmerator{manip, input_path};
         // B(2): collapse runs of identical consecutive super-k-mers (tandem repeats
         // emit the same canonical skmer in a row) before they hit disk. Pure O(1)
         // filter; the per-bucket sort+unique (B(1)) drops the rest, so the output is
         // unchanged — this only shrinks the temporary bucket files and the phase-2
         // load.
-        km::Skmer<kuint> prev{};
+        km::Skmer<gen> prev{};
         bool have_prev = false;
-        for (const km::Skmer<kuint>& sk : file_skmerator) {
+        for (const km::Skmer<gen>& sk : file_skmerator) {
             if (have_prev && sk == prev) continue;
-            const kuint mini = manip.minimizer(sk);
+            const gen mini = manip.minimizer(sk);
             writer.append(bucket_of(mini), sk);
             prev = sk;
             have_prev = true;
@@ -266,7 +282,7 @@ void build_bucketed(const SortedListBuildParams& params) {
         std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
         if (out.fail())
             throw std::runtime_error("Error opening output file for writing: " + output_path);
-        km::sortedlist::VirtualSkmerSerializer<kuint>::write_header(out, k, m, 0, n_buckets);
+        km::sortedlist::VirtualSkmerSerializer<store>::write_header(out, k, m, 0, n_buckets, sizeof(store), b);
         if (out.fail())
             throw std::runtime_error("Error writing header to file: " + output_path);
 
@@ -277,18 +293,32 @@ void build_bucketed(const SortedListBuildParams& params) {
             dir[id] = km::sortedlist::BucketDirEntry{ bucketing.lower_bound_of(id), 0 };
 
         uint64_t total = 0;
+        std::vector<km::Skmer<store>> store_list; // reused per-bucket down-conversion buffer
         for (uint64_t id{0}; id < n_buckets; id++) {
             if (counts[id] == 0) continue;
-            const fs::path bpath = tmp_dir / km::sortedlist::SkmerBucketWriter<kuint>::bucket_filename(id);
-            std::vector<km::Skmer<kuint>> vec =
-                km::sortedlist::SkmerBucketWriter<kuint>::load_bucket(bpath);
+            const fs::path bpath = tmp_dir / km::sortedlist::SkmerBucketWriter<gen>::bucket_filename(id);
+            std::vector<km::Skmer<gen>> vec =
+                km::sortedlist::SkmerBucketWriter<gen>::load_bucket(bpath);
             if (vec.empty()) continue;
 
             sort_and_dedup(vec);
 
-            km::sortedlist::SortedVirtualSkmerList<kuint> sub(k, m);
+            km::sortedlist::SortedVirtualSkmerList<gen> sub(k, m);
             sub.generate_sorted_list_from_enumeration(vec);
-            km::sortedlist::VirtualSkmerSerializer<kuint>::append_payload(out, sub.get_list());
+
+            // Down-convert the bucket's sorted sub-list to the storage width, dropping the top b
+            // φ-minimizer bits (implied by the bucket id). store==gen and b==0 => width-preserving copy.
+            // Zero the buffer first so any type-alignment padding beyond Skmer::m_pad (e.g. the 8
+            // trailing bytes of a __uint128_t record) is deterministic on disk: operator= below
+            // writes only the data members, leaving the zeroed padding intact.
+            const std::vector<km::Skmer<gen>>& gen_list = sub.get_list();
+            store_list.resize(gen_list.size());
+            if (!gen_list.empty())
+                std::memset(store_list.data(), 0, gen_list.size() * sizeof(km::Skmer<store>));
+            for (size_t i {0}; i < gen_list.size(); i++)
+                store_list[i] = km::truncate_skmer<gen, store>(k, m, b, gen_list[i]);
+
+            km::sortedlist::VirtualSkmerSerializer<store>::append_payload(out, store_list);
             if (out.fail())
                 throw std::runtime_error("Error writing skmers to file: " + output_path);
             dir[id].count = sub.size(); // final (deduped) sub-list size, what the reader offsets on
@@ -298,24 +328,37 @@ void build_bucketed(const SortedListBuildParams& params) {
             fs::remove(bpath, ec); // free disk as we go
         }
 
-        km::sortedlist::VirtualSkmerSerializer<kuint>::patch_directory(out, dir);
-        km::sortedlist::VirtualSkmerSerializer<kuint>::patch_count(out, total);
+        km::sortedlist::VirtualSkmerSerializer<store>::patch_directory(out, dir);
+        km::sortedlist::VirtualSkmerSerializer<store>::patch_count(out, total);
         if (out.fail())
             throw std::runtime_error("Error patching header/directory in file: " + output_path);
         out.close();
     }
 }
 
+// Quotient bit count for a build: how many high φ-minimizer bits the bucketing makes redundant
+// (and therefore drops from each stored record). Only the default power-of-two prefix bucketing
+// has a uniform b; the in-RAM/ASCII path and adaptive (--max-ram) bucketing stay full-width (b=0).
+// Single source of truth, shared with the CLI which uses it to size the storage integer.
+inline uint64_t quotient_bits_for(const SortedListBuildParams& params) {
+    const bool can_bucket = !params.ascii && params.has_output_file;
+    if (!can_bucket) return 0;            // in-RAM / ASCII / stdout: not bucketed
+    if (params.max_ram_bytes > 0) return 0; // adaptive buckets: variable width, no single b
+    return effective_bucket_bits(params.m, params.buckets);
+}
+
 // Dispatch to the right construction path. Bucketing needs a seekable regular
 // file (to patch the header count) and the raw binary layout; ASCII output and
-// stdout fall back to the all-in-RAM path.
-template<typename kuint>
-void build_sorted_list(const SortedListBuildParams& params) {
+// stdout fall back to the all-in-RAM path. `gen` is the generation/work width;
+// `store` is the (possibly narrower) record width; `quotient_bits` are dropped from
+// each record on the bucketed path (must be 0 for the in-RAM path).
+template<typename gen, typename store = gen>
+void build_sorted_list(const SortedListBuildParams& params, uint64_t quotient_bits = 0) {
     const bool can_bucket = !params.ascii && params.has_output_file;
     if (can_bucket)
-        build_bucketed<kuint>(params);
+        build_bucketed<gen, store>(params, quotient_bits);
     else
-        build_in_ram<kuint>(params);
+        build_in_ram<gen>(params);
 }
 
 } // namespace sortedlist

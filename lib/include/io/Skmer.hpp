@@ -1,5 +1,8 @@
 #include <cstdint>
 #include <iostream>
+#include <array>
+#include <vector>
+#include <algorithm>
 #include <assert.h>
 
 #ifndef SKMER_H
@@ -288,6 +291,26 @@ public:
 
 
 
+/** Keep only the low `eff` bits of a `gen`-width interleaved pair, returned as a `store`-width pair.
+ * Used both to down-convert stored skmers/queries and to rebuild a quotient manipulator's masks
+ * from a full-width one. Requires `store` no wider than `gen` and `eff <= 2*sizeof(store)*8`.
+ **/
+template<typename gen, typename store>
+inline typename Skmer<store>::pair truncate_pair(const typename Skmer<gen>::pair& s, uint64_t eff)
+{
+    using gpair = typename Skmer<gen>::pair;
+    using spair = typename Skmer<store>::pair;
+    const uint64_t sw {sizeof(store) * 8};                          // store word width in bits
+    const store lo {static_cast<store>(s.m_value[0])};             // bits [0, sw)
+    const store hi {static_cast<store>((gpair(s) >> sw).m_value[0])}; // bits [sw, 2*sw)
+    spair out {lo, hi};
+    spair mask {static_cast<store>(~static_cast<store>(0)), static_cast<store>(~static_cast<store>(0))};
+    mask >>= (2 * sw - eff);                                        // low `eff` bits
+    out &= mask;
+    return out;
+}
+
+
 template<typename kuint>
 class SkmerPrettyPrinter
 {
@@ -368,6 +391,11 @@ protected:
     Skmer<kuint>::pair m_rev_suffix_buff;
     Skmer<kuint>::pair m_rev_prefix_buff;
 
+    // Number of high φ-minimizer bits not stored (quotiented into the bucket id). 0 for a
+    // full-width list; b>0 narrows the meaningful skmer to 2*(2k-m)-b bits, so m_mask (and every
+    // mask derived from it via the generators) covers only the retained low bits. See truncate_skmer.
+    const uint64_t m_quotient_bits;
+
     const Skmer<kuint>::pair max_pair_value;
     const kpair m_mask;
 
@@ -399,15 +427,20 @@ protected:
     // static constexpr uint64_t uints_middle_shift {sizeof(kuint) * 8 - 4};
 
 public:
-    SkmerManipulator(const uint64_t k, const uint64_t m)
+    // b = quotient bits: the number of high φ-minimizer bits implied by the bucket id and therefore
+    // not stored. Default 0 = full-width list (unchanged behaviour). The retained skmer is the low
+    // 2*sk_size - b bits, so m_mask is narrowed accordingly and every generator-built mask follows.
+    SkmerManipulator(const uint64_t k, const uint64_t m, const uint64_t b = 0)
         : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
+        , m_quotient_bits(b)
         , max_pair_value(static_cast<kuint>(~static_cast<kuint>(0)), static_cast<kuint>(~static_cast<kuint>(0)))
-        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - 2 * sk_size) ), prefix_suffix_mask(generate_masks_sp())
+        , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - (2 * sk_size - b)) ), prefix_suffix_mask(generate_masks_sp())
         , kmer_masks(generate_masks_k()), nucleotide_masks(generate_masks_nucleotide())
     {
 
-        assert((k*2-m+3) / 4 <= 2*sizeof(kuint));
+        // The retained (post-quotient) skmer occupies 2*sk_size - b bits; it must fit the pair.
+        assert(2 * sk_size - b <= 2 * sizeof(kuint) * 8);
 
         // Compute all the possible prefix/suffix masks
         m_pref_masks = new kpair[k-m+1];
@@ -446,6 +479,12 @@ public:
         m_phi_c2_inv = mul_inverse(m_phi_c2);
         // Golden-ratio odd constant → low bit set → nonzero under any 2m-bit mask.
         m_phi_k = static_cast<kuint>(0x9E3779B97F4A7C15ULL) & m_phi_mask;
+
+        // A quotiented manipulator (b>0) is search-only: the masks generated above used the
+        // narrowed m_mask, which corrupts them (add_nucleotide wraps the suffix buffer at the
+        // truncated boundary). Rebuild the search masks from a full-width manipulator.
+        if (b > 0)
+            regenerate_quotient_masks();
 
         // Skmer and skmer buffers init
         this->init_skmer();
@@ -1006,6 +1045,27 @@ public:
         return masks;
     }
 
+    /** Rebuild the masks the query path relies on for a quotiented (b>0) manipulator. The generators
+     * above run add_nucleotide with the narrowed m_mask, which wraps the suffix buffer at the
+     * truncated boundary and corrupts every mask. A full-width manipulator produces the correct
+     * masks (a __uint128_t pair holds the whole skmer for every supported k); we truncate them to
+     * this store width. kmer_masks drive kmer_compare; the other two are rebuilt for consistency.
+     **/
+    void regenerate_quotient_masks()
+    {
+        const uint64_t eff {2 * sk_size - m_quotient_bits};
+        SkmerManipulator<__uint128_t> full(k, m); // b == 0 -> correct full-width masks, no recursion
+        const std::vector<typename Skmer<__uint128_t>::pair> kfull  {full.get_k_mask()};
+        const std::vector<typename Skmer<__uint128_t>::pair> spfull {full.get_sp_mask()};
+        const std::vector<typename Skmer<__uint128_t>::pair> nfull  {full.get_n_mask()};
+        for (size_t i {0}; i < kmer_masks.size(); i++)
+            kmer_masks[i] = truncate_pair<__uint128_t, kuint>(kfull[i], eff);
+        for (size_t i {0}; i < prefix_suffix_mask.size(); i++)
+            prefix_suffix_mask[i] = truncate_pair<__uint128_t, kuint>(spfull[i], eff);
+        for (size_t i {0}; i < nucleotide_masks.size(); i++)
+            nucleotide_masks[i] = truncate_pair<__uint128_t, kuint>(nfull[i], eff);
+    }
+
     /** Returns the (k-1)-mer (prefix/suffix) starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param start_pos Position of the start of the kmer
@@ -1086,6 +1146,23 @@ std::ostream& operator<<(std::ostream& os, SkmerManipulator<T>& manip)
     os << "]";
 
     return os;
+}
+
+
+/** Down-convert a full-width (`gen`) super-k-mer to the narrower storage type (`store`) of a
+ * quotiented (b>0) sorted list. Keeps only the low `2*(2k-m) - b` bits of the interleaved pair:
+ * the top `b` bits of the φ-minimizer are implied by the bucket id and dropped. Prefix/suffix
+ * sizes carry over. With `store == gen` and `b == 0` this is a width-preserving copy. The caller
+ * must size `store` so its pair holds the retained `2*(2k-m) - b` bits.
+ *
+ * Within one bucket every skmer shares the dropped top `b` bits, so truncation preserves all
+ * intra-bucket k-mer comparisons and prefix/suffix extractions — query results are unchanged.
+ **/
+template<typename gen, typename store>
+inline Skmer<store> truncate_skmer(uint64_t k, uint64_t m, uint64_t b, const Skmer<gen>& s)
+{
+    const uint64_t eff {2 * (2 * k - m) - b};   // retained bits
+    return Skmer<store>(truncate_pair<gen, store>(s.m_pair, eff), s.m_pref_size, s.m_suff_size);
 }
 
 };

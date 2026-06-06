@@ -14,8 +14,9 @@
 // Batches are contiguous input ranges tagged with a sequence number, so the sink reorders by batch
 // (a few thousand entries) instead of per query, and each consumer reuses one result buffer and one
 // output string per batch — keeping per-query heap allocations out of the hot path. The reader is
-// shared: query_skmer_into()/bucket_of() are thread-safe (each bucket is loaded once under a lock,
-// hits are lock-free), so consumers never re-read a bucket.
+// shared: query_into()/bucket_of_phi_min() are thread-safe (each bucket is loaded once under a lock,
+// hits are lock-free), so consumers never re-read a bucket. The producer parses at the full `gen`
+// width and down-converts each query to the stored `store` width before handing it off.
 
 #include <cstdint>
 #include <string>
@@ -41,11 +42,13 @@ namespace parallel_detail
 {
 
 // A unit of work: a contiguous run of input super-k-mers, tagged with its batch sequence number so
-// the sink can re-emit batches in input order regardless of which consumer finishes first.
-template<typename kuint>
+// the sink can re-emit batches in input order regardless of which consumer finishes first. Each
+// item is (bucket id, down-converted query): the producer routes + truncates up front (it holds the
+// wide `gen` skmer with the full minimizer), so consumers only search the stored `store` records.
+template<typename store>
 struct WorkBatch {
     uint64_t seq;
-    std::vector<Skmer<kuint>> skmers;
+    std::vector<std::pair<uint64_t, Skmer<store>>> items;
 };
 
 // Append one presence vector to `out` exactly as the sequential print_query_results would: comma-
@@ -64,12 +67,12 @@ inline void append_result(std::string& out, const std::vector<uint8_t>& result) 
 // Bounded FIFO hand-off between the single producer and the consumers. push() blocks while full
 // (backpressure caps in-flight RAM); pop() blocks until a batch is available and returns false once
 // the producer is done and the queue is drained.
-template<typename kuint>
+template<typename store>
 class WorkQueue {
 public:
     explicit WorkQueue(size_t capacity) : m_capacity(capacity) {}
 
-    void push(WorkBatch<kuint>&& batch) {
+    void push(WorkBatch<store>&& batch) {
         std::unique_lock<std::mutex> lock(m_mtx);
         m_not_full.wait(lock, [&]{ return m_queue.size() < m_capacity; });
         m_queue.push(std::move(batch));
@@ -77,7 +80,7 @@ public:
         m_not_empty.notify_one();
     }
 
-    bool pop(WorkBatch<kuint>& out) {
+    bool pop(WorkBatch<store>& out) {
         std::unique_lock<std::mutex> lock(m_mtx);
         m_not_empty.wait(lock, [&]{ return !m_queue.empty() || m_done; });
         if (m_queue.empty())
@@ -98,7 +101,7 @@ public:
     }
 
 private:
-    std::queue<WorkBatch<kuint>> m_queue;
+    std::queue<WorkBatch<store>> m_queue;
     std::mutex m_mtx;
     std::condition_variable m_not_empty;
     std::condition_variable m_not_full;
@@ -170,8 +173,8 @@ private:
 // (1 producer + the rest as parallel consumers), writing presence vectors to `os` in input order.
 // Equivalent in output to reader.query(filename, os). `batch_size` is the number of super-k-mers per
 // work batch (bounds per-batch RAM and sink granularity; mainly a test/tuning knob).
-template<typename kuint>
-void parallel_query(BucketedSkmerListReader<kuint>& reader, const std::string& filename,
+template<typename gen, typename store = gen>
+void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& filename,
                     std::ostream& os, unsigned n_threads, uint64_t batch_size = 4096) {
     using namespace parallel_detail;
 
@@ -179,27 +182,31 @@ void parallel_query(BucketedSkmerListReader<kuint>& reader, const std::string& f
     if (batch_size == 0) batch_size = 1;
     const size_t queue_capacity = static_cast<size_t>(n_consumers) * 4 + 1;
 
-    WorkQueue<kuint> queue(queue_capacity);
+    WorkQueue<store> queue(queue_capacity);
     OrderedSink sink(os);
 
     std::thread producer([&]{
-        km::SkmerManipulator<kuint> manip{reader.k(), reader.m()};
-        km::FileSkmerator<kuint> file_skmerator{manip, filename};
+        // Parse at the full `gen` width (the whole minimizer is needed to route), bucket from the
+        // full φ(min), then down-convert to the narrower `store` records the consumers search.
+        const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
+        km::SkmerManipulator<gen> manip{k, m};
+        km::FileSkmerator<gen> file_skmerator{manip, filename};
 
-        std::vector<Skmer<kuint>> batch;
+        std::vector<std::pair<uint64_t, Skmer<store>>> batch;
         batch.reserve(batch_size);
         uint64_t seq {0};
 
-        for (const km::Skmer<kuint> skmer : file_skmerator) {
-            batch.push_back(skmer);
+        for (const km::Skmer<gen> skmer : file_skmerator) {
+            const uint64_t bid {reader.bucket_of_phi_min(static_cast<uint64_t>(manip.minimizer(skmer)))};
+            batch.emplace_back(bid, km::truncate_skmer<gen, store>(k, m, b, skmer));
             if (batch.size() >= batch_size) {
-                queue.push(WorkBatch<kuint>{seq++, std::move(batch)});
-                batch = std::vector<Skmer<kuint>>();
+                queue.push(WorkBatch<store>{seq++, std::move(batch)});
+                batch = std::vector<std::pair<uint64_t, Skmer<store>>>();
                 batch.reserve(batch_size);
             }
         }
         if (!batch.empty())
-            queue.push(WorkBatch<kuint>{seq++, std::move(batch)});
+            queue.push(WorkBatch<store>{seq++, std::move(batch)});
 
         queue.set_done();      // let consumers exit once the queue is drained
         sink.set_total(seq);   // let the sink stop once all `seq` batches are emitted
@@ -209,13 +216,13 @@ void parallel_query(BucketedSkmerListReader<kuint>& reader, const std::string& f
     consumers.reserve(n_consumers);
     for (unsigned t {0}; t < n_consumers; ++t) {
         consumers.emplace_back([&]{
-            WorkBatch<kuint> batch;
+            WorkBatch<store> batch;
             std::vector<uint8_t> buf; // reused result buffer (no per-query allocation)
             std::string text;         // reused per-batch output
             while (queue.pop(batch)) {
                 text.clear();
-                for (const Skmer<kuint>& skmer : batch.skmers) {
-                    reader.query_skmer_into(skmer, buf);
+                for (const std::pair<uint64_t, Skmer<store>>& item : batch.items) {
+                    reader.query_into(item.first, item.second, buf);
                     append_result(text, buf);
                 }
                 sink.put(batch.seq, std::move(text));
@@ -228,6 +235,37 @@ void parallel_query(BucketedSkmerListReader<kuint>& reader, const std::string& f
     producer.join();
     for (std::thread& c : consumers)
         c.join();
+}
+
+// Sequential file query for the dual-width (gen >= store) path: parse at the full `gen` width,
+// route on the full minimizer, down-convert to `store`, search, and stream results in input order.
+// Byte-identical to BucketedSkmerListReader::query() when gen == store. Used by the CLI for -t 1
+// and whenever the record width is narrower than the generation width.
+template<typename gen, typename store = gen>
+void sequential_query(BucketedSkmerListReader<store>& reader, const std::string& filename,
+                      std::ostream& os) {
+    using namespace parallel_detail;
+    const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
+    km::SkmerManipulator<gen> manip{k, m};
+    km::FileSkmerator<gen> file_skmerator{manip, filename};
+
+    std::vector<uint8_t> buf;
+    std::string text;
+    constexpr uint64_t FLUSH {4096};
+    uint64_t since_flush {0};
+    for (const km::Skmer<gen> skmer : file_skmerator) {
+        const uint64_t bid {reader.bucket_of_phi_min(static_cast<uint64_t>(manip.minimizer(skmer)))};
+        const km::Skmer<store> trunc {km::truncate_skmer<gen, store>(k, m, b, skmer)};
+        reader.query_into(bid, trunc, buf);
+        append_result(text, buf);
+        if (++since_flush >= FLUSH) {
+            os.write(text.data(), static_cast<std::streamsize>(text.size()));
+            text.clear();
+            since_flush = 0;
+        }
+    }
+    if (!text.empty())
+        os.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 
 } // namespace sortedlist
