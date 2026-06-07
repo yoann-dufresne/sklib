@@ -14,9 +14,9 @@
 - [X] BUCKETED VSKMER_4 FORMAT: per-record minimizer-prefix quotienting + runtime-selected integer width (uint32/uint64/uint128)
 - [X] STRAND-INVARIANT PER-K-MER FRAMING (v0.4.2): exact queries at any m; removed the m>=7 minimizer guard
 - [ ] CI/CD WITH GITHUB ACTIONS
-- [ ] DIFF BETWEEN 2 PRECOMPUTED LISTS
-- [ ] MERGE OF 2 PRECOMPUTED LISTS
-- [ ] INTERSECTION OF 2 PRECOMPUTED LISTS
+- [X] DIFF BETWEEN 2 PRECOMPUTED LISTS (`sskm setop --op diff`; + `diff_size`)
+- [X] MERGE OF 2 PRECOMPUTED LISTS (`sskm setop --op union`; + `union_size`)
+- [X] INTERSECTION OF 2 PRECOMPUTED LISTS (`sskm setop --op intersection`; + `intersection_size`) — all bucket-parallel (`-t`), output byte-identical; benchmarked vs KMC/CBL/FMSI (scripts/bench/report/SETOPS_REPORT.md)
 - [ ] ADD HASHING
 - [ ] TEST ON HUMAN, METAGENOME, BACTERIA, RICE PANGENOME?
 - [X] TEST AGAINST BQF, SSHASH (benchmark vs bqf/sshash/sbwt/cbl — see scripts/bench)

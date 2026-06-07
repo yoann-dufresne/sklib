@@ -4,14 +4,14 @@ A C++23 library for sorting and querying k-mers in a compact representation. skl
 
 ## Documentation
 
-A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the bucketed on-disk format (the list is split into minimizer-prefix sub-lists, with width-selectable and minimizer-prefix-quotiented records), the k-mer search algorithm (each query is routed to one bucket; file queries run in parallel), and the **set operations** between two lists (a streaming per-bucket merge, with a faster patience-sort chaining on the re-compaction path).
+A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the bucketed on-disk format (the list is split into minimizer-prefix sub-lists, with width-selectable and minimizer-prefix-quotiented records), the k-mer search algorithm (each query is routed to one bucket; file queries run in parallel), the **set operations** between two lists (a **parallel per-bucket merge**, with a faster patience-sort chaining on the re-compaction path), and **complete cross-tool benchmarks** (set operations vs KMC / CBL / FMSI; construction & membership queries vs sshash / SBWT / CBL / BQF / FMSI).
 
 ## Dependencies
 
 * zlib : https://zlib.net/ (apt install zlib1g-dev)
 * bzip2 : https://sourceware.org/bzip2/ (apt install libbz2-dev)
 
-Third-party dependencies fetched automatically: `CLI11`, `zlib`, `gtest`, `kseqpp`. The core library is header-only; `sskm query` parallelizes the file path with the C++ standard library only (`std::thread`; the CLI links `pthread`), so there is no TBB / parallel-STL runtime dependency.
+Third-party dependencies fetched automatically: `CLI11`, `zlib`, `gtest`, `kseqpp`. The core library is header-only; `sskm query` (file path), `sskm setop` (per-bucket merge) and `sskm construct` (per-bucket compaction) parallelize with the C++ standard library only (`std::thread`; the CLI links `pthread`), so there is no TBB / parallel-STL runtime dependency.
 
 ## Compilation
 
@@ -112,6 +112,8 @@ Set operations between two sorted skmer lists **A** and **B**: `intersection`, `
 ./bin/sskm setop --op union_size -a A.sskm -b B.sskm
 # fast materialization when a larger output is acceptable (skip super-k-mer re-compaction)
 ./bin/sskm setop --op union --no-compact -a A.sskm -b B.sskm -o union.sskm
+# parallel by bucket (default 8 threads); the output is byte-identical for any -t
+./bin/sskm setop --op intersection -a A.sskm -b B.sskm -o inter.sskm -t 16
 ```
 
 | Option | Required | Default | Description |
@@ -121,12 +123,13 @@ Set operations between two sorted skmer lists **A** and **B**: `intersection`, `
 | `-b, --list-b <path>` | yes | — | Second sorted skmer list. |
 | `-o, --output <path>` | for `intersection`/`union`/`diff` | — | Output list for the result; ignored by the `*_size` variants, which print a count to stdout. |
 | `--no-compact` | no | off | Emit **one record per result k-mer** instead of re-compacting the result back into super-k-mers — much faster (it skips the dominant cost) at the price of a larger output file (~3–5×). The result is still a valid, queryable sorted list. Ignored by the `*_size` variants. |
+| `-t, --threads <N>` | no | 8 | Worker threads for the per-bucket merge — the independent minimizer buckets are processed in parallel. The output is **byte-identical** regardless of `N`. |
 
-**Both lists must be built with the same `k`, `m`, and `--buckets`**: the merge aligns bucket *i* of A with bucket *i* of B, so the bucket layouts must match (this is checked, and a mismatch is rejected — rebuild both with identical parameters). The merge streams **one bucket pair at a time** (loaded lazily, released right after), so peak RAM stays near a single bucket regardless of list size.
+**Both lists must be built with the same `k`, `m`, and `--buckets`**: the merge aligns bucket *i* of A with bucket *i* of B, so the bucket layouts must match (this is checked, and a mismatch is rejected — rebuild both with identical parameters). The independent buckets are merged **in parallel** (`-t`); each worker holds only its current bucket pair, so peak RAM stays low (a handful of buckets) regardless of list size — far below KMC/CBL — and grows modestly with the thread count.
 
 Two cost regimes:
 
 * **Cardinality (`*_size`)** counts the three relations in one merge pass **without writing anything** — the fast path for a Jaccard index, containment, or de-duplication, and the right choice when the result *set* is not needed.
 * **Materialized (`intersection`/`union`/`diff`)** additionally re-compacts the kept k-mers back into super-k-mers and writes a new list. That re-compaction dominates the time; `--no-compact` skips it (one record per k-mer, ~3–5× larger output, ~3× faster) while keeping the output a valid queryable list.
 
-Two benchmark reports accompany this feature: [`scripts/bench/report/SETOPS_REPORT.md`](scripts/bench/report/SETOPS_REPORT.md) compares sklib against KMC and CBL, and [`scripts/bench/report/SETOPS_BOTTLENECKS.md`](scripts/bench/report/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups. See also the wiki's *Set Operations on Sorted Lists* page.
+Set operations scale ~×6–9 with `-t` (near-linear to 8 cores), which makes sklib the fastest set-op tool from a few cores up — including the high-overlap materialized intersection where KMC led single-core (chr1 ∩: 2.6 s vs KMC 2.7 s at 22 cores). Two benchmark reports accompany this feature: [`scripts/bench/report/SETOPS_REPORT.md`](scripts/bench/report/SETOPS_REPORT.md) compares sklib against KMC, CBL and FMSI (single- and multi-core), and [`scripts/bench/report/SETOPS_BOTTLENECKS.md`](scripts/bench/report/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups. See also the wiki's *Set operations* and *Benchmark · Set operations* pages.

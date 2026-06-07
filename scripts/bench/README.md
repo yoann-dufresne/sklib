@@ -16,13 +16,16 @@ false-negative gate and focuses on **curves**.
 - `plots.py` — reads the CSV, writes Fig 1–7 to `scripts/out/bench/figures/`.
 - `compare.py` — Markdown cross-tool comparison tables from the CSV (dedup by latest timestamp).
 - `bench_buckets.sh` — `--buckets` sweep on one dataset → `scripts/out/bench/results_buckets.csv`.
+- `bench_setops.sh` / `run_setops_parallel.sh` — **set-operation** benchmarks: single-core sklib vs
+  KMC vs CBL, and multi-core sklib `-t` vs KMC vs FMSI (`→ setops_parallel.csv`); `plot_setops.py`
+  draws their figures. Full write-up in `report/SETOPS_REPORT.md` (+ `report/SETOPS_BOTTLENECKS.md`).
 - `.venv/`   — local Python env for plotting (pandas + matplotlib); git-ignored.
 
 ## Prerequisites
 - `kmc`, `kmc_tools` on PATH (the k-mer-set oracle / bits-per-k-mer denominator).
 - A built `sskm` at `build-bench/bin/sskm` (the harness default; build **Release** — a `DEBUG`
   `build/` enables ASan and skews RSS/time). Query is parallel (`-t`), so `THREADS=N` runs the
-  parallel file query on N cores (`THREADS=1` = sequential); construction is single-threaded.
+  parallel file query on N cores (`THREADS=1` = sequential); construction and set operations are also bucket-parallel (`-t`).
 - Plotting env (one-off):
   ```bash
   python3 -m venv scripts/bench/.venv
