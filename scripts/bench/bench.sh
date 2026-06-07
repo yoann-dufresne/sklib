@@ -111,7 +111,7 @@ correctness_gate() {
 # ====================================================================
 log "datasets=[$DATASETS] km=[$KM] tools=[$TOOLS] workloads=[$WORKLOADS] threads=[$THREADS]"
 log "reps=$REPS n_query=$N_QUERY stream_bp=$STREAM_BP reads=${READS_N}x${READLEN}@${ERR} -> $CSV"
-warn "sklib is fully sequential (no parallelism); THREADS>1 only pins affinity, it does not scale."
+log "sklib query: -t = #pinned-cores (THREADS=1 -> sequential reader; THREADS=N -> parallel file query). Construction is sequential."
 
 declare -A DONE_TK   # (tool|dataset|k) already measured -> skip extra m for m-independent tools
 

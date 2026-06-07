@@ -7,8 +7,9 @@ G=scripts/out/e2e/genomes
 OUT=scripts/out/bench/setops_ksweep.csv; LOG=scripts/out/bench/setops_ksweep.log
 : > "$OUT"; : > "$LOG"
 A="$G/ecoliK12.sanitized.fa"; B="$G/ecoliSakai.sanitized.fa"
-# k:m  (k odd for CBL; m ~ k/2)
-configs="15:7 21:11 31:15 41:19"
+# k:m  (k odd for CBL; m ~ k/2). 59/63 are sklib's large-k regime (uint128 backend):
+# CBL handles k<=59, so at k=63 it auto-skips and the row is sklib-vs-KMC only.
+configs="15:7 21:11 31:15 41:19 59:29 63:31"
 hdr=1
 for c in $configs; do
     k=${c%%:*}; m=${c#*:}

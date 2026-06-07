@@ -11,7 +11,7 @@
 # Only sklib is implemented; competitors are stubs disabled via available_* until
 # their wrappers land (scripts/bench/tools/). Sourced -- not executed.
 
-SSKM_BIN="${SSKM_BIN:-$BENCH_REPO_ROOT/build/bin/sskm}"
+SSKM_BIN="${SSKM_BIN:-$BENCH_REPO_ROOT/build-bench/bin/sskm}"  # Release; build/ is a DEBUG build
 SCRIPT_DIR_TOOLS="$BENCH_REPO_ROOT/scripts/bench/tools"
 
 # uses_m_<tool>: 0 (true) if the tool's index depends on sklib's minimizer length m,
@@ -48,7 +48,10 @@ construct_sklib() {
 
 query_sklib() {
     local idx="$1" qfa="$2" k="$3" m="$4" cpus="$5"
-    run_timed_median taskset -c "$cpus" "$SSKM_BIN" query -l "$idx" -i "$qfa" -o /dev/null
+    # Pass -t = number of pinned cores so the "threads" column is honest: cpus="0" -> -t 1
+    # (true single-thread sequential reader), cpus="0-21" -> -t 22 (parallel file query).
+    local ncpu; if [[ "$cpus" == *-* ]]; then ncpu=$(( ${cpus#*-} - ${cpus%%-*} + 1 )); else ncpu=1; fi
+    run_timed_median taskset -c "$cpus" "$SSKM_BIN" query -t "$ncpu" -l "$idx" -i "$qfa" -o /dev/null
 }
 
 # ---- competitor stubs (filled by scripts/bench/tools/*.sh, task #6) --------
