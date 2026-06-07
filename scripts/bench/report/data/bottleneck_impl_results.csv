@@ -1,0 +1,7 @@
+operation,original_s,final_s,speedup,note
+celegans_inter_compact,13.880,8.742,1.59,A2+A3+C2+D2+A4
+celegans_union_compact,20.324,12.642,1.61,A2+A3+C2+D2+A4
+chr1_inter_compact_190M,35.009,22.180,1.58,A2+A3+C2+D2+A4
+celegans_inter_size_card,2.064,1.366,1.51,C2
+chr1_inter_size_card,3.004,2.206,1.36,C2
+celegans_inter_no_compact,13.856,4.631,2.99,A2 mode (output ~3.3-5x larger)

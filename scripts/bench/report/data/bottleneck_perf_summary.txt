@@ -1,0 +1,96 @@
+############ ce_inter_mat ############
+# perf/ce_inter_mat.data   (sum of self% = 99.0)
+
+== RE-COMPACTION (rebuild super-k-mers): 81.1%
+    29.34%  recompact: colinear_chaining
+    26.44%  recompact: get_candidate_overlaps
+    13.49%  recompact: sort_column
+     5.58%  recompact: merge_LList_column
+     0.27%  recompact: gen_sorted_list
+     3.95%  recompact: Virtual_skmer/vec
+     2.03%  std::sort (introsort/insert)
+
+== SKMER HELPERS: 0.1%
+     0.06%  skmer: add/clean/masks
+
+== MERGE DRIVER: 14.7%
+    14.68%  merge driver (materialize/merge_columns/set_next_valid/CountSink/CollectSink)
+
+== I/O: 0.0%
+
+== ALLOC/MEM: 0.5%
+     0.28%  alloc: malloc/free/new
+     0.18%  libc memmove/memcpy/memset
+
+== KERNEL/OTHER: 2.7%
+     2.32%  kernel/[unknown]
+     0.37%  OTHER
+
+# top unmatched:
+     0.34%  std::vector<km::Skmer<unsigned int>, std::allocator<km::Skmer<unsigned int> > >::resize(unsigned long)
+     0.02%  unlink_chunk.isra.0
+     0.01%  std::ostream::write(char const*, long)
+     0.00%  std::vector<km::Skmer<unsigned __int128>::pair, std::allocator<km::Skmer<unsigned __int128>::pair> >::vector(std::vector
+     0.00%  std::__basic_file<char>::is_open() const
+     0.00%  std::__basic_file<char>::fd()
+     0.00%  read
+     0.00%  check_match
+
+############ ce_inter_size ############
+# perf/ce_inter_size.data   (sum of self% = 100.1)
+
+== MERGE DRIVER: 94.6%
+    94.59%  merge driver (materialize/merge_columns/set_next_valid/CountSink/CollectSink)
+
+== I/O: 0.1%
+     0.06%  I/O read (bucket load)
+
+== ALLOC/MEM: 0.0%
+
+== KERNEL/OTHER: 5.4%
+     3.97%  kernel/[unknown]
+     1.43%  OTHER
+
+# top unmatched:
+     1.37%  std::vector<km::Skmer<unsigned int>, std::allocator<km::Skmer<unsigned int> > >::resize(unsigned long)
+     0.04%  read
+     0.01%  std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::substr(unsigned long, unsigned long) co
+     0.01%  _dl_relocate_object
+     0.00%  dl_main
+
+############ ce_union_mat ############
+# perf/ce_union_mat.data   (sum of self% = 98.9)
+
+== RE-COMPACTION (rebuild super-k-mers): 85.8%
+    31.23%  recompact: colinear_chaining
+    27.98%  recompact: get_candidate_overlaps
+    14.12%  recompact: sort_column
+     5.88%  recompact: merge_LList_column
+     0.27%  recompact: gen_sorted_list
+     3.94%  recompact: Virtual_skmer/vec
+     2.39%  std::sort (introsort/insert)
+
+== SKMER HELPERS: 0.1%
+     0.07%  skmer: add/clean/masks
+
+== MERGE DRIVER: 10.5%
+    10.48%  merge driver (materialize/merge_columns/set_next_valid/CountSink/CollectSink)
+
+== ALLOC/MEM: 0.3%
+     0.16%  alloc: malloc/free/new
+     0.19%  libc memmove/memcpy/memset
+
+== KERNEL/OTHER: 2.2%
+     1.96%  kernel/[unknown]
+     0.21%  OTHER
+
+# top unmatched:
+     0.20%  std::vector<km::Skmer<unsigned int>, std::allocator<km::Skmer<unsigned int> > >::resize(unsigned long)
+     0.01%  unlink_chunk.isra.0
+     0.00%  std::vector<std::pair<unsigned long, unsigned long>, std::allocator<std::pair<unsigned long, unsigned long> > >::~vector
+     0.00%  std::istream::sentry::sentry(std::istream&, bool)@plt
+     0.00%  std::istream::seekg(long, std::_Ios_Seekdir)
+     0.00%  std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)@plt
+     0.00%  std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)@plt
+     0.00%  std::__basic_file<char>::xsputn_2(char const*, long, char const*, long)@plt
+
