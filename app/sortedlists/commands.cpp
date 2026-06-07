@@ -105,6 +105,15 @@ int run_construct(const ConstructOptions& opts) {
 }
 
 int run_setop(const SetOpOptions& opts) {
+#if defined(__GLIBC__)
+    // Per-bucket set ops churn many short-lived allocations across N workers (bucket buffers, the
+    // re-compaction scratch, the reorder-buffer payloads). glibc's default per-thread arenas each
+    // retain their high-water mark, inflating peak RSS at high -t (combined materialize on chr1
+    // measured ~79 MB at -t1 vs ~1.5 GB at -t22) for no speed gain. Cap the arenas, mirroring
+    // run_construct; the work is compute/IO-bound, not malloc-bound, so timing is unaffected.
+    if (opts.threads >= 2)
+        mallopt(M_ARENA_MAX, 4);
+#endif
     // Peek both headers to learn k/m and the stored record width before instantiating the readers.
     // Both lists share parameters (set_operations re-validates k/m/buckets), so a single width
     // dispatch on the common store width suffices — the merge runs entirely at that width, never
