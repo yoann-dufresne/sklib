@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -421,6 +422,313 @@ inline uint64_t union_size(BucketedSkmerListReader<store>& A, BucketedSkmerListR
 template<typename store>
 inline uint64_t diff_size(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, unsigned nthreads = 8) {
     return set_sizes<store>(A, B, nthreads).only_a;
+}
+
+// ======================= combined (single-pass) set operations =======================
+//
+// One merge pass over both lists yields the three DISJOINT relations (both / only_a / only_b), and
+// every set operation is a union of a subset of them (intersection={both}, union={both,only_a,only_b},
+// A\B={only_a}, B\A={only_b}). So any requested subset of {A∩B, A∪B, A\B, B\A} — materialized and/or
+// merely counted — can be produced in ONE pass instead of one pass per operation: the per-bucket read,
+// the per-column CSR build and the merge are shared; only the per-output re-compaction is per-output.
+// The four cardinalities always come for free (three counters), so the combined call also reports all
+// sizes. This is the multi-operation analogue of materialize_setop, built from the same pieces
+// (merge_columns, read_bucket_into, generate_sorted_list_from_enumeration, parallel_for_dynamic) and
+// carrying the same byte-identical-for-any-thread-count guarantee, per output file.
+
+// A request: each set output path is optional (unset ⇒ that relation is not materialized). With every
+// path unset the call is a pure combined count (delegated to set_sizes; no file is touched).
+struct MultiSetOpRequest {
+    std::optional<std::string> inter_out;     // A ∩ B
+    std::optional<std::string> union_out;     // A ∪ B
+    std::optional<std::string> diff_ab_out;   // A \ B
+    std::optional<std::string> diff_ba_out;   // B \ A
+    bool no_compact {false};
+    bool any_output() const { return inter_out || union_out || diff_ab_out || diff_ba_out; }
+};
+
+// All four cardinalities (always filled) plus the materialized result k-mer counts. Each *_kmers
+// equals the matching cardinality (set-op results carry no duplicate k-mers); it is reported whether
+// or not that relation was materialized.
+struct MultiSetOpResult {
+    SetSizes sizes;
+    uint64_t inter_kmers {0}, union_kmers {0}, diff_ab_kmers {0}, diff_ba_kmers {0};
+};
+
+// Sink that fans each emitted k-mer out to every requested relation's buffer in one pass. A null
+// target means that relation is not materialized (its count is still kept). The single-k-mer skmer is
+// built once via get_skmer_of_kmer (a pure read of the manipulator's masks — verified side-effect
+// free, takes its argument by value) and copied into each target, so requesting union alongside a
+// partition costs one extract, not two.
+template<typename store>
+struct MultiCollectSink {
+    km::SkmerManipulator<store>& manip;
+    std::vector<km::Skmer<store>>* inter;     // nullable: A∩B
+    std::vector<km::Skmer<store>>* uni;       // nullable: A∪B
+    std::vector<km::Skmer<store>>* diff_ab;   // nullable: A\B
+    std::vector<km::Skmer<store>>* diff_ba;   // nullable: B\A
+    uint64_t n_inter {0}, n_only_a {0}, n_only_b {0};
+
+    void both(const km::Skmer<store>& r, uint64_t c) {
+        ++n_inter;
+        if (inter || uni) {
+            const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
+            if (inter) inter->push_back(s);
+            if (uni)   uni->push_back(s);
+        }
+    }
+    void only_a(const km::Skmer<store>& r, uint64_t c) {
+        ++n_only_a;
+        if (diff_ab || uni) {
+            const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
+            if (diff_ab) diff_ab->push_back(s);
+            if (uni)     uni->push_back(s);
+        }
+    }
+    void only_b(const km::Skmer<store>& r, uint64_t c) {
+        ++n_only_b;
+        if (diff_ba || uni) {
+            const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
+            if (diff_ba) diff_ba->push_back(s);
+            if (uni)     uni->push_back(s);
+        }
+    }
+};
+
+// One output file of a combined materialization. Value-semantic (pointers into the driver's stable
+// `outs`/`dirs` vectors), so a std::vector of these is trivially resizable/assignable.
+template<typename store>
+struct MultiWriterChannel {
+    std::ofstream* out {nullptr};
+    std::vector<BucketDirEntry>* dir {nullptr};
+    std::string path;
+    uint64_t total_records {0};   // virtual skmers written to this file (what its reader offsets on)
+};
+
+// The combined analogue of OrderedPayloadWriter: emits each bucket's payloads to ALL output files in
+// strictly increasing bucket-id order, under a SINGLE frontier (one mutex / cv / next_emit). A worker
+// submits a *bundle* — one payload per channel for that bucket — and the writer, when the bucket is
+// the next to emit, appends every channel's payload to its own file and patches every channel's
+// directory entry. One shared frontier (rather than one writer per file) means one back-pressure
+// dimension to reason about — exactly the proof the single-output writer already carries — and ~1/N
+// the reorder-buffer RAM. Empty payloads/channels are submitted too, so every bucket advances the
+// frontier and gets a count-0 directory entry in every file.
+template<typename store>
+struct MultiOrderedPayloadWriter {
+    std::vector<MultiWriterChannel<store>>& channels;
+    const size_t cap;
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::map<uint64_t, std::vector<std::vector<km::Skmer<store>>>> ready;   // bucket_id -> per-channel payloads
+    uint64_t next_emit {0};
+    bool aborted {false};
+
+    MultiOrderedPayloadWriter(std::vector<MultiWriterChannel<store>>& ch, size_t capacity)
+        : channels(ch), cap(capacity) {}
+
+    void submit(uint64_t bucket_id, std::vector<std::vector<km::Skmer<store>>>&& bundle) {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&]{ return aborted || ready.size() < cap || bucket_id == next_emit; });
+        if (aborted) return;
+        ready.emplace(bucket_id, std::move(bundle));
+        while (!ready.empty() && ready.begin()->first == next_emit) {
+            std::vector<std::vector<km::Skmer<store>>>& b {ready.begin()->second};
+            for (size_t ci {0}; ci < channels.size(); ++ci) {
+                MultiWriterChannel<store>& ch {channels[ci]};
+                std::vector<km::Skmer<store>>& p {b[ci]};
+                (*ch.dir)[next_emit].count = p.size();
+                ch.total_records += p.size();
+                VirtualSkmerSerializer<store>::append_payload(*ch.out, p);
+                if (ch.out->fail())
+                    throw std::runtime_error("Error writing skmers to file: " + ch.path);
+            }
+            ready.erase(ready.begin());
+            ++next_emit;
+        }
+        cv.notify_all();
+    }
+
+    void abort() {
+        { std::lock_guard<std::mutex> lock(mtx); aborted = true; }
+        cv.notify_all();
+    }
+};
+
+// Compute any requested subset of {A∩B, A∪B, A\B, B\A} in a single pass and return all four sizes.
+// With no output requested this is a pure count (set_sizes, nothing materialized). Otherwise each
+// requested relation is written to its own VSKMER_4 file reusing the inputs' bucket layout; per
+// output the file is byte-identical for any thread count. Buckets run in parallel across `nthreads`
+// workers; each worker does ONE merge per bucket, fans the kept k-mers into per-output buffers, then
+// re-compacts each (or, with no_compact, sorts each) reusing one SortedVirtualSkmerList sequentially,
+// and submits the per-bucket bundle to the shared ordered writer.
+template<typename store>
+inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
+                                    const MultiSetOpRequest& req, unsigned nthreads = 8) {
+    check_compatible(A, B);
+
+    MultiSetOpResult result;
+
+    // No materialization requested: a pure combined count. set_sizes is already the optimal
+    // single-pass counter; reuse it and touch no files.
+    if (!req.any_output()) {
+        result.sizes = set_sizes<store>(A, B, nthreads);
+        result.inter_kmers   = result.sizes.inter;
+        result.union_kmers   = result.sizes.uni();
+        result.diff_ab_kmers = result.sizes.only_a;
+        result.diff_ba_kmers = result.sizes.only_b;
+        return result;
+    }
+
+    const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
+    const unsigned nthr {std::max(1u, nthreads)};
+
+    // Stable channel list (fixes bundle-slot ↔ file mapping). Per-relation channel index, -1 if that
+    // relation is not requested; the sink routes by these.
+    enum Rel { R_INTER, R_UNION, R_DIFF_AB, R_DIFF_BA };
+    struct OutSpec { Rel rel; const std::string* path; };
+    std::vector<OutSpec> specs;
+    if (req.inter_out)   specs.push_back({R_INTER,   &*req.inter_out});
+    if (req.union_out)   specs.push_back({R_UNION,   &*req.union_out});
+    if (req.diff_ab_out) specs.push_back({R_DIFF_AB, &*req.diff_ab_out});
+    if (req.diff_ba_out) specs.push_back({R_DIFF_BA, &*req.diff_ba_out});
+    const size_t nout {specs.size()};
+
+    // Reject two outputs writing to the same path (they would interleave and corrupt each other).
+    for (size_t i {0}; i < nout; ++i)
+        for (size_t j {i + 1}; j < nout; ++j)
+            if (*specs[i].path == *specs[j].path)
+                throw std::runtime_error("set operation: two results target the same output path: " + *specs[i].path);
+
+    int ch_inter {-1}, ch_union {-1}, ch_ab {-1}, ch_ba {-1};
+    for (size_t ci {0}; ci < nout; ++ci) {
+        switch (specs[ci].rel) {
+            case R_INTER:   ch_inter = static_cast<int>(ci); break;
+            case R_UNION:   ch_union = static_cast<int>(ci); break;
+            case R_DIFF_AB: ch_ab    = static_cast<int>(ci); break;
+            case R_DIFF_BA: ch_ba    = static_cast<int>(ci); break;
+        }
+    }
+
+    // Open one output stream per requested relation, write its header and pre-fill its directory with
+    // every bucket's φ-minimizer lower bound (counts patched in as buckets drain in order). `outs` and
+    // `dirs` are sized up front and never reallocated, so the pointers held by the channels stay valid.
+    std::vector<std::ofstream> outs(nout);
+    std::vector<std::vector<BucketDirEntry>> dirs(nout, std::vector<BucketDirEntry>(nb));
+    for (size_t ci {0}; ci < nout; ++ci) {
+        outs[ci].open(*specs[ci].path, std::ios::binary | std::ios::trunc);
+        if (outs[ci].fail())
+            throw std::runtime_error("Error opening output file for writing: " + *specs[ci].path);
+        VirtualSkmerSerializer<store>::write_header(outs[ci], k, m, /*count*/ 0, nb, sizeof(store), b);
+        if (outs[ci].fail())
+            throw std::runtime_error("Error writing header to file: " + *specs[ci].path);
+        for (uint64_t i {0}; i < nb; ++i)
+            dirs[ci][i] = BucketDirEntry{ A.bucket_lower(i), 0 };
+    }
+
+    std::vector<MultiWriterChannel<store>> channels(nout);
+    for (size_t ci {0}; ci < nout; ++ci)
+        channels[ci] = MultiWriterChannel<store>{ &outs[ci], &dirs[ci], *specs[ci].path, 0 };
+    MultiOrderedPayloadWriter<store> writer(channels, static_cast<size_t>(nthr) * 2 + 1);
+
+    // Per-worker state, allocated once and reused across the buckets each worker happens to process.
+    // Re-compaction uses ONE SortedVirtualSkmerList *per output channel* (not one shared across the
+    // up-to-4 outputs): generate_sorted_list_from_enumeration reuses internal scratch, and recompacting
+    // a different relation's enumeration in between perturbs the next result for wide/many-column
+    // records. A dedicated recompactor per relation feeds it exactly the per-relation, bucket-ordered
+    // sequence the single-op path feeds its recompactor, so each output is byte-identical to the
+    // corresponding single-op materialization. The few extra recompactors per worker are lightweight.
+    std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;
+    std::vector<std::vector<std::unique_ptr<SortedVirtualSkmerList<store>>>> subs(nthr);
+    std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
+    // One collected buffer per output channel, per worker (reused across buckets).
+    std::vector<std::vector<std::vector<km::Skmer<store>>>> collected(
+        nthr, std::vector<std::vector<km::Skmer<store>>>(nout));
+    std::vector<uint64_t> acc_inter(nthr, 0), acc_a(nthr, 0), acc_b(nthr, 0);  // per-worker counts
+    std::vector<std::ifstream> fhA, fhB;
+    manips.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
+    for (unsigned t {0}; t < nthr; ++t) {
+        manips.push_back(std::make_unique<km::SkmerManipulator<store>>(k, m, b));
+        if (!req.no_compact) {                              // recompactors only needed when compacting
+            subs[t].reserve(nout);
+            for (size_t ci {0}; ci < nout; ++ci)
+                subs[t].push_back(std::make_unique<SortedVirtualSkmerList<store>>(k, m, b));
+        }
+        fhA.emplace_back(A.path(), std::ios::binary);
+        fhB.emplace_back(B.path(), std::ios::binary);
+        if (fhA[t].fail() || fhB[t].fail())
+            throw std::runtime_error("set operation: cannot open input list for parallel read");
+    }
+
+    std::atomic<bool> failed {false};
+    std::exception_ptr eptr;
+    std::mutex err_mtx;
+    parallel_for_dynamic(nb, nthr, [&](uint64_t i, unsigned tid) {
+        if (failed.load(std::memory_order_relaxed)) return;
+        try {
+            read_bucket_into<store>(A, fhA[tid], i, bufA[tid]);
+            read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
+
+            std::vector<std::vector<km::Skmer<store>>>& col {collected[tid]};
+            for (std::vector<km::Skmer<store>>& v : col) v.clear();
+            MultiCollectSink<store> sink{
+                *manips[tid],
+                ch_inter >= 0 ? &col[ch_inter] : nullptr,
+                ch_union >= 0 ? &col[ch_union] : nullptr,
+                ch_ab    >= 0 ? &col[ch_ab]    : nullptr,
+                ch_ba    >= 0 ? &col[ch_ba]    : nullptr};
+            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
+                                 bufB[tid].data(), bufB[tid].size(), sink);
+            acc_inter[tid] += sink.n_inter;
+            acc_a[tid]     += sink.n_only_a;
+            acc_b[tid]     += sink.n_only_b;
+
+            // Build this bucket's bundle: one payload per channel. The writer must own each payload
+            // (it may buffer it out of order), so move it out — the collected buffers and the
+            // re-compaction worker's list are both refilled on the next bucket.
+            std::vector<std::vector<km::Skmer<store>>> bundle(nout);
+            for (size_t ci {0}; ci < nout; ++ci) {
+                std::vector<km::Skmer<store>>& cv {col[ci]};
+                if (cv.empty()) continue;                     // empty payload still advances the frontier
+                if (req.no_compact) {
+                    std::sort(cv.begin(), cv.end());
+                    bundle[ci] = std::move(cv);               // cv re-cleared at the top of the next bucket
+                } else {
+                    subs[tid][ci]->generate_sorted_list_from_enumeration(cv, /*greedy_chain*/ true);
+                    bundle[ci] = subs[tid][ci]->take_list();  // dedicated per-output recompactor (see above)
+                }
+            }
+            writer.submit(i, std::move(bundle));
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lk(err_mtx);
+                if (!eptr) eptr = std::current_exception();
+            }
+            failed.store(true, std::memory_order_relaxed);
+            writer.abort();
+        }
+    });
+    if (eptr) std::rethrow_exception(eptr);
+
+    for (size_t ci {0}; ci < nout; ++ci) {
+        VirtualSkmerSerializer<store>::patch_directory(outs[ci], dirs[ci]);
+        VirtualSkmerSerializer<store>::patch_count(outs[ci], channels[ci].total_records);
+        if (outs[ci].fail())
+            throw std::runtime_error("Error patching header/directory in file: " + *specs[ci].path);
+        outs[ci].close();
+    }
+
+    SetSizes total;
+    for (unsigned t {0}; t < nthr; ++t) {
+        total.inter  += acc_inter[t];
+        total.only_a += acc_a[t];
+        total.only_b += acc_b[t];
+    }
+    result.sizes = total;
+    result.inter_kmers   = total.inter;
+    result.union_kmers   = total.uni();
+    result.diff_ab_kmers = total.only_a;
+    result.diff_ba_kmers = total.only_b;
+    return result;
 }
 
 } // namespace sortedlist

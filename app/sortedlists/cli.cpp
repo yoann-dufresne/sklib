@@ -120,14 +120,17 @@ CLIResult parse_cli(int argc, char** argv) {
     // -----------------------
     auto setop = app.add_subcommand("setop",
         "Set operations between two sorted skmer lists A and B. Both must be built with the same k, m "
-        "and --buckets. diff is asymmetric: A \\ B.");
+        "and --buckets. diff is asymmetric: A \\ B.\n"
+        "Single-op mode: --op <operation> (+ -o for the materializing ops).\n"
+        "Combined mode: any subset of --inter-out/--union-out/--diff-ab-out/--diff-ba-out and/or "
+        "--sizes, all computed in ONE pass.");
 
     SetOpOptions setop_opts;
 
     setop->add_option("--op", setop_opts.op,
-        "Operation: intersection | union | diff | intersection_size | union_size | diff_size. "
-        "The *_size variants print only the cardinality and never materialize a list.")
-        ->required()
+        "Single-op mode: intersection | union | diff | intersection_size | union_size | diff_size. "
+        "The *_size variants print only the cardinality and never materialize a list. "
+        "Mutually exclusive with the combined-mode options.")
         ->check(CLI::IsMember({"intersection", "union", "diff",
                                "intersection_size", "union_size", "diff_size"}));
 
@@ -138,23 +141,40 @@ CLIResult parse_cli(int argc, char** argv) {
         "Second sorted skmer list (B).")->required();
 
     setop->add_option("-o,--output", setop_opts.output_file,
-        "Output sorted skmer list for the result (required for intersection/union/diff; "
+        "Single-op output sorted skmer list (required for intersection/union/diff; "
         "ignored by the *_size variants, which print a count to stdout).");
 
     setop->add_flag("--no-compact", setop_opts.no_compact,
         "Skip re-compacting the result into super-k-mers: emit one record per result k-mer. "
         "Much faster (avoids the dominant cost) but a larger output file; still a valid, "
-        "queryable sorted list. Ignored by the *_size variants.");
+        "queryable sorted list. Ignored by the *_size variants. Applies to every combined-mode output.");
 
     setop->add_option("-t,--threads", setop_opts.threads,
         "Worker threads for the per-bucket merge (default 8). Buckets are processed in parallel; "
-        "the output is byte-identical regardless of the thread count.")
+        "every output is byte-identical regardless of the thread count.")
         ->check(CLI::PositiveNumber);
+
+    // ---- combined (single-pass) mode: any subset of the four results, plus all sizes ----
+    setop->add_option("--inter-out", setop_opts.inter_out,
+        "Combined mode: write A ∩ B to this list. One pass can also emit --union-out/--diff-ab-out/"
+        "--diff-ba-out and report --sizes.");
+    setop->add_option("--union-out", setop_opts.union_out,
+        "Combined mode: write A ∪ B to this list.");
+    setop->add_option("--diff-ab-out", setop_opts.diff_ab_out,
+        "Combined mode: write A \\ B to this list.");
+    setop->add_option("--diff-ba-out", setop_opts.diff_ba_out,
+        "Combined mode: write B \\ A to this list.");
+    setop->add_flag("--sizes", setop_opts.sizes,
+        "Combined mode: print all four cardinalities (intersection / union / diff_ab / diff_ba, plus "
+        "|A| and |B|) computed in a single pass. On its own it materializes nothing; it can be paired "
+        "with the --*-out options at no extra pass.");
 
     setop->footer(
         "Examples:\n"
         "  sskm setop --op intersection -a a.sskm -b b.sskm -o inter.sskm\n"
         "  sskm setop --op diff_size -a a.sskm -b b.sskm\n"
+        "  sskm setop -a a.sskm -b b.sskm --inter-out i.sskm --union-out u.sskm --diff-ab-out dab.sskm\n"
+        "  sskm setop -a a.sskm -b b.sskm --sizes\n"
     );
 
     setop->callback([&]() {
@@ -185,10 +205,25 @@ CLIResult parse_cli(int argc, char** argv) {
     // setop subcommand
     // -----------------------
     if (result.setop) {
-        const bool is_size = setop_opts.op.size() > 5 &&
-            setop_opts.op.compare(setop_opts.op.size() - 5, 5, "_size") == 0;
-        if (!is_size && !setop_opts.output_file) {
-            throw CLI::ValidationError("setop " + setop_opts.op + " materializes a list; provide -o/--output");
+        const bool combined = setop_opts.inter_out || setop_opts.union_out ||
+                              setop_opts.diff_ab_out || setop_opts.diff_ba_out || setop_opts.sizes;
+        const bool single = !setop_opts.op.empty();
+        if (combined && single) {
+            throw CLI::ValidationError(
+                "setop: --op (single-op mode) is mutually exclusive with the combined-mode options "
+                "(--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--sizes); use one or the other");
+        }
+        if (!combined && !single) {
+            throw CLI::ValidationError(
+                "setop: provide --op <operation>, or one or more of "
+                "--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--sizes");
+        }
+        if (single) {
+            const bool is_size = setop_opts.op.size() > 5 &&
+                setop_opts.op.compare(setop_opts.op.size() - 5, 5, "_size") == 0;
+            if (!is_size && !setop_opts.output_file) {
+                throw CLI::ValidationError("setop " + setop_opts.op + " materializes a list; provide -o/--output");
+            }
         }
     }
 

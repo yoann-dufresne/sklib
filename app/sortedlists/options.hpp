@@ -29,12 +29,20 @@ struct QueryOptions {
 };
 
 struct SetOpOptions {
-    // One of: intersection, union, diff, intersection_size, union_size, diff_size.
-    // diff is asymmetric: A \ B (k-mers of A absent from B).
+    // Single-op (legacy) mode: one of intersection, union, diff, intersection_size, union_size,
+    // diff_size. diff is asymmetric: A \ B (k-mers of A absent from B). Empty in combined mode.
     std::string op;
     std::string list_a;                      // -a/--list-a
     std::string list_b;                      // -b/--list-b
-    std::optional<std::string> output_file;  // -o/--output (required for the materializing ops)
+    std::optional<std::string> output_file;  // -o/--output (required for the single-op materializing ops)
     bool no_compact = false;                 // --no-compact: skip super-k-mer re-compaction of the result
     unsigned int threads = 8;                // -t/--threads: per-bucket parallel workers (output byte-identical)
+
+    // Combined (single-pass) mode: produce any subset of these four results in ONE pass over A and B,
+    // plus (with --sizes) all four cardinalities. Mutually exclusive with --op.
+    std::optional<std::string> inter_out;    // --inter-out   (A ∩ B)
+    std::optional<std::string> union_out;    // --union-out   (A ∪ B)
+    std::optional<std::string> diff_ab_out;  // --diff-ab-out (A \ B)
+    std::optional<std::string> diff_ba_out;  // --diff-ba-out (B \ A)
+    bool sizes = false;                      // --sizes: print all four cardinalities (single pass)
 };

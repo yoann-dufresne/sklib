@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -173,6 +174,70 @@ km::sortedlist::SetSizes file_sizes_threads(const std::string& a, const std::str
         out = km::sortedlist::set_sizes<store>(A, B, nthreads);
     });
     return out;
+}
+
+// Run multi_setop over two list files (dispatching on their shared store width), materializing
+// whichever of the four outputs are given (std::nullopt = not requested). Returns the full result.
+km::sortedlist::MultiSetOpResult file_multi_setop(
+        const std::string& a, const std::string& b,
+        const std::optional<std::string>& inter, const std::optional<std::string>& uni,
+        const std::optional<std::string>& diff_ab, const std::optional<std::string>& diff_ba,
+        unsigned nthreads, bool no_compact) {
+    const uint64_t w = km::sortedlist::read_list_header(a).store_width_bytes;
+    km::sortedlist::MultiSetOpResult res;
+    km::sortedlist::dispatch_width_bytes(w, [&]<typename store>() {
+        auto A = BucketedSkmerListReader<store>::open(a);
+        auto B = BucketedSkmerListReader<store>::open(b);
+        km::sortedlist::MultiSetOpRequest req;
+        req.inter_out = inter; req.union_out = uni; req.diff_ab_out = diff_ab; req.diff_ba_out = diff_ba;
+        req.no_compact = no_compact;
+        res = km::sortedlist::multi_setop<store>(A, B, req, nthreads);
+    });
+    return res;
+}
+
+// The combined single-pass multi_setop must produce, for every bucket count, byte-for-byte the same
+// files as the four individual single-op materializations (intersection / union / A\B / B\A), and the
+// same four cardinalities and sizes. This is the headline guarantee that "one pass" == "four passes".
+void expect_multi_matches_individual(uint64_t k, uint64_t m,
+                                     const std::vector<std::string>& seqsA,
+                                     const std::vector<std::string>& seqsB,
+                                     const std::string& tag) {
+    for (uint64_t buckets : {uint64_t{1}, uint64_t{4}, uint64_t{16}, uint64_t{64}}) {
+        const std::string ta = tag + "_b" + std::to_string(buckets);
+        const std::string pa = build_list_file(k, m, seqsA, buckets, ta + "_a");
+        const std::string pb = build_list_file(k, m, seqsB, buckets, ta + "_b");
+        const std::string td = ::testing::TempDir();
+
+        // individual references (single-op, -t 1). B\A is diff with the inputs swapped.
+        const std::string ri = td + "ref_i_" + ta, ru = td + "ref_u_" + ta;
+        const std::string rdab = td + "ref_dab_" + ta, rdba = td + "ref_dba_" + ta;
+        const uint64_t ni   = file_materialize_threads("intersection", pa, pb, ri, 1, false);
+        const uint64_t nu   = file_materialize_threads("union",        pa, pb, ru, 1, false);
+        const uint64_t ndab = file_materialize_threads("diff",         pa, pb, rdab, 1, false);
+        const uint64_t ndba = file_materialize_threads("diff",         pb, pa, rdba, 1, false);
+
+        // combined (single pass, all four outputs), -t 1
+        const std::string ci = td + "cmb_i_" + ta, cu = td + "cmb_u_" + ta;
+        const std::string cdab = td + "cmb_dab_" + ta, cdba = td + "cmb_dba_" + ta;
+        const km::sortedlist::MultiSetOpResult r =
+            file_multi_setop(pa, pb, ci, cu, cdab, cdba, 1, false);
+
+        EXPECT_EQ(slurp(ci),   slurp(ri))   << tag << " buckets=" << buckets << ": intersection bytes";
+        EXPECT_EQ(slurp(cu),   slurp(ru))   << tag << " buckets=" << buckets << ": union bytes";
+        EXPECT_EQ(slurp(cdab), slurp(rdab)) << tag << " buckets=" << buckets << ": A\\B bytes";
+        EXPECT_EQ(slurp(cdba), slurp(rdba)) << tag << " buckets=" << buckets << ": B\\A bytes";
+
+        EXPECT_EQ(r.inter_kmers,   ni)   << tag << " buckets=" << buckets;
+        EXPECT_EQ(r.union_kmers,   nu)   << tag << " buckets=" << buckets;
+        EXPECT_EQ(r.diff_ab_kmers, ndab) << tag << " buckets=" << buckets;
+        EXPECT_EQ(r.diff_ba_kmers, ndba) << tag << " buckets=" << buckets;
+
+        const km::sortedlist::SetSizes s = file_sizes(pa, pb);
+        EXPECT_EQ(r.sizes.inter,  s.inter)  << tag << " buckets=" << buckets;
+        EXPECT_EQ(r.sizes.only_a, s.only_a) << tag << " buckets=" << buckets;
+        EXPECT_EQ(r.sizes.only_b, s.only_b) << tag << " buckets=" << buckets;
+    }
 }
 
 // The whole suite at a fixed record width `store` (chosen so the b=0 list fits it).
@@ -384,4 +449,124 @@ TEST(SetOperations, ParallelMatchesSequential) {
             EXPECT_EQ(s1.only_b, st.only_b) << "buckets=" << buckets << " t=" << t;
         }
     }
+}
+
+// ---- combined (single-pass) multi_setop ----
+
+// The combined pass equals the four individual single-op materializations, byte-for-byte, across
+// bucket counts and record widths, for a range of overlap regimes.
+TEST(SetOperations, MultiMatchesIndividual_PartialOverlap) {
+    const std::string shared = random_dna(600, 1000);
+    expect_multi_matches_individual(21, 11,
+        {shared, random_dna(500, 1001)}, {shared, random_dna(500, 1002)}, "multi_overlap");
+}
+TEST(SetOperations, MultiMatchesIndividual_Inclusion) {
+    const std::string s1 = random_dna(400, 1010), s2 = random_dna(400, 1011);
+    expect_multi_matches_individual(21, 11, {s1, s2}, {s1}, "multi_incl");      // B ⊂ A
+}
+TEST(SetOperations, MultiMatchesIndividual_Disjoint) {
+    expect_multi_matches_individual(25, 11, {random_dna(500, 1020)}, {random_dna(500, 1021)}, "multi_disjoint");
+}
+TEST(SetOperations, MultiMatchesIndividual_EmptyAndIdentical) {
+    const std::string x = random_dna(400, 1030);
+    expect_multi_matches_individual(15, 5, {}, {}, "multi_empty_empty");
+    expect_multi_matches_individual(15, 5, {}, {x}, "multi_empty_b");
+    expect_multi_matches_individual(21, 11, {x}, {x}, "multi_identical");        // A == B
+}
+TEST(SetOperations, MultiMatchesIndividual_SmallMinimizerAmbiguous) {
+    const std::string shared = random_dna(500, 1035);
+    expect_multi_matches_individual(17, 3, {shared, random_dna(300, 1036)},
+                                          {shared, random_dna(300, 1037)}, "multi_m3");
+}
+TEST(SetOperations, MultiMatchesIndividual_WideUint128) {
+    const std::string shared = random_dna(700, 1040);   // 2*(2k-m)=138 bits -> __uint128_t records
+    expect_multi_matches_individual(40, 11, {shared, random_dna(400, 1041)},
+                                          {shared, random_dna(400, 1042)}, "multi_wide");
+}
+
+// Each combined output file is byte-identical for any thread count (the V2 guarantee), in both
+// compaction modes. Several bucket counts exercise real out-of-order completion + the shared
+// multi-output ordered writer's reorder buffer.
+TEST(SetOperations, MultiParallelByteIdentical) {
+    const uint64_t k = 21, m = 11;
+    const std::string shared = random_dna(4000, 800);
+    const std::vector<std::string> seqsA = {shared, random_dna(4000, 801), random_dna(2000, 802)};
+    const std::vector<std::string> seqsB = {shared, random_dna(4000, 803), random_dna(2000, 804)};
+
+    for (uint64_t buckets : {uint64_t{16}, uint64_t{64}}) {
+        const std::string ta = "multipar_b" + std::to_string(buckets);
+        const std::string pa = build_list_file(k, m, seqsA, buckets, ta + "_a");
+        const std::string pb = build_list_file(k, m, seqsB, buckets, ta + "_b");
+        for (bool nc : {false, true}) {
+            const std::string base = ::testing::TempDir() + ta + (nc ? "_nc" : "");
+            // reference at t = 1
+            file_multi_setop(pa, pb, base + "_i1", base + "_u1", base + "_dab1", base + "_dba1", 1, nc);
+            const std::string ri = slurp(base + "_i1"),   ru   = slurp(base + "_u1");
+            const std::string rdab = slurp(base + "_dab1"), rdba = slurp(base + "_dba1");
+            for (unsigned t : {2u, 4u, 8u}) {
+                const std::string s = "_t" + std::to_string(t);
+                file_multi_setop(pa, pb, base + "_i" + s, base + "_u" + s,
+                                 base + "_dab" + s, base + "_dba" + s, t, nc);
+                EXPECT_EQ(ri,   slurp(base + "_i" + s))   << "buckets=" << buckets << " nc=" << nc << " t=" << t << " inter";
+                EXPECT_EQ(ru,   slurp(base + "_u" + s))   << "buckets=" << buckets << " nc=" << nc << " t=" << t << " union";
+                EXPECT_EQ(rdab, slurp(base + "_dab" + s)) << "buckets=" << buckets << " nc=" << nc << " t=" << t << " A\\B";
+                EXPECT_EQ(rdba, slurp(base + "_dba" + s)) << "buckets=" << buckets << " nc=" << nc << " t=" << t << " B\\A";
+            }
+        }
+    }
+}
+
+// Requesting only a subset of outputs yields exactly the corresponding single-op files (proves the
+// null-target routing in MultiCollectSink keeps the relations correctly separated).
+TEST(SetOperations, MultiSubsetsMatchIndividual) {
+    const uint64_t k = 21, m = 7, buckets = 16;
+    const std::string shared = random_dna(800, 900);
+    const std::string pa = build_list_file(k, m, {shared, random_dna(500, 901)}, buckets, "sub_a");
+    const std::string pb = build_list_file(k, m, {shared, random_dna(500, 902)}, buckets, "sub_b");
+    const std::string td = ::testing::TempDir();
+
+    const std::string ref_i = td + "sub_ref_i", ref_u = td + "sub_ref_u", ref_dab = td + "sub_ref_dab";
+    file_materialize_threads("intersection", pa, pb, ref_i, 1, false);
+    file_materialize_threads("union",        pa, pb, ref_u, 1, false);
+    file_materialize_threads("diff",         pa, pb, ref_dab, 1, false);
+
+    // {inter} only
+    const std::string only_i = td + "sub_only_i";
+    file_multi_setop(pa, pb, only_i, std::nullopt, std::nullopt, std::nullopt, 1, false);
+    EXPECT_EQ(slurp(only_i), slurp(ref_i)) << "inter-only must equal single-op intersection";
+
+    // {union} only
+    const std::string only_u = td + "sub_only_u";
+    file_multi_setop(pa, pb, std::nullopt, only_u, std::nullopt, std::nullopt, 1, false);
+    EXPECT_EQ(slurp(only_u), slurp(ref_u)) << "union-only must equal single-op union";
+
+    // {inter, diff_ab} together (no union, no diff_ba)
+    const std::string c_i = td + "sub_pair_i", c_dab = td + "sub_pair_dab";
+    const km::sortedlist::MultiSetOpResult r =
+        file_multi_setop(pa, pb, c_i, std::nullopt, c_dab, std::nullopt, 4, false);
+    EXPECT_EQ(slurp(c_i),   slurp(ref_i))   << "pair: intersection";
+    EXPECT_EQ(slurp(c_dab), slurp(ref_dab)) << "pair: A\\B";
+    // sizes still come for free even when union / diff_ba are not materialized
+    const km::sortedlist::SetSizes s = file_sizes(pa, pb);
+    EXPECT_EQ(r.union_kmers,   s.uni());
+    EXPECT_EQ(r.diff_ba_kmers, s.only_b);
+}
+
+// With no output requested the call is a pure combined count: sizes match the set_sizes oracle and
+// no list file is created.
+TEST(SetOperations, MultiSizesOnly) {
+    const uint64_t k = 21, m = 11, buckets = 16;
+    const std::string shared = random_dna(800, 910);
+    const std::string pa = build_list_file(k, m, {shared, random_dna(400, 911)}, buckets, "szonly_a");
+    const std::string pb = build_list_file(k, m, {shared, random_dna(400, 912)}, buckets, "szonly_b");
+    const km::sortedlist::SetSizes s = file_sizes(pa, pb);
+    const km::sortedlist::MultiSetOpResult r =
+        file_multi_setop(pa, pb, std::nullopt, std::nullopt, std::nullopt, std::nullopt, 4, false);
+    EXPECT_EQ(r.sizes.inter,  s.inter);
+    EXPECT_EQ(r.sizes.only_a, s.only_a);
+    EXPECT_EQ(r.sizes.only_b, s.only_b);
+    EXPECT_EQ(r.inter_kmers,   s.inter);
+    EXPECT_EQ(r.union_kmers,   s.uni());
+    EXPECT_EQ(r.diff_ab_kmers, s.only_a);
+    EXPECT_EQ(r.diff_ba_kmers, s.only_b);
 }
