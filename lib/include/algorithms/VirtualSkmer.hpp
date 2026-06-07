@@ -397,7 +397,13 @@ class SortedVirtualSkmerList {
         km::sortedlist::util::print_vector(m_skmer_list);
     }
 
-    void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration) {
+    // `greedy_chain`: select compatible overlaps with the patience-sort chain (greedy_chaining) instead
+    // of the Fenwick-tree colinear_chaining. Both return a maximum chain (equally compact result), but
+    // greedy is faster; its different tie-breaking can change the super-k-mer packing, so it is opt-in
+    // for the set-operation re-compaction (correctness = represented k-mer set). Default false keeps
+    // construction's exact, test-pinned behaviour.
+    void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration,
+                                               bool greedy_chain = false) {
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
@@ -448,7 +454,9 @@ class SortedVirtualSkmerList {
             // 3 - get valid overlaps using colinear chaining
             std::vector<overlap> valid_overlaps;
             if(candidate_overlaps.size() != 0){
-                valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+                valid_overlaps = greedy_chain
+                    ? km::chaining::greedy_chaining(candidate_overlaps.begin(), candidate_overlaps.end())
+                    : km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
             else { valid_overlaps = candidate_overlaps;}
             // cout << "valid overlaps for " << right_column_position << "\t";
@@ -474,6 +482,10 @@ class SortedVirtualSkmerList {
             // cout << endl;
         }
 
+        // Clear any prior content so the instance can be reused across many enumerations (the set-op
+        // re-compaction reuses one object per bucket instead of allocating a fresh one each time). A
+        // fresh instance starts empty, so this is a no-op for every existing single-use caller.
+        m_skmer_list.clear();
         m_skmer_list.reserve(vskmer_list.size());
 
         for(km::sortedlist::Virtual_skmer<kuint>& vskmer: vskmer_list){
@@ -613,11 +625,16 @@ class SortedVirtualSkmerList {
 
         // 2nd pass over the column: return ordered list
         // For every "column" i.e. possible kmer in the skmer size
-        // For every skmer that has a kmer in that column
-        std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(),
-            [this, kmer_pos, start](uint64_t id1, uint64_t id2){
-                return m_manip.kmer_compare(*(start + id1), *(start + id2), kmer_pos) < 0;
-            });
+        // For every skmer that has a kmer in that column.
+        // Skip the sort when the ids are already in k-mer order — the set-op re-compaction feeds an
+        // enumeration grouped by column where each block is emitted in merge (sorted) order, so this
+        // O(n) is_sorted check replaces an O(n log n) sort on that path. Construction's enumeration is
+        // not pre-sorted per column, so the check fails there and the sort runs as before.
+        const auto col_less = [this, kmer_pos, start](uint64_t id1, uint64_t id2){
+            return m_manip.kmer_compare(*(start + id1), *(start + id2), kmer_pos) < 0;
+        };
+        if (!std::is_sorted(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less))
+            std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less);
 
         // 3rd pass, remove k-mer duplicates
         auto last_value = std::unique(valid_skmer_ids.begin(), valid_skmer_ids.end(),

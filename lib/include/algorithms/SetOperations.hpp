@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -48,35 +49,58 @@ inline size_t set_next_valid(const km::SkmerManipulator<store>& cmp,
     return i;
 }
 
+// Counting-sort a span's record indices into per-column groups: on return, column c's records are
+// idx[off[c] .. off[c+1]) in ascending index order (== ascending k-mer order at column c, the sorted
+// invariant). Replaces re-scanning the whole span from 0 for each column (the former set_next_valid
+// hole-scan, (k-m+1)x over the span) with one O(span) bucketing pass + direct per-column walks.
+template<typename store>
+inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
+                             const km::Skmer<store>* L, size_t n, uint64_t ncols,
+                             std::vector<uint32_t>& idx, std::vector<uint32_t>& off) {
+    off.assign(ncols + 1, 0);
+    for (size_t i {0}; i < n; ++i) {
+        const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
+        if (e < s) continue;                       // no valid k-mer (unsigned: a wrapped s>e is skipped)
+        for (uint64_t c {s}; c <= e && c < ncols; ++c) ++off[c + 1];
+    }
+    for (uint64_t c {0}; c < ncols; ++c) off[c + 1] += off[c];
+    idx.resize(off[ncols]);
+    std::vector<uint32_t> cur(off.begin(), off.end() - 1);
+    for (size_t i {0}; i < n; ++i) {
+        const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
+        if (e < s) continue;
+        for (uint64_t c {s}; c <= e && c < ncols; ++c) idx[cur[c]++] = static_cast<uint32_t>(i);
+    }
+}
+
 // Per-column two-cursor merge of two sorted spans. Works on any contiguous skmer range — an in-RAM
 // SortedVirtualSkmerList (get_list().data()) or a lazily-loaded bucket — so the library and tests
 // share one implementation. `sink` receives each emitted k-mer as (record, column) via only_a /
-// only_b / both. The cursors advance monotonically, so the pass is linear in the spans per column.
+// only_b / both, in column-major order with ascending k-mer order within each column (identical to
+// the previous set_next_valid implementation, so every sink sees the exact same call sequence).
 template<typename store, typename Sink>
 inline void merge_columns(const km::SkmerManipulator<store>& cmp,
                           const km::Skmer<store>* A, size_t nA,
                           const km::Skmer<store>* B, size_t nB,
                           Sink& sink) {
     const uint64_t k_minus_m {cmp.k - cmp.m};
+    const uint64_t ncols {k_minus_m + 1};
+    // Reused across buckets/calls (set-ops are sequential) to avoid re-allocating the index arrays.
+    thread_local std::vector<uint32_t> idxA, offA, idxB, offB;
+    build_column_csr<store>(cmp, A, nA, ncols, idxA, offA);
+    build_column_csr<store>(cmp, B, nB, ncols, idxB, offB);
     for (uint64_t c {0}; c <= k_minus_m; ++c) {
-        size_t ia {set_next_valid(cmp, A, nA, 0, c)};
-        size_t ib {set_next_valid(cmp, B, nB, 0, c)};
-        while (ia < nA && ib < nB) {
-            const int r {cmp.kmer_compare(A[ia], B[ib], c)};
-            if (r < 0) {
-                sink.only_a(A[ia], c);
-                ia = set_next_valid(cmp, A, nA, ia + 1, c);
-            } else if (r > 0) {
-                sink.only_b(B[ib], c);
-                ib = set_next_valid(cmp, B, nB, ib + 1, c);
-            } else {
-                sink.both(A[ia], c);
-                ia = set_next_valid(cmp, A, nA, ia + 1, c);
-                ib = set_next_valid(cmp, B, nB, ib + 1, c);
-            }
+        const uint32_t* ra {idxA.data() + offA[c]}; size_t na {offA[c + 1] - offA[c]};
+        const uint32_t* rb {idxB.data() + offB[c]}; size_t nb {offB[c + 1] - offB[c]};
+        size_t ia {0}, ib {0};
+        while (ia < na && ib < nb) {
+            const int r {cmp.kmer_compare(A[ra[ia]], B[rb[ib]], c)};
+            if (r < 0)      { sink.only_a(A[ra[ia]], c); ++ia; }
+            else if (r > 0) { sink.only_b(B[rb[ib]], c); ++ib; }
+            else            { sink.both  (A[ra[ia]], c); ++ia; ++ib; }
         }
-        for (; ia < nA; ia = set_next_valid(cmp, A, nA, ia + 1, c)) sink.only_a(A[ia], c);
-        for (; ib < nB; ib = set_next_valid(cmp, B, nB, ib + 1, c)) sink.only_b(B[ib], c);
+        for (; ia < na; ++ia) sink.only_a(A[ra[ia]], c);
+        for (; ib < nb; ++ib) sink.only_b(B[rb[ib]], c);
     }
 }
 
@@ -148,10 +172,16 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
 // single-k-mer skmers -> re-compact into virtual super-k-mers via generate_sorted_list_from_enumeration
 // (the same path construction uses; safe at b>0 since it touches only the quotient-regenerated masks)
 // -> append. Records stay at the quotiented store width, so no extra truncation before writing.
+// `no_compact`: skip the per-bucket super-k-mer re-compaction (the dominant cost). The merge already
+// emits the kept k-mers; we sort that bucket's single-k-mer skmers by skmer order and write them as-is.
+// The result stays a valid, queryable sorted list (each record holds exactly one k-mer, valid at one
+// column; within a column skmer order == k-mer order, so the per-column query invariant holds), but the
+// file is larger (one record per k-mer instead of ~4-5 k-mers per super-k-mer).
 template<typename store>
 inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
                                   const std::string& out_path,
-                                  bool keep_inter, bool keep_only_a, bool keep_only_b) {
+                                  bool keep_inter, bool keep_only_a, bool keep_only_b,
+                                  bool no_compact = false) {
     check_compatible(A, B);
     const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
 
@@ -170,6 +200,10 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
 
     km::SkmerManipulator<store> manip{k, m, b};
     std::vector<km::Skmer<store>> collected;  // reused per-bucket scratch
+    // One re-compaction worker reused across all buckets: its manipulator (and masks) are built once
+    // here instead of per bucket, and its internal list/merge buffers grow to the largest bucket and
+    // are then reused (generate_sorted_list_from_enumeration clears the list on entry).
+    SortedVirtualSkmerList<store> sub(k, m, b);
     uint64_t total_records {0};   // virtual skmers written (what the reader offsets on)
     uint64_t total_kmers {0};     // result k-mers (== the matching _size)
 
@@ -185,8 +219,19 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
         total_kmers += collected.size();
         if (collected.empty()) continue;
 
-        SortedVirtualSkmerList<store> sub(k, m, b);
-        sub.generate_sorted_list_from_enumeration(collected);
+        if (no_compact) {
+            // Sort the bucket's single-k-mer skmers by skmer order (Skmer::operator< on m_pair) and
+            // write them directly — no super-k-mer assembly. Same k-mer set, more records.
+            std::sort(collected.begin(), collected.end());
+            VirtualSkmerSerializer<store>::append_payload(out, collected);
+            if (out.fail())
+                throw std::runtime_error("Error writing skmers to file: " + out_path);
+            dir[i].count = collected.size();
+            total_records += collected.size();
+            continue;
+        }
+
+        sub.generate_sorted_list_from_enumeration(collected, /*greedy_chain*/ true);
         const std::vector<km::Skmer<store>>& sl {sub.get_list()};
         VirtualSkmerSerializer<store>::append_payload(out, sl);
         if (out.fail())
@@ -205,17 +250,17 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
 
 // ---- public named operations (return the result k-mer count) ----
 template<typename store>
-inline uint64_t intersection(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out) {
-    return materialize_setop<store>(A, B, out, /*inter*/ true, /*only_a*/ false, /*only_b*/ false);
+inline uint64_t intersection(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out, bool no_compact = false) {
+    return materialize_setop<store>(A, B, out, /*inter*/ true, /*only_a*/ false, /*only_b*/ false, no_compact);
 }
 template<typename store>
-inline uint64_t set_union(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out) {
-    return materialize_setop<store>(A, B, out, true, true, true);
+inline uint64_t set_union(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out, bool no_compact = false) {
+    return materialize_setop<store>(A, B, out, true, true, true, no_compact);
 }
 // diff(A, B) = A \ B (asymmetric): keep only the k-mers present in A and absent from B.
 template<typename store>
-inline uint64_t difference(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out) {
-    return materialize_setop<store>(A, B, out, false, true, false);
+inline uint64_t difference(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out, bool no_compact = false) {
+    return materialize_setop<store>(A, B, out, false, true, false, no_compact);
 }
 
 // ---- size-only variants (no materialization) ----

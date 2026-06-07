@@ -127,10 +127,11 @@ int run_setop(const SetOpOptions& opts) {
                 std::cout << km::sortedlist::diff_size<store>(A, B) << std::endl;
             } else {
                 const std::string& out = *opts.output_file;
+                const bool nc = opts.no_compact;
                 uint64_t n {0};
-                if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out);
-                else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out);
-                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out);
+                if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out, nc);
+                else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out, nc);
+                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out, nc);
                 std::cerr << opts.op << ": wrote " << n << " k-mers to " << out << std::endl;
             }
         });

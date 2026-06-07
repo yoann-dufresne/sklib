@@ -34,4 +34,5 @@ struct SetOpOptions {
     std::string list_a;                      // -a/--list-a
     std::string list_b;                      // -b/--list-b
     std::optional<std::string> output_file;  // -o/--output (required for the materializing ops)
+    bool no_compact = false;                 // --no-compact: skip super-k-mer re-compaction of the result
 };

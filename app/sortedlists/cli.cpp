@@ -135,6 +135,11 @@ CLIResult parse_cli(int argc, char** argv) {
         "Output sorted skmer list for the result (required for intersection/union/diff; "
         "ignored by the *_size variants, which print a count to stdout).");
 
+    setop->add_flag("--no-compact", setop_opts.no_compact,
+        "Skip re-compacting the result into super-k-mers: emit one record per result k-mer. "
+        "Much faster (avoids the dominant cost) but a larger output file; still a valid, "
+        "queryable sorted list. Ignored by the *_size variants.");
+
     setop->footer(
         "Examples:\n"
         "  sskm setop --op intersection -a a.sskm -b b.sskm -o inter.sskm\n"
