@@ -34,7 +34,11 @@ construct_sklib() {
     # Optional bucket count (BUCKETS env, empty => tool default 4096). Used by the bucket sweep.
     local bucket_args=()
     [[ -n "${BUCKETS:-}" ]] && bucket_args=(--buckets "$BUCKETS")
-    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" "${bucket_args[@]}" || return 1
+    # Optional construction thread count (CONSTRUCT_THREADS env, empty => binary default). The
+    # per-bucket compaction is parallelized; the index is byte-identical for any thread count.
+    local thread_args=()
+    [[ -n "${CONSTRUCT_THREADS:-}" ]] && thread_args=(-t "$CONSTRUCT_THREADS")
+    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" "${bucket_args[@]}" "${thread_args[@]}" || return 1
     [[ -s "$IDX_PATH" ]] || return 1
     IDX_FILE_BYTES=$(stat -c%s "$IDX_PATH")
     # Payload = file minus the real header. V3 header is 40 + 16*n_buckets bytes (the per-bucket

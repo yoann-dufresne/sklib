@@ -62,6 +62,12 @@ CLIResult parse_cli(int argc, char** argv) {
     construct->add_option("--tmp-dir", construct_opts.tmp_dir,
         "Directory for temporary bucket files (default: next to the output file).");
 
+    construct->add_option("-t,--threads", construct_opts.threads,
+        "Worker threads for the per-bucket compaction phase (default 8). Buckets are compacted in "
+        "parallel and written in bucket order, so the output is byte-identical to a sequential run "
+        "for any thread count. 1 = sequential. Binary output to a regular file only.")
+        ->check(CLI::PositiveNumber);
+
     construct->footer(
         "Example:\n"
         "  sskm construct -k 21 -m 11 -f genome.fa -o genome.sskm\n"

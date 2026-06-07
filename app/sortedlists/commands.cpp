@@ -8,6 +8,9 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <algorithm>
+#if defined(__GLIBC__)
+#include <malloc.h> // mallopt(M_ARENA_MAX, ...) — cap per-thread arenas on the parallel build
+#endif
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -46,6 +49,17 @@ int run_construct(const ConstructOptions& opts) {
     params.buckets = opts.buckets;
     params.has_output_file = opts.output_file.has_value();
     if (opts.tmp_dir) params.tmp_dir = *opts.tmp_dir;
+    params.n_threads = opts.threads;
+
+#if defined(__GLIBC__)
+    // The parallel phase-2 compaction churns many short-lived per-bucket allocations across N
+    // workers. glibc's default arena count (8×cores) gives each thread its own arena that retains
+    // its high-water mark, inflating peak RSS at high -t for no speed gain (compaction is
+    // compute-bound, not malloc-bound). Capping the arenas keeps peak RSS close to the sequential
+    // build (measured chr1: -t8 222->161 MB, -t22 521->~400 MB) at no measurable time cost.
+    if (opts.threads >= 2)
+        mallopt(M_ARENA_MAX, 4);
+#endif
 
     // --max-ram (adaptive bucketing) reads the input twice, so it requires
     // -f <file>; otherwise warn and fall back to fixed --buckets (max_ram_bytes

@@ -17,6 +17,7 @@ struct ConstructOptions {
     uint64_t buckets = 4096;
     std::optional<std::string> max_ram;
     std::optional<std::string> tmp_dir;
+    unsigned int threads = 8;
 };
 
 struct QueryOptions {
