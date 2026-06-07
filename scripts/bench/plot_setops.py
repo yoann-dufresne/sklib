@@ -141,7 +141,7 @@ def fig_threads():
         ax.grid(True, which="both", ls=":", alpha=0.5); ax.legend(fontsize=8)
     for idx in range(n, nrow * ncol):
         axes[idx // ncol][idx % ncol].axis("off")
-    fig.suptitle("Set-op intersection: thread scaling — sklib (bucket-parallel, v0.5.1) vs KMC vs FMSI (k=21)")
+    fig.suptitle("Set-op intersection: thread scaling — sklib (bucket-parallel, v0.6.0) vs KMC vs FMSI (k=21)")
     plt.tight_layout(); plt.savefig(os.path.join(FIGS, "fig_threads.png"), dpi=120); plt.close()
 
 

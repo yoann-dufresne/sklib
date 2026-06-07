@@ -1,6 +1,6 @@
 # Benchmark — opérations ensemblistes sur k-mers : sklib vs KMC vs CBL vs FMSI
 
-**Date :** 2026-06-07 · **Machine :** Intel Core Ultra 7 165H (22 cœurs), 62 Gio RAM · k = 21 (impair, requis par CBL), m = 11 (sklib). sklib **Release** v0.5.0 + **set-ops parallèles par bucket** (v0.5.1, `-t`, voir §7) ; les optimisations séquentielles antérieures donnaient déjà **~1.6×**.
+**Date :** 2026-06-07 · **Machine :** Intel Core Ultra 7 165H (22 cœurs), 62 Gio RAM · k = 21 (impair, requis par CBL), m = 11 (sklib). sklib **Release** v0.5.0 + **set-ops parallèles par bucket** (v0.6.0, `-t`, voir §7) ; les optimisations séquentielles antérieures donnaient déjà **~1.6×**.
 
 ## TL;DR
 
@@ -10,7 +10,7 @@
 | **Cardinalité seule (`_size`)** | 🟢 **sklib unique et ~×3 plus rapide** que « matérialiser puis compter » (KMC/CBL n'ont pas d'équivalent) |
 | **Compacité de l'index/sortie** | 🟢 **sklib ~25 bits/k-mer** vs KMC ~48, CBL ~43 |
 | **Temps set-op (mono-cœur)** | 🟢 sklib gagne ∩ sur **toutes** les paires réelles (chr21∩chr22 : 0.81 vs KMC 2.04 s, ×2.5) et à overlap < ~40–50 %, et **diff partout** ; KMC ne garde l'avantage que sur l'union/∩ à très fort overlap |
-| **Temps set-op (multi-cœurs, v0.5.1)** | 🟢 **parallélisme par bucket ×6–9** → sklib **le plus rapide dès `t≥4` sur quasiment tout**, y compris ∩ à fort overlap où KMC dominait (chr1 ∩ : **2.57 vs 2.68 s**) ; **KMC ne parallélise pas ses set-ops** (×1–2.4) et sa RAM explose (chr1 ∩ : **4.35 Go vs 0.69**) ; FMSI 100–1000× plus lent (§7) |
+| **Temps set-op (multi-cœurs, v0.6.0)** | 🟢 **parallélisme par bucket ×6–9** → sklib **le plus rapide dès `t≥4` sur quasiment tout**, y compris ∩ à fort overlap où KMC dominait (chr1 ∩ : **2.57 vs 2.68 s**) ; **KMC ne parallélise pas ses set-ops** (×1–2.4) et sa RAM explose (chr1 ∩ : **4.35 Go vs 0.69**) ; FMSI 100–1000× plus lent (§7) |
 | **Correction** | 🟢 **accord exact sklib = KMC = CBL** sur les 6 quantités, vérifié sur données réelles ; sortie set-op **octet-identique quel que soit `-t`** (vs séquentiel + ThreadSanitizer) |
 
 **Découverte clé :** le **temps sklib ∝ taille de la SORTIE** (matérialisation = re-compactage en super-k-mers), tandis que **KMC/CBL ∝ taille de l'ENTRÉE** (scan). Cela explique tous les résultats et indique où chaque outil est optimal.
@@ -21,7 +21,7 @@
 
 - **Outils.** sklib (`sskm setop`, build-bench **Release** ISA native, v0.4.2 + set-ops) ; **KMC** (`kmc` + `kmc_tools simple`) ; **CBL** (github.com/imartayan/CBL, binaire spécialisé par k, `--canonical`). **FMSI** *supporte aussi* les opérations ensemblistes (framework **f-MS expérimental** : `fmsi inter/union/diff`) — mesuré au **§9 (k-sweep)**, mais **20–100× plus lent** que sklib/KMC et bien plus gourmand en RAM (ex. ∩ ecoli : 11–13 s / 480 Mo vs sklib 0,3 s / 5 Mo) ; cardinalité validée vs KMC (union exacte ; ∩/diff < 0,1 %, écart de re-comptage). sshash, SBWT et BQF sont **membership-only** (pas d'opérations ensemblistes).
 - **Modèle de mesure.** On construit chaque index **une fois** (mesuré à part), puis on exécute chaque opération sur les index **pré-construits** (lire 2 index → écrire 1 résultat — identique pour les 3 outils). `/usr/bin/time -v` → temps mur + RSS pic ; médiane de 3 répétitions pour les set-ops.
-- **Équité threads.** Les §§3–6 sont **mono-cœur** (`taskset -c 0`, `kmc -t1`) pour isoler l'algorithme. Depuis v0.5.1 les set-ops sklib sont **parallèles par bucket** : le **§7** compare le scaling de sklib, KMC et FMSI de `-t 1` à `-t 22` (CBL reste mono-thread par conception, et indisponible dans cet environnement).
+- **Équité threads.** Les §§3–6 sont **mono-cœur** (`taskset -c 0`, `kmc -t1`) pour isoler l'algorithme. Depuis v0.6.0 les set-ops sklib sont **parallèles par bucket** : le **§7** compare le scaling de sklib, KMC et FMSI de `-t 1` à `-t 22` (CBL reste mono-thread par conception, et indisponible dans cet environnement).
 - **Cardinalités.** Fournies par le `_size` de sklib (rapide, sans matérialisation), **validées identiques à KMC et CBL** (§2).
 - **Données.** Génomes réels (E. coli K12/Sakai/UTI89/IAI39, levure, *C. elegans*, humain chr1/20/21/22) + copies mutées contrôlées (`mutate.py`) pour un régime d'overlap constant en scaling.
 
@@ -111,9 +111,9 @@ KMC et CBL doivent **matérialiser** un index résultat puis le compter. sklib r
 
 Le temps sklib suit linéairement la taille de sortie ; KMC est plat. **Croisement de l'intersection ≈ 40–50 % de Jaccard** (après l'optimisation ~1.6× ; ~20–25 % auparavant). En génomique comparative (chromosomes/espèces différents, Jaccard quelques %), **sklib gagne largement l'intersection** (×2–3).
 
-## 7. Multi-cœurs — parallélisme par bucket de sklib (v0.5.1)
+## 7. Multi-cœurs — parallélisme par bucket de sklib (v0.6.0)
 
-Depuis **v0.5.1**, `sskm setop` est **parallèle par bucket** (`-t`, défaut 8) : les buckets de minimiseurs sont indépendants et distribués dynamiquement entre les workers. **La sortie est octet-identique quel que soit le nombre de threads** (vérifié octet à octet vs le binaire séquentiel + ThreadSanitizer). On compare ici le scaling de sklib (`-t 1/4/8/22`) à **KMC** (`kmc_tools simple`, multi-thread) et à **FMSI** (cadre f-MS, séquentiel — seul autre outil set-op disponible ; CBL indisponible dans cet environnement), sur 6 paires réelles. Données : `report/data/setops_parallel.csv`.
+Depuis **v0.6.0**, `sskm setop` est **parallèle par bucket** (`-t`, défaut 8) : les buckets de minimiseurs sont indépendants et distribués dynamiquement entre les workers. **La sortie est octet-identique quel que soit le nombre de threads** (vérifié octet à octet vs le binaire séquentiel + ThreadSanitizer). On compare ici le scaling de sklib (`-t 1/4/8/22`) à **KMC** (`kmc_tools simple`, multi-thread) et à **FMSI** (cadre f-MS, séquentiel — seul autre outil set-op disponible ; CBL indisponible dans cet environnement), sur 6 paires réelles. Données : `report/data/setops_parallel.csv`.
 
 ![Scaling threads — sklib vs KMC vs FMSI](figs/fig_threads.png)
 
@@ -178,7 +178,7 @@ sklib se bonifie avec k (intersection plus petite, **∩ < KMC dès k=21** aprè
 | **Index dynamique exact + set-ops** (ajout/retrait incrémental) | CBL (mais ×100 RAM, plus lent ici) |
 | **Sortie la plus compacte** | 🟢 **sklib** (~25 bits/k-mer) |
 
-**Pistes sklib :** (1) ✅ **parallélisme par bucket — fait** (v0.5.1, §7 : ×6–9, comble l'écart sur ∩/union à fort overlap, sortie octet-identique) ; (2) accélérer le re-compactage de la sortie (coût dominant de la matérialisation) ; (3) limiter la croissance de RAM par worker à fort `-t` (chaque worker garde son espace de travail).
+**Pistes sklib :** (1) ✅ **parallélisme par bucket — fait** (v0.6.0, §7 : ×6–9, comble l'écart sur ∩/union à fort overlap, sortie octet-identique) ; (2) accélérer le re-compactage de la sortie (coût dominant de la matérialisation) ; (3) limiter la croissance de RAM par worker à fort `-t` (chaque worker garde son espace de travail).
 
 ## 11. Reproductibilité
 

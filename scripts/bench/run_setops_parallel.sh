@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Parallel cross-tool set-operation benchmark (sklib v0.5.1+ bucket-parallel set-ops).
+# Parallel cross-tool set-operation benchmark (sklib v0.6.0+ bucket-parallel set-ops).
 #
-# Since v0.5.1 `sskm setop` is parallel by bucket (-t). This sweeps sklib's threads against the two
+# Since v0.6.0 `sskm setop` is parallel by bucket (-t). This sweeps sklib's threads against the two
 # other set-op tools available here: KMC (kmc_tools simple, multithreaded) and FMSI (f-MS framework,
 # serial). CBL is unavailable in this environment (skipped). Not pinned: multi-core runs use all
 # cores, so the machine must be otherwise idle.
