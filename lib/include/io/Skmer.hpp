@@ -31,13 +31,19 @@ public:
     pair m_pair;
     uint16_t m_pref_size;
     uint16_t m_suff_size;
-    // Explicit, zero-initialized tail padding. sizeof(Skmer) is 24 but only the
-    // 20 bytes above carry data; the serializer dumps records raw, so without a
-    // deterministic value these 4 bytes leak uninitialized heap and make the
-    // output bytes (not the k-mer set) differ run-to-run. Keeping it an explicit
-    // member with a default initializer zeroes it across every constructor
-    // without changing sizeof or the on-disk layout.
-    uint32_t m_pad{0};
+    // Explicit, zero-initialized tail padding. The serializer dumps records raw, so any byte the
+    // compiler leaves as alignment padding leaks uninitialized heap and makes the output bytes (not
+    // the k-mer set) differ run-to-run. A single uint32_t only covered the narrow widths: at
+    // kuint=__uint128_t the record aligns to 16, the data ends at 40, and the 8 trailing bytes stayed
+    // uninitialized (nondeterministic on-disk records, e.g. across construction thread counts). Size
+    // the pad from kuint (pair is still incomplete here; sizeof(pair)==2*sizeof(kuint),
+    // alignof(pair)==alignof(kuint)) so the named members fill the record to its natural size for
+    // EVERY width, with no compiler-inserted tail padding — and sizeof is unchanged (4 bytes at 32/64
+    // bit, 12 at 128), so the on-disk layout is identical.
+    static constexpr size_t k_data_bytes   = 2 * sizeof(kuint) + 2 * sizeof(uint16_t);
+    static constexpr size_t k_record_bytes =
+        ((k_data_bytes + sizeof(uint32_t) + alignof(kuint) - 1) / alignof(kuint)) * alignof(kuint);
+    std::array<std::uint8_t, k_record_bytes - k_data_bytes> m_pad{};
 
     Skmer() : m_pair(), m_pref_size(0), m_suff_size(0)
     {}
