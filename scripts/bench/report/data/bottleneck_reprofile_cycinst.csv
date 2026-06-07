@@ -1,0 +1,6 @@
+function,cycles_pct,instr_pct,cyc_per_inst,note
+get_candidate_overlaps,42.2,34.4,1.23,memory-stalled (scattered lower_bound)
+greedy_chaining,12.6,18.6,0.68,compute-dense/fast
+sort_column,10.3,16.9,0.61,compute-dense/fast
+merge_LList_column,9.0,9.0,1.00,balanced
+build_column_csr,8.6,4.6,1.86,memory-stalled (scatter fill)

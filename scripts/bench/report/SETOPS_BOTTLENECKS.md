@@ -367,3 +367,106 @@ préexistant). Mesures cache chaud, 1 cœur, médianes.
 Reproductibilité de la validation : harnais `verify.sh` (correction, oracle) et `bench.sh` (timing) du
 plan de travail ; toutes les améliorations gardées sont byte-identiques sauf A2/A4 (set-équivalentes,
 requête-identiques, vérifiées contre vérité-terrain).
+
+---
+
+## 11. Re-profilage après optimisations — nouveaux goulots & pistes (2026-06-07)
+
+Nouveau `perf` (cycles + instructions, ~30 k échantillons, binaire après A2+A3+C2+D2+A4) sur les **trois
+régimes**. Données : `report/data/bottleneck_reprofile_*.csv`.
+
+### Là où va le temps maintenant
+
+**Matérialisé compact** (celegans ∩/∪, chr1 ∩ — très stable) :
+
+| phase / fonction | celegans ∩ | celegans ∪ | chr1 ∩ |
+|---|--:|--:|--:|
+| **RE-COMPACTION** | **80.4 %** | **85.2 %** | **86.5 %** |
+| `get_candidate_overlaps` | **42.2 %** | **44.9 %** | **45.3 %** |
+| ↳ tri de `right_keys` (`std::sort`) | ~7.3 % | — | — |
+| `greedy_chaining` (patience-LIS) | 12.6 % | 13.6 % | 13.7 % |
+| `sort_column` | 10.3 % | 11.2 % | 12.1 % |
+| `merge_LList_column` | 9.0 % | 9.0 % | 8.8 % |
+| `Virtual_skmer` / vecteurs | 5.9 % | 6.2 % | 5.9 % |
+| **MERGE** | 15.4 % | 11.2 % | 9.8 % |
+| `build_column_csr` (l'index C2) | 8.6 % | 5.9 % | 7.2 % |
+| driver `merge_columns` + collect | 6.8 % | 5.3 % | 2.7 % |
+
+**Cardinalité (`_size`)** : `build_column_csr` **58 %**, compare 34 %.
+
+> Le mode `--no-compact` est laissé tel quel : c'est un mode de sortie isolé (k-mers en vrac), il
+> n'alimente ni le chemin compact ni la cardinalité, donc il n'est **pas** une cible d'optimisation ici.
+
+### Qui *stalle* (cycles% vs instructions%, même binaire)
+
+| fonction | cyc/inst | lecture |
+|---|--:|---|
+| `get_candidate_overlaps` | **1.23×** | borné mémoire — les `lower_bound` par élément sautent dans `right_keys` |
+| `build_column_csr` | **1.86×** | borné mémoire — l'écriture dispersée `idx[cur[c]++]` (scatter par colonne) |
+| `merge_LList_column` | 1.00× | équilibré |
+| `greedy_chaining` | 0.68× | dense/rapide — **A4 a réussi** (le chaînage est passé de 30 % à 12.6 %) |
+| `sort_column` | 0.61× | dense/rapide |
+
+**Le bilan a basculé.** Avant : `colinear_chaining` (30 %) dominait. Maintenant que A4 l'a réduit à
+12.6 %, **`get_candidate_overlaps` est le goulot dominant du compact (~42–45 %, ~49 % avec son tri)** —
+c'est un *join* sort-merge (extraire les clés (k−1)-mer, trier `right_keys`, `lower_bound` par élément
+gauche) **borné mémoire**. Pour la cardinalité, c'est l'index CSR (`build_column_csr`, 58 %).
+
+### Pistes d'amélioration (classées, rattachées aux données)
+
+> Contrainte transverse : `get_candidate_overlaps`, `sort_column`, `merge_LList_column` sont **partagés
+> avec la construction** (tests figés). Toute modif doit être byte-identique **ou** activée seulement sur
+> le chemin set-op via un paramètre (comme `greedy_chain` l'a été pour A4).
+
+**P1 — `get_candidate_overlaps` en *sort-merge join* (cible #1, ~49 % du compact).**
+Aujourd'hui : trie un seul côté (`right_keys`) puis fait une **recherche binaire par élément gauche**
+(accès dispersés, 1.23× stall). Trier **les deux** listes de clés (gauche *et* droite) puis fusionner
+linéairement supprime les `lower_bound` dispersés au profit d'un balayage séquentiel cache-friendly.
+L'ordre de sortie change (ordre des clés) mais le chaînage **re-trie** de toute façon sur le chemin
+set-op → sans effet. Gain attendu : retirer la majeure partie du stall mémoire du join (potentiel
+−25–40 % du join). *Variante* : **hash join** (`unordered_multimap` clé→pos) — l'ancienne version
+hashée avait été retirée pour la RAM, mais en set-op la RAM par bucket est bornée ; à mesurer (le hash a
+ses propres défauts de cache).
+
+**P2 — `build_column_csr` : cache des bornes + scatter plus local (cardinalité 58 %, merge compact ~9 %).**
+La passe de remplissage recalcule `get_valid_kmer_bounds` (déjà fait à la passe de comptage) et écrit en
+dispersé (1.86× stall). (a) **Mémoriser `(s,e)` par record** entre les deux passes (évite le recalcul) ;
+(b) explorer un remplissage par colonne (meilleure localité) ou un layout SoA. Gain surtout sur le
+chemin `_size` (Jaccard), et un peu sur la part merge du compact.
+
+**P3 — re-compaction set-op spécialisée (sort_column 10 % + son scan).** Sur le chemin set-op, chaque
+k-mer collecté n'est valide qu'à **une** colonne et les blocs sont déjà triés (cf. A3) ; une re-compaction
+dédiée qui exploite ce regroupement éliminerait le scan « toutes colonnes » de `sort_column`
+(byte-non-identique → set-op only). Recoupe l'idée A1 *streaming*, à plus faible risque.
+
+**P4 — B1 (parallélisme par bucket, toujours exclu).** Reste **le plus gros levier** : buckets
+indépendants, plus gros bucket = 0.2–0.3 % du travail → ordonnancement dynamique ⇒ ~T/P quasi-linéaire,
+s'empile multiplicativement sur P1–P3 (cf. §6).
+
+**Ordre conseillé :** P1 (gros, compact) → P2 (cardinalité) → P3 (compact) → P4. Chacune vise le goulot
+dominant du **matérialisé compact** ou de la **cardinalité** (les deux régimes utiles) ; aucune ne touche
+la correction (set-op only ou byte-identique), validables avec le même harnais `verify.sh`/`bench.sh`.
+
+### Tentatives P1 & P2 — résultats négatifs (2026-06-07)
+
+P1 et P2 ont été implémentées et testées sur les **jeux réels complets** (celegans, chr1), validées exact
+(oracle + gtest 196/197 + **cross-validation KMC** : cardinalités + contenu présent-tout, ecoli & chr21/chr22)
+puis chronométrées (temps médian + RSS pic). **Les deux ont été reverted (aucun gain de temps fiable) ;
+la RAM restait du même ordre dans les deux cas (~10–47 MB, streaming).**
+
+- **P1 (sort-merge join sur `get_candidate_overlaps`, set-op only) → REVERTED, plus lente.** celegans ∩
+  12.7→14.6 s, ∪ 19.3→21.1 s, et **chr1 ∩ 22.4→37.5 s (+67 %)**. Le tri complet du côté gauche ajouté
+  coûte plus que ce qu'économisent les recherches binaires dispersées : la fonction est plus
+  *compute-bound* que *stall-bound* (le 1.23× cyc/inst ne se traduit pas en gain en supprimant les
+  `lower_bound`). RAM inchangée (~22–47 MB).
+- **P2 (cache des bornes `(s,e)` dans `build_column_csr`) → REVERTED, pas de gain.** Comparaison
+  *équitable* (machine stabilisée, back-to-back) : celegans `_size` 1.32→1.30 s, chr1 `_size`
+  2.15→2.08 s (~2–3 %, dans le bruit ; byte-identique à HEAD). Le « 2× » initialement vu venait d'une
+  baseline mesurée sous charge. Cause : sur ces tailles de bucket les records restent en cache entre les
+  deux passes, donc supprimer la relecture en passe de remplissage n'économise rien (le 1.86× cyc/inst de
+  `build_column_csr` ne vient pas de cette relecture). RAM +~0.5 MB (négligeable).
+
+**Leçon :** les deux fonctions dominantes résistent à ces optimisations *locales* ; leur stall mémoire
+n'est pas là où l'intuition le plaçait. Pistes restantes non testées : **P3** (re-compaction set-op
+spécialisée) et surtout **P4/B1** (parallélisme par bucket) — la plus prometteuse, car elle ne dépend pas
+de micro-optimiser ces fonctions mais multiplie le débit par le nombre de cœurs.

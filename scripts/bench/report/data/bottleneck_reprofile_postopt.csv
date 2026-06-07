@@ -1,0 +1,14 @@
+regime,phase,function,self_cycles_pct
+compact_inter,RECOMPACTION,get_candidate_overlaps,42.2
+compact_inter,RECOMPACTION,chaining_greedy,12.6
+compact_inter,RECOMPACTION,sort_column,10.3
+compact_inter,RECOMPACTION,merge_LList_column,9.0
+compact_inter,RECOMPACTION,Virtual_skmer_vec,5.9
+compact_inter,RECOMPACTION,right_keys_sort_introsort,7.3
+compact_inter,MERGE,build_column_csr,8.6
+compact_inter,MERGE,driver_merge_sinks,6.8
+no_compact_inter,SORT,std_sort_collected,36.2
+no_compact_inter,MERGE,build_column_csr,18.0
+no_compact_inter,MERGE,driver_collect_get_skmer,35.6
+size_inter,MERGE,build_column_csr,57.8
+size_inter,MERGE,driver_compare,33.9
