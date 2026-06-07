@@ -1,10 +1,10 @@
 # sklib — compact sorted k-mer library
 
-A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed, **bucketed** sorted skmer list (`VirtualSkmer`), and answers membership queries — each routed to a single minimizer bucket — through the `sskm` CLI.
+A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed, **bucketed** sorted skmer list (`VirtualSkmer`), answers membership queries — each routed to a single minimizer bucket — and computes **set operations** (intersection / union / difference, and their cardinalities) between two lists, all through the `sskm` CLI.
 
 ## Documentation
 
-A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the bucketed on-disk format (the list is split into minimizer-prefix sub-lists, with width-selectable and minimizer-prefix-quotiented records), and the k-mer search algorithm (each query is routed to one bucket; file queries run in parallel).
+A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the bucketed on-disk format (the list is split into minimizer-prefix sub-lists, with width-selectable and minimizer-prefix-quotiented records), the k-mer search algorithm (each query is routed to one bucket; file queries run in parallel), and the **set operations** between two lists (a streaming per-bucket merge, with a faster patience-sort chaining on the re-compaction path).
 
 ## Dependencies
 
@@ -41,7 +41,7 @@ For example, to run tests on the (virtual) super-k-mer sorting:
 
 ## CLI — `sskm`
 
-The `sskm` tool (built to `build/bin/sskm`) exposes the library's two primary operations: `construct` builds a sorted super-k-mer list from a FASTA input, and `query` looks k-mers up against an existing list. Run `sskm --help`, `sskm construct --help`, or `sskm query --help` for the in-CLI reference; `sskm --version` prints the current version.
+The `sskm` tool (built to `build/bin/sskm`) exposes the library's primary operations: `construct` builds a sorted super-k-mer list from a FASTA input, `query` looks k-mers up against an existing list, and `setop` computes set operations between two lists. Run `sskm --help`, `sskm construct --help`, `sskm query --help`, or `sskm setop --help` for the in-CLI reference; `sskm --version` prints the current version.
 
 ### Parameters `k` and `m`
 
@@ -100,3 +100,33 @@ Queries k-mers against an existing list, either from a FASTA file or from a sing
 `-i` and the positional `sequence` argument are mutually exclusive — exactly one must be provided.
 
 Internally, each query super-k-mer is **routed to the single bucket** its minimizer falls in (the high-order bits pick the sub-list); only that bucket is loaded from disk (lazily, then cached) and searched, so a query reads a fraction of the index rather than the whole file. File queries (`-i`) are multithreaded by default (`-t`, default 8): one thread reads and buckets the input into input-order batches while the rest query the shared (thread-safe) reader in parallel — the output is byte-identical to a sequential run and roughly 3× faster on real workloads. See the wiki's *Querying a Sorted List*, *The Kmer Search Algorithm*, and *Batched, streaming & parallel queries* pages.
+
+### `sskm setop`
+
+Set operations between two sorted skmer lists **A** and **B**: `intersection`, `union`, and `diff` (asymmetric, `A \ B`), plus `intersection_size`, `union_size`, and `diff_size` variants that report only the result **cardinality**. The atomic element is a *k-mer*: the operation decomposes per minimizer bucket and per minimizer-position column, and a single two-cursor merge over the two sorted lists yields all three relations (`A∩B`, `A\B`, `B\A`) in one pass.
+
+```bash
+# materialize A ∩ B into a new list
+./bin/sskm setop --op intersection -a A.sskm -b B.sskm -o inter.sskm
+# just the cardinality (nothing written) — e.g. the numerator/denominator of a Jaccard index
+./bin/sskm setop --op union_size -a A.sskm -b B.sskm
+# fast materialization when a larger output is acceptable (skip super-k-mer re-compaction)
+./bin/sskm setop --op union --no-compact -a A.sskm -b B.sskm -o union.sskm
+```
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--op <name>` | yes | — | One of `intersection`, `union`, `diff`, `intersection_size`, `union_size`, `diff_size`. `diff` is asymmetric: `A \ B` (k-mers of A absent from B). |
+| `-a, --list-a <path>` | yes | — | First sorted skmer list. |
+| `-b, --list-b <path>` | yes | — | Second sorted skmer list. |
+| `-o, --output <path>` | for `intersection`/`union`/`diff` | — | Output list for the result; ignored by the `*_size` variants, which print a count to stdout. |
+| `--no-compact` | no | off | Emit **one record per result k-mer** instead of re-compacting the result back into super-k-mers — much faster (it skips the dominant cost) at the price of a larger output file (~3–5×). The result is still a valid, queryable sorted list. Ignored by the `*_size` variants. |
+
+**Both lists must be built with the same `k`, `m`, and `--buckets`**: the merge aligns bucket *i* of A with bucket *i* of B, so the bucket layouts must match (this is checked, and a mismatch is rejected — rebuild both with identical parameters). The merge streams **one bucket pair at a time** (loaded lazily, released right after), so peak RAM stays near a single bucket regardless of list size.
+
+Two cost regimes:
+
+* **Cardinality (`*_size`)** counts the three relations in one merge pass **without writing anything** — the fast path for a Jaccard index, containment, or de-duplication, and the right choice when the result *set* is not needed.
+* **Materialized (`intersection`/`union`/`diff`)** additionally re-compacts the kept k-mers back into super-k-mers and writes a new list. That re-compaction dominates the time; `--no-compact` skips it (one record per k-mer, ~3–5× larger output, ~3× faster) while keeping the output a valid queryable list.
+
+Two benchmark reports accompany this feature: [`scripts/bench/report/SETOPS_REPORT.md`](scripts/bench/report/SETOPS_REPORT.md) compares sklib against KMC and CBL, and [`scripts/bench/report/SETOPS_BOTTLENECKS.md`](scripts/bench/report/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups. See also the wiki's *Set Operations on Sorted Lists* page.
