@@ -18,8 +18,8 @@ BENCH = os.path.join(os.path.dirname(__file__), "..", "out", "bench")
 FIGS = os.path.join(BENCH, "figs")
 os.makedirs(FIGS, exist_ok=True)
 
-COL = {"sklib": "#1f77b4", "kmc": "#d62728", "cbl": "#2ca02c"}
-MARK = {"sklib": "o", "kmc": "s", "cbl": "^"}
+COL = {"sklib": "#1f77b4", "kmc": "#d62728", "cbl": "#2ca02c", "fmsi": "#9467bd"}
+MARK = {"sklib": "o", "kmc": "s", "cbl": "^", "fmsi": "D"}
 
 
 def load(name):
@@ -100,9 +100,9 @@ def fig_overlap():
     plt.tight_layout(); plt.savefig(os.path.join(FIGS, "fig_time_vs_overlap.png"), dpi=120); plt.close()
 
 
-# ---- Fig 4: multi-core (threads) grouped bars, if available ----
+# ---- Fig 4: threads scaling — sklib (bucket-parallel) vs KMC vs FMSI, one panel per pair ----
 def fig_threads():
-    rows = load("threads")
+    rows = load("parallel")
     if not rows:
         return
     pairs = []
@@ -110,25 +110,38 @@ def fig_threads():
         if r["pair"] not in pairs:
             pairs.append(r["pair"])
 
-    def t(pair, tool, threads, op="inter"):
+    def series(pair, tool, op="inter"):
+        pts = []
         for r in rows:
-            if (r["pair"] == pair and r["tool"] == tool and r["threads"] == str(threads)
-                    and r["op"] == op and r["stage"] == "setop"):
-                return float(r["sec"])
-        return None
+            if r["pair"] == pair and r["tool"] == tool and r["op"] == op and r["stage"] == "setop":
+                try:
+                    pts.append((int(r["threads"]), float(r["sec"])))
+                except ValueError:
+                    pass  # NA (timed out) or non-numeric
+        pts.sort()
+        return [p[0] for p in pts], [p[1] for p in pts]
 
-    import numpy as np
-    fig, axes = plt.subplots(1, len(pairs), figsize=(4 * len(pairs), 4.5), squeeze=False)
-    for ax, pair in zip(axes[0], pairs):
-        series = [("sklib t1", t(pair, "sklib", 1), COL["sklib"]),
-                  ("kmc t1", t(pair, "kmc", 1), COL["kmc"]),
-                  ("kmc t-all", t(pair, "kmc", os.cpu_count()), "#ff7f0e")]
-        names = [s[0] for s in series]; vals = [s[1] or 0 for s in series]; cols = [s[2] for s in series]
-        ax.bar(range(len(names)), vals, color=cols)
-        ax.set_xticks(range(len(names))); ax.set_xticklabels(names, rotation=20)
-        ax.set_title(pair); ax.set_ylabel("intersection time (s)")
-        ax.grid(True, axis="y", ls=":", alpha=0.5)
-    fig.suptitle("Intersection: single-thread vs multi-thread (KMC) — sklib is single-thread (v1)")
+    n = len(pairs); ncol = min(3, n); nrow = (n + ncol - 1) // ncol
+    fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow), squeeze=False)
+    for idx, pair in enumerate(pairs):
+        ax = axes[idx // ncol][idx % ncol]
+        for tool in ("sklib", "kmc"):
+            xs, ys = series(pair, tool)
+            if xs:
+                ax.plot(xs, ys, marker=MARK[tool], color=COL[tool], label=tool, lw=2)
+        xs, ys = series(pair, "sklib", "inter_size")
+        if xs:
+            ax.plot(xs, ys, marker="x", color=COL["sklib"], ls="--", label="sklib _size", lw=1.5)
+        xs, ys = series(pair, "fmsi")            # serial reference (single point at t=1)
+        if xs:
+            ax.scatter([1], [ys[0]], color=COL["fmsi"], marker=MARK["fmsi"], s=70, zorder=5, label="fmsi (serial)")
+        ax.set_title(pair); ax.set_xlabel("threads"); ax.set_ylabel("intersection time (s)")
+        ax.set_xscale("log", base=2); ax.set_yscale("log")
+        ax.set_xticks([1, 4, 8, 22]); ax.set_xticklabels(["1", "4", "8", "22"])
+        ax.grid(True, which="both", ls=":", alpha=0.5); ax.legend(fontsize=8)
+    for idx in range(n, nrow * ncol):
+        axes[idx // ncol][idx % ncol].axis("off")
+    fig.suptitle("Set-op intersection: thread scaling — sklib (bucket-parallel, v0.5.1) vs KMC vs FMSI (k=21)")
     plt.tight_layout(); plt.savefig(os.path.join(FIGS, "fig_threads.png"), dpi=120); plt.close()
 
 
