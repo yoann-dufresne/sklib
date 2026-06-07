@@ -133,19 +133,20 @@ int run_setop(const SetOpOptions& opts) {
             auto A = km::sortedlist::BucketedSkmerListReader<store>::open(opts.list_a);
             auto B = km::sortedlist::BucketedSkmerListReader<store>::open(opts.list_b);
 
+            const unsigned th = opts.threads;
             if (opts.op == "intersection_size") {
-                std::cout << km::sortedlist::intersection_size<store>(A, B) << std::endl;
+                std::cout << km::sortedlist::intersection_size<store>(A, B, th) << std::endl;
             } else if (opts.op == "union_size") {
-                std::cout << km::sortedlist::union_size<store>(A, B) << std::endl;
+                std::cout << km::sortedlist::union_size<store>(A, B, th) << std::endl;
             } else if (opts.op == "diff_size") {
-                std::cout << km::sortedlist::diff_size<store>(A, B) << std::endl;
+                std::cout << km::sortedlist::diff_size<store>(A, B, th) << std::endl;
             } else {
                 const std::string& out = *opts.output_file;
                 const bool nc = opts.no_compact;
                 uint64_t n {0};
-                if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out, nc);
-                else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out, nc);
-                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out, nc);
+                if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out, nc, th);
+                else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out, nc, th);
+                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out, nc, th);
                 std::cerr << opts.op << ": wrote " << n << " k-mers to " << out << std::endl;
             }
         });

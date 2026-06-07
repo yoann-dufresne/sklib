@@ -36,4 +36,5 @@ struct SetOpOptions {
     std::string list_b;                      // -b/--list-b
     std::optional<std::string> output_file;  // -o/--output (required for the materializing ops)
     bool no_compact = false;                 // --no-compact: skip super-k-mer re-compaction of the result
+    unsigned int threads = 8;                // -t/--threads: per-bucket parallel workers (output byte-identical)
 };

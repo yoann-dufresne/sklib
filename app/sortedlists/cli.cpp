@@ -146,6 +146,11 @@ CLIResult parse_cli(int argc, char** argv) {
         "Much faster (avoids the dominant cost) but a larger output file; still a valid, "
         "queryable sorted list. Ignored by the *_size variants.");
 
+    setop->add_option("-t,--threads", setop_opts.threads,
+        "Worker threads for the per-bucket merge (default 8). Buckets are processed in parallel; "
+        "the output is byte-identical regardless of the thread count.")
+        ->check(CLI::PositiveNumber);
+
     setop->footer(
         "Examples:\n"
         "  sskm setop --op intersection -a a.sskm -b b.sskm -o inter.sskm\n"

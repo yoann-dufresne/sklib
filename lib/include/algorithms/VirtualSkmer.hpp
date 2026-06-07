@@ -539,6 +539,13 @@ class SortedVirtualSkmerList {
         return m_skmer_list;
     }
 
+    // Move the list out, leaving the instance empty (the next generate_sorted_list_from_enumeration
+    // clears+refills it anyway). Lets a caller take ownership of the result without copying — used by
+    // the parallel set-op to hand each bucket's payload to the ordered writer.
+    std::vector<Skmer<kuint>> take_list() {
+        return std::move(m_skmer_list);
+    }
+
     // Size getter
     size_t size() const {
         return m_skmer_list.size();
@@ -1178,7 +1185,9 @@ public:
             payload_start = static_cast<std::streamoff>(4 * sizeof(uint64_t));
         }
 
-        return BucketedSkmerListReader(file_k, file_m, quotient_bits, std::move(in), std::move(dir), payload_start);
+        BucketedSkmerListReader reader(file_k, file_m, quotient_bits, std::move(in), std::move(dir), payload_start);
+        reader.m_path = filename;   // remembered so set-ops can open private per-worker read handles
+        return reader;
     }
 
     uint64_t k() const { return m_manip.k; }
@@ -1194,6 +1203,13 @@ public:
     const std::vector<Skmer<kuint>>& load_bucket(uint64_t b) { return bucket(b); }
     uint64_t bucket_count(uint64_t b) const { return m_count[b]; }
     uint64_t bucket_lower(uint64_t b) const { return m_lower[b]; }
+
+    // The file this reader was opened from, and bucket b's byte offset in it. Together they let a
+    // set operation read each bucket through its own ifstream (concurrent positional reads are safe;
+    // the shared bucket() cache is not safe to release concurrently). Both touch only immutable
+    // state, so they are safe to call from any thread.
+    const std::string& path() const { return m_path; }
+    std::streamoff bucket_byte_offset(uint64_t b) const { return m_byte_offset[b]; }
 
     // Drop bucket `b`'s cached sub-list so a one-pass consumer that touches every bucket once (a set
     // operation) keeps only the buckets in flight resident instead of the whole list. NOT thread-safe
@@ -1324,6 +1340,7 @@ private:
 
     SkmerManipulator<kuint> m_manip;
     uint64_t m_quotient_bits {0};            // top-b φ-minimizer bits dropped from stored records
+    std::string m_path;                      // file this reader was opened from (for per-worker reads)
     std::ifstream m_in;
     uint64_t m_n_buckets {1};
     std::vector<uint64_t> m_lower;        // per-bucket minimizer lower bound (routing table)

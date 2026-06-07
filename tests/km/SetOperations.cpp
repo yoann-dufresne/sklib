@@ -138,6 +138,43 @@ uint64_t file_materialize(const std::string& op, const std::string& a, const std
     return n;
 }
 
+// Read a whole file into a string for byte-for-byte comparison of two output lists.
+std::string slurp(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    std::string data;
+    f.seekg(0, std::ios::end);
+    const std::streamoff len = f.tellg();
+    if (len > 0) { data.resize(static_cast<size_t>(len)); f.seekg(0); f.read(&data[0], len); }
+    return data;
+}
+
+// Materialize one op with an explicit thread count / no_compact flag (the parallel set-op path).
+uint64_t file_materialize_threads(const std::string& op, const std::string& a, const std::string& b,
+                                  const std::string& out, unsigned nthreads, bool no_compact) {
+    const uint64_t w = km::sortedlist::read_list_header(a).store_width_bytes;
+    uint64_t n = 0;
+    km::sortedlist::dispatch_width_bytes(w, [&]<typename store>() {
+        auto A = BucketedSkmerListReader<store>::open(a);
+        auto B = BucketedSkmerListReader<store>::open(b);
+        if (op == "intersection") n = km::sortedlist::intersection<store>(A, B, out, no_compact, nthreads);
+        else if (op == "union")   n = km::sortedlist::set_union<store>(A, B, out, no_compact, nthreads);
+        else                      n = km::sortedlist::difference<store>(A, B, out, no_compact, nthreads);
+    });
+    return n;
+}
+
+// set_sizes with an explicit thread count.
+km::sortedlist::SetSizes file_sizes_threads(const std::string& a, const std::string& b, unsigned nthreads) {
+    const uint64_t w = km::sortedlist::read_list_header(a).store_width_bytes;
+    km::sortedlist::SetSizes out;
+    km::sortedlist::dispatch_width_bytes(w, [&]<typename store>() {
+        auto A = BucketedSkmerListReader<store>::open(a);
+        auto B = BucketedSkmerListReader<store>::open(b);
+        out = km::sortedlist::set_sizes<store>(A, B, nthreads);
+    });
+    return out;
+}
+
 // The whole suite at a fixed record width `store` (chosen so the b=0 list fits it).
 template<typename store>
 void run_suite(uint64_t k, uint64_t m,
@@ -303,4 +340,48 @@ TEST(SetOperations, IncompatibleParametersThrow) {
     const std::string ak15 = build_list_file(15, 5, {x}, 4, "inc_k15");
     const std::string bk17 = build_list_file(17, 5, {x}, 4, "inc_k17");
     EXPECT_THROW(file_sizes(ak15, bk17), std::runtime_error);
+}
+
+// The parallel per-bucket path must produce byte-for-byte the same output file as the sequential
+// path, for every operation, compaction mode, and bucket count — and the *_size counts must match
+// too. This is the load-bearing guarantee that bucket parallelism did not change results. Several
+// bucket counts (incl. 64 with up to 8 workers) exercise real out-of-order completion + the ordered
+// writer's reorder buffer.
+TEST(SetOperations, ParallelMatchesSequential) {
+    const uint64_t k = 21, m = 11;
+    const std::string shared = random_dna(4000, 700);
+    const std::vector<std::string> seqsA = {shared, random_dna(4000, 701), random_dna(2000, 702)};
+    const std::vector<std::string> seqsB = {shared, random_dna(4000, 703), random_dna(2000, 704)};
+
+    for (uint64_t buckets : {uint64_t{4}, uint64_t{16}, uint64_t{64}}) {
+        const std::string tag = "par_b" + std::to_string(buckets);
+        const std::string pa = build_list_file(k, m, seqsA, buckets, tag + "_a");
+        const std::string pb = build_list_file(k, m, seqsB, buckets, tag + "_b");
+
+        for (const std::string& op : {std::string("intersection"), std::string("union"), std::string("diff")}) {
+            for (bool nc : {false, true}) {
+                const std::string base = ::testing::TempDir() + "setop_par_" + tag + "_" + op + (nc ? "_nc" : "");
+                const std::string seq = base + "_t1.sskm";
+                const uint64_t n1 = file_materialize_threads(op, pa, pb, seq, 1, nc);
+                const std::string ref_bytes = slurp(seq);
+                EXPECT_FALSE(ref_bytes.empty()) << op << " produced no output";
+                for (unsigned t : {2u, 4u, 8u}) {
+                    const std::string par = base + "_t" + std::to_string(t) + ".sskm";
+                    const uint64_t nt = file_materialize_threads(op, pa, pb, par, t, nc);
+                    EXPECT_EQ(n1, nt) << op << " nc=" << nc << " buckets=" << buckets << " t=" << t;
+                    EXPECT_EQ(ref_bytes, slurp(par))
+                        << op << " nc=" << nc << " buckets=" << buckets << " t=" << t << ": output not byte-identical";
+                }
+            }
+        }
+
+        // _size must be thread-count-independent too.
+        const km::sortedlist::SetSizes s1 = file_sizes_threads(pa, pb, 1);
+        for (unsigned t : {2u, 4u, 8u}) {
+            const km::sortedlist::SetSizes st = file_sizes_threads(pa, pb, t);
+            EXPECT_EQ(s1.inter, st.inter)   << "buckets=" << buckets << " t=" << t;
+            EXPECT_EQ(s1.only_a, st.only_a) << "buckets=" << buckets << " t=" << t;
+            EXPECT_EQ(s1.only_b, st.only_b) << "buckets=" << buckets << " t=" << t;
+        }
+    }
 }
