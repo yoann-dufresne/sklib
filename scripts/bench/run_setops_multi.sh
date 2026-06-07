@@ -31,6 +31,8 @@ for t in "${THREADS_LIST[@]}"; do
   pin=""; [[ "$t" == "1" ]] && pin="taskset -c 0"   # mono runs pinned; multi-core unpinned
   for spec in "${PAIRS[@]}"; do
     read -r label Af Bf reps <<< "$spec"
+    # Optional ONLY="lab1 lab2 ..." filter to run a subset (e.g. the scaling-relevant pairs).
+    [[ -n "${ONLY:-}" && " $ONLY " != *" $label "* ]] && continue
     A="$G/$Af"; B="$G/$Bf"
     [[ -f "$A" && -f "$B" ]] || { warn "MISSING $A or $B — skip $label (t=$t)"; continue; }
     log ">>> $label  t=$t  reps=$reps"

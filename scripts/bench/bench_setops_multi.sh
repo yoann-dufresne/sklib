@@ -24,7 +24,10 @@ export BENCH_REPO_ROOT
 source "$HERE/lib.sh"
 
 [[ $# -ge 5 ]] || die "usage: bench_setops_multi.sh <label> <A.fa> <B.fa> <k> <m> [reps] [threads] [pin]"
-LABEL="$1"; A_FA="$2"; B_FA="$3"; K="$4"; M="$5"; RUN_REPS="${6:-3}"; THREADS="${7:-1}"; PIN="${8:-taskset -c 0}"
+# NOTE: ${8-default} (single dash) defaults only when $8 is UNSET, not when it is an empty string —
+# the driver passes an empty pin for multi-core runs, and ${8:-default} would have wrongly substituted
+# the default (pinning every run to one core, hiding all thread scaling).
+LABEL="$1"; A_FA="$2"; B_FA="$3"; K="$4"; M="$5"; RUN_REPS="${6:-3}"; THREADS="${7:-1}"; PIN="${8-taskset -c 0}"
 
 SSKM="${SSKM:-$BENCH_REPO_ROOT/build-bench/bin/sskm}"
 [[ -x "$SSKM" ]] || die "sskm (release) not found at $SSKM"

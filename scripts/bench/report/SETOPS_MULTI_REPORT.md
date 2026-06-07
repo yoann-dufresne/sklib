@@ -78,10 +78,48 @@ Les tests C++ prouvent en plus que le combiné est **octet pour octet identique*
 > non reproductibles octet à octet (y compris entre nombres de threads de construction). Corrigé sans
 > changer la taille disque (commit `:bug: fix(skmer)`).
 
-## Conclusion V1
+## Résultats V2 (multithread)
 
-Le mode combiné apporte un gain franc là où le travail est **partageable** : **≈ 4× pour le comptage**
-multi-relations, à toutes les échelles jusqu'à chr1. Pour la **matérialisation**, le gain est modéré
-(≈ 1,1× compacté, ≈ 1,3× `--no-compact`) car l'assemblage des super-k-mers reste par sortie ; le combiné
-y supprime néanmoins les fusions redondantes. sklib conserve son avantage mémoire (~30× moins que KMC).
-La V2 (multithread) mesure le passage à l'échelle par bucket de ces mêmes opérations.
+Le combiné est parallèle par bucket — même machinerie que les opérations simples (`parallel_for_dynamic`
++ writer ordonné, ici à **frontière unique** pour les ≤4 sorties). Sweep `-t 1/4/8/22` (22 cœurs) ;
+`-t 1` = la référence mono de la V1. Données : `scripts/bench/report/data/setops_multi_v2.csv` (`t=1`
+repris de la V1 ; `t≥2` avec le correctif d'arènes `mallopt(M_ARENA_MAX,4)`).
+
+### Passage à l'échelle (t=1 → t=22)
+
+| paire | combiné `--sizes` | combiné matérialiser | KMC matérialiser |
+|---|--:|--:|--:|
+| chr21 ∩ chr22       | 0,59 → 0,12 s = **4,8×** | 12,6 → 1,88 s = **6,7×** | 3,65 → 1,68 s = 2,2× |
+| chr20 ∩ chr21       | 0,74 → 0,16 s = **4,5×** | 17,1 → 2,70 s = **6,3×** | 4,92 → 2,11 s = 2,3× |
+| chr1 ∩ chr1.mut1%   | 2,55 → 0,63 s = **4,0×** | 52,8 → 8,80 s = **6,0×** | 19,5 → 5,73 s = 3,4× |
+
+- **Matérialisation : 6,0–6,7×.** Le combiné monte en charge **comme le chemin par-bucket des ops
+  simples** : le writer multi-sorties à frontière unique n'est **pas** un goulot (et le test C++ prouve
+  l'identité octet à octet de chaque fichier quel que soit `-t`).
+- **`--sizes` : 4,0–4,8×.** Un peu moins, car le temps absolu devient minuscule (0,1–0,6 s à t=22) :
+  le coût fixe (lancement des threads, ouverture des handles) plafonne le gain.
+- **KMC : 2,2–3,4×** — multicœur limité pour les set-ops (connu).
+- Le rapport **combiné/séquentiel reste ≈ 4× (sizes) / ≈ 1,15× (matérialiser)** à tous les `-t`.
+
+### sklib rattrape KMC en multithread, en restant sobre en RAM
+
+| chr1 ∩ chr1.mut1% | mono (t=1) | t=22 |
+|---|--:|--:|
+| matérialiser : sklib / KMC | 52,8 / 19,5 s (KMC **×2,7**) | **8,8 / 5,7 s (KMC ×1,5)** |
+| RSS matérialiser : sklib / KMC | 79 / 2706 Mo (**34×**) | 1331 / 5060 Mo (**~4×**) |
+
+sklib monte mieux en charge que KMC, donc l'écart de temps en matérialisation tombe de ×2,7 (mono) à
+**×1,5** (t=22). La RAM du combiné matérialisé croît avec `-t` (le tampon de réordonnancement bufferise
+`2·t+1` *bundles* de ≤4 charges utiles) ; `mallopt(M_ARENA_MAX,4)` (parité avec `construct`) en rogne la
+part fragmentation (~10 %), le reste étant le tampon lui-même — sklib reste **~4× sous KMC** à t=22. Pour
+le **comptage**, sklib `--sizes` (0,63 s à l'échelle chr1 sur 22 cœurs) n'a toujours pas d'équivalent KMC.
+
+## Conclusion
+
+- **Compter plusieurs relations** : le combiné est le grand gagnant — **≈ 4× sur le séquentiel** (mono
+  *et* multi), **0,63 s** pour les 4 cardinalités à l'échelle chr1 sur 22 cœurs, sans équivalent KMC.
+- **Matérialiser plusieurs relations** : gain modéré sur le séquentiel (≈ 1,1× compacté, ≈ 1,3×
+  `--no-compact`) car l'assemblage des super-k-mers reste par sortie — mais le combiné **passe à l'échelle
+  ≈ 6–7×** en `-t` et **rattrape KMC** en multithread, tout en gardant l'avantage mémoire (~4–34× selon `-t`).
+- Exactitude **prouvée == KMC** (contenu + cardinalités, jusqu'à chr) et **octet-identique** quel que
+  soit le nombre de threads.
