@@ -114,8 +114,8 @@ for t in 1 8 22; do build/bin/sskm construct -k21 -m11 -f genome.fa -o idx_t$t.s
 sha256sum idx_t*.sskm
 
 # sklib construction sweep via the harness (CONSTRUCT_THREADS feeds construct -t):
-CONSTRUCT_THREADS=8 DATASETS="chr21 celegans chr1" KM="21,11" bash scripts/bench/bench.sh
+CONSTRUCT_THREADS=8 DATASETS="chr21 celegans chr1" KM="21,11" bash benchmark/scripts/bench.sh
 
 # competitors, built once, then bcalm -nb-cores N + sshash build -t N / sbwt build -t N:
-bash scripts/bench/tools/setup.sh bcalm sshash sbwt
+bash benchmark/scripts/tools/setup.sh bcalm sshash sbwt
 ```

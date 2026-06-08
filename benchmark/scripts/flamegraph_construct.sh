@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 K="${K:-21}"
@@ -12,7 +12,7 @@ M="${M:-11}"
 INPUT="${INPUT:-data/ecoli.fa}"
 FREQ="${FREQ:-997}"
 BUILD_DIR="${BUILD_DIR:-build-profile}"
-OUT_DIR="${OUT_DIR:-scripts/out}"
+OUT_DIR="${OUT_DIR:-benchmark/results/latest}"
 FLAMEGRAPH_DIR="${FLAMEGRAPH_DIR:-thirdparty/FlameGraph}"
 
 if [[ ! -f "$INPUT" ]]; then

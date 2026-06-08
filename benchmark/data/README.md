@@ -1,8 +1,8 @@
 # Benchmark datasets
 
-Two ways to feed a dataset to `bench.sh`:
+Two ways to feed a dataset to the harness:
 
-1. **Catalogued** (single download, wired in `scripts/bench/lib.sh`): just name it in
+1. **Catalogued** (single download, wired in `benchmark/scripts/lib.sh`): just name it in
    `DATASETS=...`. Available: `sarscov2`, `ecoli` (local fixtures); `yeast`, `celegans`,
    `chr21`, `chr20`, `chr1`, `chm13` (downloaded from UCSC on first use).
 
@@ -10,9 +10,9 @@ Two ways to feed a dataset to `bench.sh`:
    FASTA and drop it where the harness caches genomes — `prepare_genome` then reuses it
    verbatim, no code change:
    ```bash
-   GEN=scripts/out/e2e/genomes
-   python3 scripts/e2e_helpers.py sanitize my_input.fa > "$GEN/<name>.sanitized.fa"
-   DATASETS="<name> ecoli" bash scripts/bench/bench.sh
+   GEN=benchmark/data/genomes
+   python3 benchmark/scripts/e2e_helpers.py sanitize my_input.fa > "$GEN/<name>.sanitized.fa"
+   DATASETS="<name> ecoli" bash benchmark/scripts/construct.sh
    ```
    ("sanitize" = uppercase + split at non-ACGT runs, so sklib and KMC agree.)
 
@@ -40,7 +40,7 @@ Download N complete E. coli assemblies, concatenate, register:
 datasets download genome taxon "Escherichia coli" --assembly-level complete \
   --limit 200 --include genome --filename ecoli_pan.zip
 unzip -p ecoli_pan.zip 'ncbi_dataset/data/*/*.fna' > ecoli_pan.fa
-python3 scripts/e2e_helpers.py sanitize ecoli_pan.fa > scripts/out/e2e/genomes/ecoli_pan.sanitized.fa
+python3 benchmark/scripts/e2e_helpers.py sanitize ecoli_pan.fa > benchmark/data/genomes/ecoli_pan.sanitized.fa
 ```
 Then `DATASETS="ecoli_pan"`. Swap taxon for `"Salmonella enterica"` for a second pangenome.
 
@@ -49,7 +49,7 @@ Single reference IRGSP-1.0 Nipponbare via NCBI (RefSeq `GCF_001433935.1`, ~380 M
 ```bash
 datasets download genome accession GCF_001433935.1 --include genome --filename rice.zip
 unzip -p rice.zip 'ncbi_dataset/data/*/*.fna' > rice.fa
-python3 scripts/e2e_helpers.py sanitize rice.fa > scripts/out/e2e/genomes/rice.sanitized.fa
+python3 benchmark/scripts/e2e_helpers.py sanitize rice.fa > benchmark/data/genomes/rice.sanitized.fa
 ```
 For a rice *pangenome*, fetch several accessions from the 3K-RGP / NCBI and concatenate as above.
 

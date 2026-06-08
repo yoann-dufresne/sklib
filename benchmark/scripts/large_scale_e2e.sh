@@ -19,15 +19,15 @@
 # runs into pure-ACGT records, fed identically to both tools.
 #
 # Usage:
-#   bash scripts/large_scale_e2e.sh
-#   GENOMES="ecoli yeast chr21 chr1" KM="21,11 31,13 32,17" bash scripts/large_scale_e2e.sh
+#   bash benchmark/scripts/large_scale_e2e.sh
+#   GENOMES="ecoli yeast chr21 chr1" KM="21,11 31,13 32,17" bash benchmark/scripts/large_scale_e2e.sh
 #
 # Env knobs (defaults): GENOMES="ecoli chr21"  KM="21,11 31,13"
 #   N_PRESENT=5000  N_RANDOM=5000  SEED=1234  KEEP=0  (KEEP=1 keeps scratch dirs)
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 GENOMES="${GENOMES:-ecoli chr21}"
@@ -50,8 +50,8 @@ HELPER="$SCRIPT_DIR/e2e_helpers.py"
 # skmer lines a human chromosome produces -- so we wrap lines into FASTA with awk.
 seq2fa() { awk '{print ">s" NR; print $0}'; }
 
-OUT="$REPO_ROOT/scripts/out/e2e"
-GEN_DIR="$OUT/genomes"
+OUT="$REPO_ROOT/benchmark/results/latest/e2e"
+GEN_DIR="$REPO_ROOT/benchmark/data/genomes"
 KMC_TMP="$OUT/kmc_tmp"
 mkdir -p "$GEN_DIR" "$KMC_TMP"
 

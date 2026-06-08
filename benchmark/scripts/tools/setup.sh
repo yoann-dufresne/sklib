@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Clone + build the competitor tools for the sklib benchmark into a git-ignored
 # source tree, and write their resolved binary paths to tools.env (sourced by
-# scripts/bench/tools.sh). Idempotent: skips clone/build when already present.
+# benchmark/scripts/tools.sh). Idempotent: skips clone/build when already present.
 #
-#   bash scripts/bench/tools/setup.sh [tool ...]      # default: all
+#   bash benchmark/scripts/tools/setup.sh [tool ...]      # default: all
 #
 # Tools: bcalm (unitigs), sshash, sbwt, bqf, cbl. CBL is K-specialized at compile
 # time, so its per-k binaries are built on demand by the wrapper, not here.
@@ -11,7 +11,7 @@ set -uo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/../../.." && pwd)"
-TOOLS_SRC="${TOOLS_SRC:-$REPO_ROOT/scripts/out/bench/tools_src}"
+TOOLS_SRC="${TOOLS_SRC:-$REPO_ROOT/benchmark/data/tools_src}"
 ENV_FILE="$TOOLS_SRC/tools.env"
 LOG="$TOOLS_SRC/setup.log"
 JOBS="${JOBS:-$(nproc)}"

@@ -1,11 +1,18 @@
 build/
 build-debug/
 build-profile/
+build-bench/
 .vscode/
 CLAUDE.md
 thirdparty/FlameGraph/
-scripts/out/
-scripts/bench/.venv/
+
+# Benchmark harness: generated outputs, genome cache, competitor builds, venv.
+# Committed under benchmark/results/: reports/ + reference/ (curated snapshots).
+benchmark/results/latest/
+benchmark/data/genomes/
+benchmark/data/tools_src/
+benchmark/scripts/.venv/
+__pycache__/
 
 # Local data fixtures (data/small.fa is tracked)
 data/ecoli.fa

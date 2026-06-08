@@ -18,8 +18,8 @@ pas de mode combiné (séquentiel uniquement, RAM lourde) et ne sont pas inclus 
 - **V1 = monothread** : `taskset -c 0`, `-t 1` (sklib) et `-t1` (kmc). k=31, m=21 (records `__uint128_t`).
 - Médiane de 2–3 réplicats (1 pour chr1). `result_kmers` = |A∩B|+|A∪B|+|A\B|+|B\A| (somme, autoritative
   via `sskm --sizes`, validée == KMC par `tests/setop_multi_verif.sh`).
-- Données brutes : `scripts/bench/report/data/setops_multi_v1.csv` (générées par
-  `THREADS="1" scripts/bench/run_setops_multi.sh`).
+- Données brutes : `benchmark/results/reference/setops_multi_v1.csv` (générées par
+  `THREADS="1" benchmark/scripts/setop.sh`).
 
 ## Résultats V1 (monothread)
 
@@ -82,7 +82,7 @@ Les tests C++ prouvent en plus que le combiné est **octet pour octet identique*
 
 Le combiné est parallèle par bucket — même machinerie que les opérations simples (`parallel_for_dynamic`
 + writer ordonné, ici à **frontière unique** pour les ≤4 sorties). Sweep `-t 1/4/8/22` (22 cœurs) ;
-`-t 1` = la référence mono de la V1. Données : `scripts/bench/report/data/setops_multi_v2.csv` (`t=1`
+`-t 1` = la référence mono de la V1. Données : `benchmark/results/reference/setops_multi_v2.csv` (`t=1`
 repris de la V1 ; `t≥2` avec le correctif d'arènes `mallopt(M_ARENA_MAX,4)`).
 
 ### Passage à l'échelle (t=1 → t=22)

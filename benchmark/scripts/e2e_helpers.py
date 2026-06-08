@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Helpers for scripts/large_scale_e2e.sh.
+"""Helpers for benchmark/scripts/large_scale_e2e.sh.
 
 Subcommands:
   sanitize <fasta>             Uppercase + split each record at runs of non-ACGT
@@ -19,7 +19,7 @@ Subcommands:
   binheadersize <list.sskm>    Print the header byte size (32 for V2; 40+16*n_buckets for V3).
   dropshort <fasta> <k>        Emit only FASTA records with sequence length >= k (feeds CBL).
 
-Benchmark query-workload helpers (scripts/bench/bench.sh):
+Benchmark query-workload helpers (query_single.sh / query_stream.sh):
   sample_positive <fa> <k> <n> <seed>
                                Print n k-mers (one per line) drawn uniformly at random
                                from the positions of <fa> -- every emitted k-mer is

@@ -35,7 +35,7 @@
 
 `OP_size` ne matérialise rien (sink compteur) ; `OP` matérialise (collecte + re-compaction + écriture).
 `delta = t_mat − t_size = collect(get_skmer_of_kmer) + re-compaction + write`. Médiane de 5–7 runs, cache chaud.
-Données : `report/data/bottleneck_decompose.csv`.
+Données : `benchmark/results/reference/bottleneck_decompose.csv`.
 
 | paire | op | sortie (k) | t_size (s) | t_mat (s) | **part post-merge** |
 |---|---|--:|--:|--:|--:|
@@ -84,7 +84,7 @@ l'inverse la sortie de diff grossit et sa part post-merge monte. La part post-me
 
 ## 3. Attribution par fonction (`perf`, build Release, celegans ∩ matérialisé, ~30 k échantillons)
 
-Agrégateur : `scripts/bench/bottleneck/perf_categorize.py`. Brut : `report/data/bottleneck_perf_summary.txt`.
+Agrégateur : `benchmark/scripts/bottleneck/perf_categorize.py`. Brut : `benchmark/results/reference/bottleneck_perf_summary.txt`.
 
 | Phase / fonction | ∩ matér. | ∪ matér. | chr1 ∩ | ∩ `_size` |
 |---|--:|--:|--:|--:|
@@ -295,18 +295,18 @@ la **re-compaction** qui coûtent.
 
 ## 9. Reproductibilité
 
-- Harnais : `scripts/bench/bottleneck/decompose.sh` (décomposition `_size` vs matérialisé) et
-  `scripts/bench/bottleneck/perf_categorize.py` (agrégation `perf report` par phase).
-- Données brutes versionnées : `report/data/bottleneck_decompose.csv`, `bottleneck_perf_summary.txt`,
+- Harnais : `benchmark/scripts/bottleneck/decompose.sh` (décomposition `_size` vs matérialisé) et
+  `benchmark/scripts/bottleneck/perf_categorize.py` (agrégation `perf report` par phase).
+- Données brutes versionnées : `benchmark/results/reference/bottleneck_decompose.csv`, `bottleneck_perf_summary.txt`,
   `bottleneck_sweep_{m,buckets,k}.csv`, `bottleneck_construct.csv`.
 - Builds (hors dépôt, dans `/tmp`) : Release `-O3 -march=native -g -fno-omit-frame-pointer` pour le timing +
   `perf` ; `CMAKE_BUILD_TYPE=Profile` (`-fno-inline`) pour `callgrind`.
-- Génomes : `…/sklib/scripts/out/e2e/genomes/*.sanitized.fa` (réels) ; copies mutées via
-  `scripts/bench/mutate.py`.
+- Génomes : `…/sklib/benchmark/data/genomes/*.sanitized.fa` (réels) ; copies mutées via
+  `benchmark/scripts/mutate.py`.
 - Exemples :
-  - décomposition : `bash scripts/bench/bottleneck/decompose.sh`
+  - décomposition : `bash benchmark/scripts/bottleneck/decompose.sh`
   - perf : `perf record -F 2500 -g -o p.data -- sskm setop --op intersection -a A.sskm -b B.sskm -o /dev/null`
-    puis `python3 scripts/bench/bottleneck/perf_categorize.py p.data`
+    puis `python3 benchmark/scripts/bottleneck/perf_categorize.py p.data`
   - callgrind (build Profile) : `valgrind --tool=callgrind --cache-sim=no sskm setop --op intersection_size -a A -b B`
 
 ---
@@ -373,7 +373,7 @@ requête-identiques, vérifiées contre vérité-terrain).
 ## 11. Re-profilage après optimisations — nouveaux goulots & pistes (2026-06-07)
 
 Nouveau `perf` (cycles + instructions, ~30 k échantillons, binaire après A2+A3+C2+D2+A4) sur les **trois
-régimes**. Données : `report/data/bottleneck_reprofile_*.csv`.
+régimes**. Données : `benchmark/results/reference/bottleneck_reprofile_*.csv`.
 
 ### Là où va le temps maintenant
 
