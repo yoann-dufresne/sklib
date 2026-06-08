@@ -29,7 +29,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libtbb-dev libbz2-dev
+          sudo apt-get install -y cmake clang-18 libtbb-dev libbz2-dev
 
       - name: Install Google Test x86_64
         if: matrix.arch == 'amd64'
@@ -76,7 +76,9 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=DEBUG ..
+          cmake -DCMAKE_BUILD_TYPE=DEBUG \
+                -DCMAKE_C_COMPILER=clang-18 \
+                -DCMAKE_CXX_COMPILER=clang++-18 ..
           make -j$(nproc)
 
       - name: Cache Build
