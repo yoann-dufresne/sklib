@@ -15,8 +15,9 @@
 #include <algorithms/VirtualSkmer.hpp>
 
 // Self-contained reduction of #6 (no fixture): construct from a 24 bp sequence at
-// k=5/m=2; the k-mer AAACA is in the input but is dropped from the list because
-// colinear_chaining returns invalid overlaps for this column. Currently FAILS.
+// k=5/m=2; the k-mer AAACA is in the input and must be present in the list.
+// Used to fail (colinear_chaining returned invalid overlaps for this column);
+// fixed by the canonical per-k-mer framing (v0.4.2), this now passes.
 TEST(ConstructHomopolymerDrop, SmallSelfContainedRepro) {
     using kuint = uint64_t;
     const uint64_t k = 5, m = 2;
