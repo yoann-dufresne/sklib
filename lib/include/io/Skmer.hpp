@@ -153,7 +153,16 @@ public:
         pair& operator>>= (const uint64_t shift)
         {
             if (shift == 0) return *this;
-            if (shift >= sizeof(kuint) * 8)
+            if (shift >= 2 * sizeof(kuint) * 8)
+            {
+                // The shift clears the whole pair. Handle it explicitly: the branch below would
+                // otherwise evaluate `m_value[1] >> (shift - sizeof(kuint)*8)` with a count >= the
+                // kuint width, which is undefined behaviour (and GCC and Clang disagree on the
+                // result). Saturating to 0 keeps the operator well-defined for any shift.
+                m_value[0] = static_cast<kuint>(0);
+                m_value[1] = static_cast<kuint>(0);
+            }
+            else if (shift >= sizeof(kuint) * 8)
             {
                 m_value[0] = static_cast<kuint>(m_value[1] >> (shift - sizeof(kuint) * 8));
                 m_value[1] = static_cast<kuint>(0);
@@ -184,7 +193,16 @@ public:
         pair& operator<<= (const uint64_t shift)
         {
             if (shift == 0) return *this;
-            if (shift >= sizeof(kuint) * 8)
+            if (shift >= 2 * sizeof(kuint) * 8)
+            {
+                // The shift clears the whole pair. Handle it explicitly: the branch below would
+                // otherwise evaluate `m_value[0] << (shift - sizeof(kuint)*8)` with a count >= the
+                // kuint width, which is undefined behaviour (and GCC and Clang disagree on the
+                // result). Saturating to 0 keeps the operator well-defined for any shift.
+                m_value[0] = static_cast<kuint>(0);
+                m_value[1] = static_cast<kuint>(0);
+            }
+            else if (shift >= sizeof(kuint) * 8)
             {
                 m_value[1] = static_cast<kuint>(m_value[0] << (shift - sizeof(kuint) * 8));
                 m_value[0] = static_cast<kuint>(0);
