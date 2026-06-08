@@ -20,6 +20,12 @@ mkdir -p build && cd build
 cmake .. && make
 ```
 
+> **Compiler / GCC-13 users.** `sklib` is C++23 (`CMAKE_CXX_STANDARD 23`). The `dev` and
+> `main` branches track the latest toolchain and may require a compiler newer than GCC-13.
+> A dedicated **`gcc-13` branch** — tagged **`v0.7.0-gcc13`** — holds a GCC-13-compatible
+> build, kept in sync with `dev` feature-for-feature, so there are two working versions in
+> parallel. Check out `gcc-13` if `dev`/`main` does not build with your compiler.
+
 ## Tests
 
 * Run all tests
