@@ -4,14 +4,12 @@
 #include <string>
 
 #include <io/Kmerator.hpp>
+#include "test_data.hpp"
 
 using namespace std;
 
 
-static const std::string data_path {std::getenv("SKLIB_TEST_DATA") == nullptr ? "" : std::getenv("SKLIB_TEST_DATA")};
-
-// TODO: tmp usage of relative path befor solving the getenv issue.
-static const std::string fa0 {"../tests/data/fasta0.fa"};
+static const std::string fa0 {test_data("fasta0.fa")};
 
 
 TEST(Kmerator, init)

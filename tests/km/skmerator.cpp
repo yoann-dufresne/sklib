@@ -7,6 +7,7 @@
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include "test_data.hpp"
 
 using namespace std;
 
@@ -79,7 +80,7 @@ TEST(Skmerator, file_vs_seq)
         seq_skmers.push_back(skmer);
 
     // --- File ---
-    std::string filename{"../tests/data/CCCCAAAAA.fa"};
+    std::string filename{test_data("CCCCAAAAA.fa")};
     km::SkmerManipulator<kuint> file_manip {k, m};
     km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
 
@@ -132,7 +133,7 @@ TEST(Skmerator, file_vs_seq1)
         seq_skmers.emplace_back(skmer);
 
     // --- File ---
-    std::string filename{"../tests/data/fasta00.fa"};
+    std::string filename{test_data("fasta00.fa")};
     km::SkmerManipulator<kuint> file_manip {k, m};
     km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
 
@@ -348,7 +349,7 @@ TEST(Skmerator, file_multiple_sequences)
     for (km::Skmer<kuint> skmer : seq2_skmerator)
         expected.emplace_back(skmer);
 
-    std::string filename{"../tests/data/fasta0.fa"};
+    std::string filename{test_data("fasta0.fa")};
     km::SkmerManipulator<kuint> file_manip {k, m};
     km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
 
@@ -386,7 +387,7 @@ TEST(Skmerator, file_skips_short_sequences)
     for (km::Skmer<kuint> skmer : long2_skmerator)
         expected.emplace_back(skmer);
 
-    std::string filename{"../tests/data/short_skip.fa"};
+    std::string filename{test_data("short_skip.fa")};
     km::SkmerManipulator<kuint> file_manip {k, m};
     km::FileSkmerator<kuint> file_skmerator {file_manip, filename};
 

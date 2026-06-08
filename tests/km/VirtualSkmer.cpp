@@ -8,6 +8,7 @@
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+#include "test_data.hpp"
 
 using namespace std;
 using kuint = uint16_t;
@@ -1849,7 +1850,7 @@ TEST(QueryTest, QueryOutputWorking)
     km::sortedlist::SortedVirtualSkmerList<kuint> list(k, m);
     list.add_list(skmer_enumeration);
 
-    std::string filename{"../tests/data/seq2.fa"};
+    std::string filename{test_data("seq2.fa")};
 
     std::ostringstream captured;
     list.query(filename, captured);
