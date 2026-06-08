@@ -20,11 +20,20 @@ mkdir -p build && cd build
 cmake .. && make
 ```
 
-> **Compiler / GCC-13 users.** `sklib` is C++23 (`CMAKE_CXX_STANDARD 23`). The `dev` and
-> `main` branches track the latest toolchain and may require a compiler newer than GCC-13.
-> A dedicated **`gcc-13` branch** — tagged **`v0.7.0-gcc13`** — holds a GCC-13-compatible
-> build, kept in sync with `dev` feature-for-feature, so there are two working versions in
-> parallel. Check out `gcc-13` if `dev`/`main` does not build with your compiler.
+> **Compiler.** `sklib` is C++23 (`CMAKE_CXX_STANDARD 23`) and its widest k-mer backend
+> `kuint256` is `unsigned _BitInt(256)`, so `dev`/`main` require **Clang ≥ 16 or GCC ≥ 15**
+> (g++ ≤ 14 supports `_BitInt` only in C, not C++). CMake probes the compiler and **fails
+> configuration with clear guidance** if it is too old. On Ubuntu 24.04 (GCC tops out at 14)
+> build with Clang:
+> ```bash
+> apt install clang-18
+> mkdir -p build && cd build
+> cmake -DCMAKE_CXX_COMPILER=clang++-18 .. && make
+> ```
+> **GCC-13 users.** A dedicated **`gcc-13` branch** — tagged **`v0.7.0-gcc13`** — holds a
+> GCC-13-compatible build, kept in sync with `dev` feature-for-feature, so there are two
+> working versions in parallel. Check out `gcc-13` if `dev`/`main` does not build with your
+> compiler.
 
 ## Tests
 
@@ -51,7 +60,7 @@ The `sskm` tool (built to `build/bin/sskm`) exposes the library's primary operat
 
 ### Parameters `k` and `m`
 
-* `k` — k-mer length in nucleotides. The record integer width is selected automatically (`uint32_t`/`uint64_t`/`__uint128_t`) from the packed skmer size: the only limit is that a skmer's `2·(2k−m)` bits fit the widest 256-bit `__uint128_t` pair, i.e. `2·(2k−m) ≤ 256` (so `k` up to ~63 at small `m`, more as `m` grows); `construct` reports a clear error above that.
+* `k` — k-mer length in nucleotides. The record integer width is selected automatically (`uint32_t`/`uint64_t`/`__uint128_t`/`kuint256`) from the packed skmer size: the only limit is that a skmer's `2·(2k−m)` bits fit the widest 512-bit `kuint256` pair, i.e. `2·(2k−m) ≤ 512` (so `k` up to ~127 at small `m`, more as `m` grows); `construct` reports a clear error above that.
 * `m` — minimizer length in nucleotides, with `1 ≤ m ≤ k`. Smaller `m` produces longer skmers (more shared central nucleotides per group); typical values sit around `m ≈ k/2`.
 
 ### `sskm construct`
@@ -64,7 +73,7 @@ Builds a sorted skmer list from a FASTA file.
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `-k, --kmer-size <int>` | yes | — | k-mer length; the record width is auto-selected, the only cap is `2·(2k−m) ≤ 256` (see above). |
+| `-k, --kmer-size <int>` | yes | — | k-mer length; the record width is auto-selected, the only cap is `2·(2k−m) ≤ 512` (see above). |
 | `-m, --minimizer-size <int>` | yes | — | Minimizer length (1 ≤ m ≤ k). |
 | `-f, --file <path>` | no | stdin | Input FASTA (plain or gzip). |
 | `-o, --output <path>` | no | stdout | Output sorted skmer list. |
@@ -83,7 +92,7 @@ By default, binary construction to a regular file (`-o`) is **disk-backed and lo
 
 #### Minimizer ordering (compact index)
 
-The order on minimizers uses a fixed, invertible hash (φ) rather than the raw lexicographic value. Hash-ordered minimizers have lower density than lexicographic ones, so the list holds **9–21% fewer super-k-mers** (a smaller index / fewer bits per k-mer) across genomes, and on repeat-rich genomes it also sharply lowers peak construction RAM (e.g. *C. elegans* `k=21, m=11`: ~341 MB → ~63 MB) by breaking the over-selection of low-complexity minimizers. Each k-mer is stored in a strand-invariant canonical frame derived from its own nucleotides; super-k-mers whose minimizer is *ambiguous* (an RC-palindrome, or repeated within the window) are re-framed per k-mer — picking the minimizer occurrence by minimal φ-rank, then most central, then smaller full interleaved value — and re-merged into compact super-k-mers. This makes queries exact at any `m` (so there is no minimum-`m` restriction) and also removes a rare construction drop of poly-A k-mers. The on-disk minimizer slot is hash-permuted and the binary file carries a format version. The current format is **`VSKMER_4`**: each record is **minimizer-prefix quotiented** (the top `b = log2(buckets)` φ-minimizer bits are constant within a bucket, so the bucket id implies them and they are dropped) and stored in a **runtime-selected integer width** — the smallest of `uint32_t`/`uint64_t`/`__uint128_t` whose pair holds the remaining `2·(2k−m) − b` bits. Legacy bucketed **`VSKMER_3`** and single-list **`VSKMER_2`** files still load (as non-quotiented 64-bit lists); pre-φ raw-order **`VSKMER_M`** files are rejected on load rather than queried incorrectly. Rebuild rejected lists — and, since the v0.4.2 framing fix re-frames a few rare *ambiguous* k-mers, rebuild any index built before v0.4.2.
+The order on minimizers uses a fixed, invertible hash (φ) rather than the raw lexicographic value. Hash-ordered minimizers have lower density than lexicographic ones, so the list holds **9–21% fewer super-k-mers** (a smaller index / fewer bits per k-mer) across genomes, and on repeat-rich genomes it also sharply lowers peak construction RAM (e.g. *C. elegans* `k=21, m=11`: ~341 MB → ~63 MB) by breaking the over-selection of low-complexity minimizers. Each k-mer is stored in a strand-invariant canonical frame derived from its own nucleotides; super-k-mers whose minimizer is *ambiguous* (an RC-palindrome, or repeated within the window) are re-framed per k-mer — picking the minimizer occurrence by minimal φ-rank, then most central, then smaller full interleaved value — and re-merged into compact super-k-mers. This makes queries exact at any `m` (so there is no minimum-`m` restriction) and also removes a rare construction drop of poly-A k-mers. The on-disk minimizer slot is hash-permuted and the binary file carries a format version. The current format is **`VSKMER_4`**: each record is **minimizer-prefix quotiented** (the top `b = log2(buckets)` φ-minimizer bits are constant within a bucket, so the bucket id implies them and they are dropped) and stored in a **runtime-selected integer width** — the smallest of `uint32_t`/`uint64_t`/`__uint128_t`/`kuint256` (pair capacities 64/128/256/512 bits) whose pair holds the remaining `2·(2k−m) − b` bits. Legacy bucketed **`VSKMER_3`** and single-list **`VSKMER_2`** files still load (as non-quotiented 64-bit lists); pre-φ raw-order **`VSKMER_M`** files are rejected on load rather than queried incorrectly. Rebuild rejected lists — and, since the v0.4.2 framing fix re-frames a few rare *ambiguous* k-mers, rebuild any index built before v0.4.2.
 
 ### `sskm query`
 
@@ -109,7 +118,10 @@ Internally, each query super-k-mer is **routed to the single bucket** its minimi
 
 ### `sskm setop`
 
-Set operations between two sorted skmer lists **A** and **B**: `intersection`, `union`, and `diff` (asymmetric, `A \ B`), plus `intersection_size`, `union_size`, and `diff_size` variants that report only the result **cardinality**. The atomic element is a *k-mer*: the operation decomposes per minimizer bucket and per minimizer-position column, and a single two-cursor merge over the two sorted lists yields all three relations (`A∩B`, `A\B`, `B\A`) in one pass.
+Set operations between two sorted skmer lists **A** and **B**. The atomic element is a *k-mer*: the operation decomposes per minimizer bucket and per minimizer-position column, and a single two-cursor merge over the two sorted lists yields all three relations (`A∩B`, `A\B`, `B\A`) in one pass. There are two modes:
+
+* **Single-op** (`--op <name>`): `intersection`, `union`, and `diff` (asymmetric, `A \ B`), plus `intersection_size`, `union_size`, and `diff_size` variants that report only the result **cardinality**.
+* **Combined / single-pass** (any subset of `--inter-out`/`--union-out`/`--diff-ab-out`/`--diff-ba-out` and/or `--sizes`): materialize several relations — including **`B \ A`** — and/or report every cardinality in **one** merge pass. See below.
 
 ```bash
 # materialize A ∩ B into a new list
@@ -120,16 +132,25 @@ Set operations between two sorted skmer lists **A** and **B**: `intersection`, `
 ./bin/sskm setop --op union --no-compact -a A.sskm -b B.sskm -o union.sskm
 # parallel by bucket (default 8 threads); the output is byte-identical for any -t
 ./bin/sskm setop --op intersection -a A.sskm -b B.sskm -o inter.sskm -t 16
+# combined mode: several relations (incl. B \ A) in a single merge pass
+./bin/sskm setop -a A.sskm -b B.sskm --inter-out i.sskm --union-out u.sskm --diff-ab-out dab.sskm
+# combined mode: every cardinality (|A∩B|, |A∪B|, |A\B|, |B\A|, |A|, |B|) in one pass, nothing written
+./bin/sskm setop -a A.sskm -b B.sskm --sizes
 ```
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--op <name>` | yes | — | One of `intersection`, `union`, `diff`, `intersection_size`, `union_size`, `diff_size`. `diff` is asymmetric: `A \ B` (k-mers of A absent from B). |
+| `--op <name>` | single-op mode | — | One of `intersection`, `union`, `diff`, `intersection_size`, `union_size`, `diff_size`. `diff` is asymmetric: `A \ B` (k-mers of A absent from B). Mutually exclusive with the combined-mode options. |
 | `-a, --list-a <path>` | yes | — | First sorted skmer list. |
 | `-b, --list-b <path>` | yes | — | Second sorted skmer list. |
-| `-o, --output <path>` | for `intersection`/`union`/`diff` | — | Output list for the result; ignored by the `*_size` variants, which print a count to stdout. |
-| `--no-compact` | no | off | Emit **one record per result k-mer** instead of re-compacting the result back into super-k-mers — much faster (it skips the dominant cost) at the price of a larger output file (~3–5×). The result is still a valid, queryable sorted list. Ignored by the `*_size` variants. |
-| `-t, --threads <N>` | no | 8 | Worker threads for the per-bucket merge — the independent minimizer buckets are processed in parallel. The output is **byte-identical** regardless of `N`. |
+| `-o, --output <path>` | for `intersection`/`union`/`diff` | — | Single-op output list; ignored by the `*_size` variants, which print a count to stdout. |
+| `--inter-out <path>` | combined mode | — | Write `A ∩ B` to this list. |
+| `--union-out <path>` | combined mode | — | Write `A ∪ B` to this list. |
+| `--diff-ab-out <path>` | combined mode | — | Write `A \ B` to this list. |
+| `--diff-ba-out <path>` | combined mode | — | Write `B \ A` to this list. |
+| `--sizes` | combined mode | off | Print all four cardinalities (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`) plus `|A|` and `|B|` to stdout, computed in the same pass. On its own it materializes nothing. |
+| `--no-compact` | no | off | Emit **one record per result k-mer** instead of re-compacting the result back into super-k-mers — much faster (it skips the dominant cost) at the price of a larger output file (~3–5×). The result is still a valid, queryable sorted list. Ignored by the `*_size` variants; applies to every combined-mode output. |
+| `-t, --threads <N>` | no | 8 | Worker threads for the per-bucket merge — the independent minimizer buckets are processed in parallel. Every output is **byte-identical** regardless of `N`. |
 
 **Both lists must be built with the same `k`, `m`, and `--buckets`**: the merge aligns bucket *i* of A with bucket *i* of B, so the bucket layouts must match (this is checked, and a mismatch is rejected — rebuild both with identical parameters). The independent buckets are merged **in parallel** (`-t`); each worker holds only its current bucket pair, so peak RAM stays low (a handful of buckets) regardless of list size — far below KMC/CBL — and grows modestly with the thread count.
 
@@ -138,4 +159,8 @@ Two cost regimes:
 * **Cardinality (`*_size`)** counts the three relations in one merge pass **without writing anything** — the fast path for a Jaccard index, containment, or de-duplication, and the right choice when the result *set* is not needed.
 * **Materialized (`intersection`/`union`/`diff`)** additionally re-compacts the kept k-mers back into super-k-mers and writes a new list. That re-compaction dominates the time; `--no-compact` skips it (one record per k-mer, ~3–5× larger output, ~3× faster) while keeping the output a valid queryable list.
 
-Set operations scale ~×6–9 with `-t` (near-linear to 8 cores), which makes sklib the fastest set-op tool from a few cores up — including the high-overlap materialized intersection where KMC led single-core (chr1 ∩: 2.6 s vs KMC 2.7 s at 22 cores). Two benchmark reports accompany this feature: [`benchmark/results/reports/SETOPS_REPORT.md`](benchmark/results/reports/SETOPS_REPORT.md) compares sklib against KMC, CBL and FMSI (single- and multi-core), and [`benchmark/results/reports/SETOPS_BOTTLENECKS.md`](benchmark/results/reports/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups. See also the wiki's *Set operations* and *Benchmark · Set operations* pages.
+#### Combined mode (single pass)
+
+Instead of `--op`, pass any subset of `--inter-out`, `--union-out`, `--diff-ab-out`, `--diff-ba-out` (one result list each — note `B \ A` is only reachable here) and/or `--sizes`, and the single merge pass produces them all at once: the bucket read and the two-cursor merge are shared, so only the per-output re-compaction is paid per output, and all six counts (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`, `|A|`, `|B|`) come for free with `--sizes`. Combined mode is **mutually exclusive** with `--op`, and two outputs pointing at the same path are rejected. Each materialized file is **byte-identical** to the matching single-op materialization (for any `-t`). Combined counting costs about one merge pass (≈4× a single `*_size` run, since the merge is the whole cost), while combined materialization is only ≈1.1–1.3× a single materialization (re-compaction is per-output and cannot be shared). Cross-validated against KMC by `tests/setop_multi_verif.sh`.
+
+Set operations scale ~×6–9 with `-t` (near-linear to 8 cores), which makes sklib the fastest set-op tool from a few cores up — including the high-overlap materialized intersection where KMC led single-core (chr1 ∩: 2.6 s vs KMC 2.7 s at 22 cores). Three benchmark reports accompany this feature: [`benchmark/results/reports/SETOPS_REPORT.md`](benchmark/results/reports/SETOPS_REPORT.md) compares sklib against KMC, CBL and FMSI (single- and multi-core), [`benchmark/results/reports/SETOPS_BOTTLENECKS.md`](benchmark/results/reports/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups, and [`benchmark/results/reports/SETOPS_MULTI_REPORT.md`](benchmark/results/reports/SETOPS_MULTI_REPORT.md) covers combined single-pass mode vs the sequential single-op runs. See also the wiki's *Set operations* and *Benchmark · Set operations* pages.
