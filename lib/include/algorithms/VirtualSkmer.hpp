@@ -8,6 +8,7 @@
 #include <atomic>
 #include <mutex>
 #include <memory>
+#include <cassert>
 
 
 #include <algorithms/ColinearChaining.hpp>
@@ -42,10 +43,15 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER = 0x56534B4D45525F32ULL; // "VSKMER
 // file stays readable as a single bucket spanning the whole list (see load() / the reader).
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V3 = 0x56534B4D45525F33ULL; // "VSKMER_3" in ASCII
 // Bumped to "VSKMER_4" when records became width-selectable and minimizer-prefix quotiented: the
-// header now carries the record integer width (store_width, in bytes: 4/8/16) and the quotient bit
+// header now carries the record integer width (store_width, in bytes: 4/8/16/32) and the quotient bit
 // count b (top-b φ-minimizer bits dropped, implied by the bucket id). V2/V3 read as 8-byte, b=0.
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V4 = 0x56534B4D45525F34ULL; // "VSKMER_4" in ASCII
-constexpr uint64_t MAX_POSSIBLE_KMERS = 64;
+// Upper bound on the number of k-mer columns in one super-k-mer, used to size the fixed
+// stack arrays in search_kmers_in_span_into. A super-k-mer spans at most 2k-m nucleotides, so it
+// holds at most k-m+1 k-mers. The widest record pair (kuint256, 512 bits) caps 2*(2k-m) <= 512,
+// i.e. 2k-m <= 256, which bounds k-m+1 <= 128. (The previous value 64 matched the old __uint128_t
+// cap of 2k-m <= 128; a longer super-k-mer overflows these arrays -> stack corruption / hang.)
+constexpr uint64_t MAX_POSSIBLE_KMERS = 128;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
     return ((value & 0x00000000000000FFULL) << 56) |
@@ -212,6 +218,11 @@ inline void search_kmers_in_span_into(
         return;
     }
     const uint64_t tot_num_kmers_to_search {query_end_position - query_start_position + 1};
+    // The search below indexes fixed-size stack arrays of length MAX_POSSIBLE_KMERS by this count;
+    // a super-k-mer wider than the bound would silently corrupt the stack (manifesting as a hung
+    // binary search). Guard the invariant loudly in debug builds.
+    assert(tot_num_kmers_to_search <= km::sortedlist::util::MAX_POSSIBLE_KMERS &&
+           "super-k-mer span exceeds MAX_POSSIBLE_KMERS; enlarge the search stack arrays");
 
     // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST/BUCKET IS EMPTY)
     if (tot_num_kmers_to_search <= 0 || list_size == 0){

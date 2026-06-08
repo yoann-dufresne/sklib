@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <assert.h>
+#include <io/wide_int.hpp>
 
 #ifndef SKMER_H
 #define SKMER_H
@@ -283,7 +284,7 @@ public:
 
         operator uint64_t()
         {
-            return m_value[0];
+            return static_cast<uint64_t>(m_value[0]);
         }
 
 
@@ -307,7 +308,14 @@ public:
     struct pair_hasher
     {
         std::size_t operator()(pair const & p) const {
-            return std::hash<kuint>{}(p.m_value[0]) ^ std::hash<kuint>{}(p.m_value[1]); // XOR of the two hashes
+            // Width-agnostic FNV-1a over the raw word bytes. std::hash is not provided for every
+            // kuint backend (notably _BitInt), and pair has no padding (m_value is a contiguous
+            // kuint[2]), so folding its bytes is well-defined for any width.
+            const unsigned char* bytes = reinterpret_cast<const unsigned char*>(p.m_value.data());
+            std::size_t h = 1469598103934665603ull; // FNV-1a offset basis
+            for (std::size_t i = 0; i < sizeof(p.m_value); ++i)
+                h = (h ^ bytes[i]) * 1099511628211ull; // FNV-1a prime
+            return h;
         }
     };
 
@@ -1251,22 +1259,27 @@ public:
     /** Rebuild the masks the query path relies on for a quotiented (b>0) manipulator. The generators
      * above run add_nucleotide with the narrowed m_mask, which wraps the suffix buffer at the
      * truncated boundary and corrupts every mask. A full-width manipulator produces the correct
-     * masks (a __uint128_t pair holds the whole skmer for every supported k); we truncate them to
-     * this store width. kmer_masks drive kmer_compare; the other two are rebuilt for consistency.
+     * masks; we truncate them to this store width. The reference must hold the *whole* (un-quotiented)
+     * skmer, 2*(2k-m) bits. Since k is a runtime value, we cannot derive the needed width from this
+     * manipulator's compile-time store type (e.g. a 258-bit skmer quotients down to a __uint128_t
+     * store, but a __uint128_t pair holds only 256 bits), so we use the widest backend kuint256
+     * (512-bit pair) — it holds every supported skmer and yields identical low bits for narrow stores.
+     * kmer_masks drive kmer_compare; the other two are rebuilt for consistency.
      **/
     void regenerate_quotient_masks()
     {
+        using full_t = kuint256;
         const uint64_t eff {2 * sk_size - m_quotient_bits};
-        SkmerManipulator<__uint128_t> full(k, m); // b == 0 -> correct full-width masks, no recursion
-        const std::vector<typename Skmer<__uint128_t>::pair> kfull  {full.get_k_mask()};
-        const std::vector<typename Skmer<__uint128_t>::pair> spfull {full.get_sp_mask()};
-        const std::vector<typename Skmer<__uint128_t>::pair> nfull  {full.get_n_mask()};
+        SkmerManipulator<full_t> full(k, m); // b == 0 -> correct full-width masks, no recursion
+        const std::vector<typename Skmer<full_t>::pair> kfull  {full.get_k_mask()};
+        const std::vector<typename Skmer<full_t>::pair> spfull {full.get_sp_mask()};
+        const std::vector<typename Skmer<full_t>::pair> nfull  {full.get_n_mask()};
         for (size_t i {0}; i < kmer_masks.size(); i++)
-            kmer_masks[i] = truncate_pair<__uint128_t, kuint>(kfull[i], eff);
+            kmer_masks[i] = truncate_pair<full_t, kuint>(kfull[i], eff);
         for (size_t i {0}; i < prefix_suffix_mask.size(); i++)
-            prefix_suffix_mask[i] = truncate_pair<__uint128_t, kuint>(spfull[i], eff);
+            prefix_suffix_mask[i] = truncate_pair<full_t, kuint>(spfull[i], eff);
         for (size_t i {0}; i < nucleotide_masks.size(); i++)
-            nucleotide_masks[i] = truncate_pair<__uint128_t, kuint>(nfull[i], eff);
+            nucleotide_masks[i] = truncate_pair<full_t, kuint>(nfull[i], eff);
     }
 
     /** Returns the (k-1)-mer (prefix/suffix) starting at the given position.

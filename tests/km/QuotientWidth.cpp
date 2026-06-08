@@ -3,8 +3,9 @@
 // Core invariant: dropping the top b φ-minimizer bits from each record (they are implied by the
 // bucket id) and storing in the narrowest integer that fits must NOT change any query result.
 // We verify that the query output of a quotiented list is byte-identical to a full-width list
-// built with the same k/m/buckets, across same-width (u32/u64) and width-dropping (u128 -> u64)
-// configurations, plus the bit-level behaviour of truncate_skmer and the width selectors.
+// built with the same k/m/buckets, across same-width (u32/u64/u256) and width-dropping
+// (u128 -> u64, u256 -> u128) configurations, plus the bit-level behaviour of truncate_skmer and
+// the width selectors.
 
 #include <gtest/gtest.h>
 
@@ -17,6 +18,7 @@
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
+#include <io/wide_int.hpp>
 #include <algorithms/VirtualSkmer.hpp>
 #include <algorithms/ParallelQuery.hpp>
 #include <algorithms/SortedSkmerListBuilder.hpp>
@@ -130,7 +132,9 @@ TEST(WidthDispatch, SelectWidthBoundaries) {
     EXPECT_EQ(select_width_bytes(128), 8u);
     EXPECT_EQ(select_width_bytes(129), 16u);
     EXPECT_EQ(select_width_bytes(256), 16u);
-    EXPECT_THROW(select_width_bytes(257), std::runtime_error);
+    EXPECT_EQ(select_width_bytes(257), 32u);   // beyond the __uint128_t pair -> kuint256
+    EXPECT_EQ(select_width_bytes(512), 32u);
+    EXPECT_THROW(select_width_bytes(513), std::runtime_error);
 }
 
 TEST(WidthDispatch, EffectiveBucketBits) {
@@ -219,6 +223,57 @@ TEST(QuotientEquivalence, AllSourceKmersPresent) {
     for (char c : out)
         ASSERT_TRUE(c == '1' || c == ',' || c == '\n')
             << "a source k-mer is reported absent ('0') in its own quotiented list";
+}
+
+// ---- 256-bit backend: large-k lists exceeding the __uint128_t pair (256-bit) -------------------
+
+// Same width (kuint256): a quotiented large-k list (b>0) returns exactly what the full-width list
+// returns. k=75 needs 2*(2k-m)=278 bits, beyond the 256-bit __uint128_t pair -> 32-byte records.
+TEST(QuotientEquivalence, SameWidthU256) {
+    constexpr uint64_t k = 75, m = 11; // 2*(2k-m)=278 -> kuint256; b=log2(4096)=12 < 2m=22
+    const std::string seq = random_dna(8000, 1234);
+    const std::string qfa = ::testing::TempDir() + "qw_q_u256.fa";
+    write_fasta(qfa, seq + random_dna(3000, 88)); // present + mostly-absent
+
+    const std::string full = build_list<km::kuint256, km::kuint256>(k, m, seq, 4096, 0, "u256_full");
+    const std::string quot = build_list<km::kuint256, km::kuint256>(k, m, seq, 4096, 12, "u256_quot");
+
+    EXPECT_EQ((query_all<km::kuint256, km::kuint256>(full, qfa)),
+              (query_all<km::kuint256, km::kuint256>(quot, qfa)));
+}
+
+// Width drop kuint256 -> u128: generate at 512-bit, store at 256-bit. k=70 needs 258 bits (gen
+// kuint256); after dropping b=12 the record fits 246 bits -> a __uint128_t store. Output matches
+// the full kuint256 list and the narrower store shrinks the file. This is the case where the
+// quotient-mask reference MUST be kuint256: the 258-bit full skmer overflows a __uint128_t pair.
+TEST(QuotientEquivalence, WidthDrop256To128) {
+    constexpr uint64_t k = 70, m = 11; // 2*(2k-m)=258 -> kuint256; b=12; store 246 -> __uint128_t
+    const std::string seq = random_dna(8000, 2025);
+    const std::string qfa = ::testing::TempDir() + "qw_q_drop256.fa";
+    write_fasta(qfa, seq + random_dna(3000, 41));
+
+    const std::string full = build_list<km::kuint256, km::kuint256>(k, m, seq, 4096, 0, "drop256_full");
+    const std::string quot = build_list<km::kuint256, __uint128_t>(k, m, seq, 4096, 12, "drop256_quot");
+
+    EXPECT_EQ((query_all<km::kuint256, km::kuint256>(full, qfa)),
+              (query_all<km::kuint256, __uint128_t>(quot, qfa)));
+
+    EXPECT_LT(file_size(quot), file_size(full)) << "narrower records should shrink the file";
+}
+
+// Every k-mer of the source sequence is reported present in a quotiented 256-bit list built from it.
+TEST(QuotientEquivalence, AllSourceKmersPresentU256) {
+    constexpr uint64_t k = 75, m = 11;
+    const std::string seq = random_dna(6000, 17);
+    const std::string qfa = ::testing::TempDir() + "qw_present_u256.fa";
+    write_fasta(qfa, seq);
+
+    const std::string quot = build_list<km::kuint256, km::kuint256>(k, m, seq, 4096, 12, "present_u256");
+    const std::string out = query_all<km::kuint256, km::kuint256>(quot, qfa);
+    ASSERT_FALSE(out.empty());
+    for (char c : out)
+        ASSERT_TRUE(c == '1' || c == ',' || c == '\n')
+            << "a source k-mer is reported absent ('0') in its own quotiented 256-bit list";
 }
 
 // ---- backward compatibility: a hand-written VSKMER_3 file still reads as 64-bit, b=0 ----------

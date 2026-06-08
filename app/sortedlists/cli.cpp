@@ -35,8 +35,8 @@ CLIResult parse_cli(int argc, char** argv) {
 
     construct->add_option("-k,--kmer-size", construct_opts.k,
         "k-mer length in nucleotides. The record integer width is selected automatically "
-        "(uint32/uint64/__uint128) from k and m; the only limit is that a skmer fits the widest "
-        "256-bit pair, i.e. 2*(2k-m) <= 256 (so k up to ~63 at small m, more as m grows).")
+        "(uint32/uint64/__uint128/uint256) from k and m; the only limit is that a skmer fits the "
+        "widest 512-bit pair, i.e. 2*(2k-m) <= 512 (so k up to ~127 at small m, more as m grows).")
         ->required();
 
     construct->add_option("-m,--minimizer-size", construct_opts.m,

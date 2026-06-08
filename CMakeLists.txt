@@ -18,6 +18,24 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 
+# The widest packed-integer backend (kuint256) is `unsigned _BitInt(256)`, used to index large k-mers
+# (2*(2k-m) up to 512 bits). C++ _BitInt(256) needs Clang >= 16 or GCC >= 15 (GCC <= 14 supports
+# _BitInt only in C). Probe the actual compiler and fail configuration early with clear guidance
+# rather than letting a stale compiler hit a cryptic parse error in the headers.
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_FLAGS "-std=c++23")
+check_cxx_source_compiles(
+  "unsigned _BitInt(256) f(unsigned _BitInt(256) x){return x*x>>3;} int main(){return (int)f(5);}"
+  SKLIB_HAS_BITINT256)
+unset(CMAKE_REQUIRED_FLAGS)
+if(NOT SKLIB_HAS_BITINT256)
+  message(FATAL_ERROR
+    "sklib needs C++ _BitInt(256) support (Clang >= 16 or GCC >= 15) for its 256-bit k-mer backend, "
+    "but ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} lacks it (note: g++ <= 14 supports "
+    "_BitInt only in C, not C++). On Ubuntu 24.04 install Clang and re-run cmake with it, e.g. "
+    "`apt install clang-18` then -DCMAKE_CXX_COMPILER=clang++-18.")
+endif()
+
 add_library(build_type_flags INTERFACE)
 target_compile_options(build_type_flags INTERFACE
   $<$<CONFIG:Debug>:-O -g>
@@ -47,8 +65,11 @@ target_compile_options(asan_flags INTERFACE
 target_link_options(asan_flags INTERFACE
   $<$<CONFIG:Debug>:-fno-omit-frame-pointer -fsanitize=address>
 )
+# Only GCC needs the explicit libasan link; with Clang, -fsanitize=address (above) already pulls in
+# compiler-rt's ASan runtime, and additionally linking GCC's libasan triggers an
+# "incompatible ASan runtimes" abort. -fsanitize=address handles the runtime for both compilers.
 target_link_libraries(asan_flags INTERFACE
-  $<$<CONFIG:Debug>:asan>
+  $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU>>:asan>
 )
 
 # add_subdirectory(thirdparty)
