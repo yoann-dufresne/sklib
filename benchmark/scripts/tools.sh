@@ -38,7 +38,12 @@ construct_sklib() {
     # per-bucket compaction is parallelized; the index is byte-identical for any thread count.
     local thread_args=()
     [[ -n "${CONSTRUCT_THREADS:-}" ]] && thread_args=(-t "$CONSTRUCT_THREADS")
-    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" "${bucket_args[@]}" "${thread_args[@]}" || return 1
+    # Optional temp dir for the per-bucket spill files (SSKM_TMP_DIR env, empty => next to the
+    # output). On a shared/network filesystem (e.g. cluster BeeGFS) the default puts the thousands
+    # of small bucket files on slow storage; point this at node-local scratch (/dev/shm, /tmp).
+    local tmp_args=()
+    [[ -n "${SSKM_TMP_DIR:-}" ]] && tmp_args=(--tmp-dir "$SSKM_TMP_DIR")
+    run_timed "$SSKM_BIN" construct -k "$k" -m "$m" -f "$san" -o "$IDX_PATH" "${bucket_args[@]}" "${thread_args[@]}" "${tmp_args[@]}" || return 1
     [[ -s "$IDX_PATH" ]] || return 1
     IDX_FILE_BYTES=$(stat -c%s "$IDX_PATH")
     # Payload = file minus the real header. V3 header is 40 + 16*n_buckets bytes (the per-bucket

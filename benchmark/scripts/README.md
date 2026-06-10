@@ -7,7 +7,11 @@ detail: how to run each script and what knobs exist.
 
 ## Prerequisites
 
-- `kmc`, `kmc_tools`, `/usr/bin/time`, `python3` on `PATH`.
+- `kmc`, `kmc_tools`, `/usr/bin/time`, `python3`, `curl` on `PATH`. (On hosts without
+  `/usr/bin/time` — e.g. RHEL — set `TIME_BIN` to a GNU `time`, such as `$CONDA_PREFIX/bin/time`;
+  it must be GNU time, since peak RSS needs `-v`.)
+- Genomes: catalogued in [`../data/genomes.tsv`](../data/genomes.tsv); fetched on demand by
+  the drivers (via `genomes.sh`) or up-front with `bash fetch_genomes.sh [--list|--force] [names…]`.
 - A **Release** `sskm` at `build-bench/bin/sskm` (override with `SSKM_BIN=…`). A DEBUG build
   enables AddressSanitizer and skews RSS/time, so do not point the harness at a debug binary.
   `cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release && cmake --build build-bench -j --target sskm`

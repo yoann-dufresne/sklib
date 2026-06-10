@@ -17,7 +17,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export BENCH_REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"; source "$SCRIPT_DIR/tools.sh"
-need_tools kmc kmc_tools /usr/bin/time python3
+need_tools kmc kmc_tools "$TIME_BIN" python3
 
 CSV="${CSV:-$RESULTS/construct.csv}"
 csv_init "$CSV" "timestamp,host,cpu,tool,tool_version,dataset,k,m,threads,time_s,peak_rss_kb,index_bytes,bits_per_kmer,n_kmers,n_superkmers,throughput_Mkmer_s"

@@ -2,9 +2,17 @@
 
 Two ways to feed a dataset to the harness:
 
-1. **Catalogued** (single download, wired in `benchmark/scripts/lib.sh`): just name it in
-   `DATASETS=...`. Available: `sarscov2`, `ecoli` (local fixtures); `yeast`, `celegans`,
-   `chr21`, `chr20`, `chr1`, `chm13` (downloaded from UCSC on first use).
+1. **Catalogued** (declared in [`genomes.tsv`](genomes.tsv), the single source of truth):
+   just name it in `DATASETS=...` and the harness downloads + sanitises it on first use.
+   Available: `sarscov2`, `ecoli` (NCBI accessions); `yeast`, `celegans`, `chr21`, `chr20`,
+   `chr1`, `chm13` (UCSC). Pre-fetch any subset explicitly with
+   [`fetch_genomes.sh`](../scripts/fetch_genomes.sh):
+   ```bash
+   bash benchmark/scripts/fetch_genomes.sh --list          # show the catalogue
+   bash benchmark/scripts/fetch_genomes.sh ecoli chr21     # fetch only these
+   bash benchmark/scripts/fetch_genomes.sh --force chr21   # re-download (corruption / updated ref)
+   ```
+   Add or update a genome = edit one row in `genomes.tsv` (no code change).
 
 2. **Custom / multi-file** (pangenomes, metagenomes, read sets): build a single sanitized
    FASTA and drop it where the harness caches genomes — `prepare_genome` then reuses it
@@ -22,8 +30,8 @@ run those on a larger-RAM machine (the harness is portable; CSVs concatenate).
 ## Scaling ladder (catalogued, fits in RAM)
 | name | organism | ~size | URL source |
 |---|---|---|---|
-| sarscov2 | SARS-CoV-2 | 30 kb | local fixture |
-| ecoli | E. coli | 4.6 Mb | local fixture |
+| sarscov2 | SARS-CoV-2 | 30 kb | NCBI `NC_045512.2` |
+| ecoli | E. coli | 4.6 Mb | NCBI `NC_000913.3` |
 | yeast | S. cerevisiae sacCer3 | 12 Mb | UCSC |
 | celegans | C. elegans ce11 | 100 Mb | UCSC |
 | chr21 / chr1 | human chr | 40 / 230 Mb | UCSC hg38 |

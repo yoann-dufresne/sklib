@@ -73,21 +73,40 @@ non-zero (e.g. an out-of-range `k`) also skips just that `(tool,k)`.
 | sshash | ✓ | ✓ | — | — | — | — | ≤31 |
 | sbwt | ✓ | ✓ | — | — | — | — | ≤32 |
 | cbl | ✓ | ✓ | ✓ | — | — | — | **odd** ≤59 |
-| bqf | ✓ | ✓ (approx) | — | — | — | — | per-(k,z) |
+| bqf | ✓ | ✓ (approx) | — | — | — | — | per-(k,z); **≤31** on default sweep (see note) |
 | fmsi | ✓ | ✓ | ✓ (experimental) | — | — | — | ≤127 |
 
 So at `k>32` the membership field is sklib + fmsi (+ kmc for set ops); only sklib/KMC vary
 with the thread sweep. KMC has no cardinality-only mode, so `mode=size` rows are sklib-only.
 
+### Expected per-tool skips on the default `k`-sweep (these are *not* errors)
+
+On `KM` up to `63,31`, each competitor refuses the `k` beyond its hard limit: the driver
+logs `construct failed/unsupported (skipped)` (or a wrapper's `build failed`) in
+`results/latest/run.log` and moves on — that one `(tool,k)` cell is simply absent from the
+CSV. **sklib, KMC and fmsi cover the whole grid** (k=15…63), and none of these skips involve
+a crash/OOM. The skips re-appear (and fail fast) on every *resume*, since failed cells are
+not memoised.
+
+| Tool | OK on default sweep | Skipped (logged) | Why |
+|---|---|---|---|
+| sshash | 15, 21, 31 | 41, 51, 63 | 64-bit k-mers ⇒ ≤31 (default build); logs `sshash: build failed` |
+| sbwt | 15, 21, 31 | 41, 51, 63 | compiled `MAX_KMER_LENGTH=32` ⇒ ≤32; logs `sbwt: k>32 unsupported` |
+| cbl | 15, 21, 31, 41, 51 | 63 | `build.rs` panics `K must be ≤ 59` (odd-`k` only, ≤59) |
+| bqf | 15, 21, 31 | 41, 51, 63 | the per-(k,z) **binary compiles fine**; `bqf build` (the filter) fails because the wrapper holds `s=BQF_S=18` fixed for cross-`k` comparability, so `z=k−18` (≥23 at k≥41) exceeds fimpera's virtualization limit. Raise `BQF_S` to extend `k` — at the cost of comparability across `k`. bqf is *approximate* regardless. |
+
 ## Datasets
 
-Catalogued genomes are named in `DATASETS=`; the harness downloads/sanitises on first use
-into `data/genomes/<name>.sanitized.fa` (git-ignored). Custom datasets (pangenomes, rice,
-metagenomes, real reads) and the per-Jaccard mutants are in [`data/README.md`](data/README.md).
+Catalogued genomes are declared in [`data/genomes.tsv`](data/genomes.tsv) and named in
+`DATASETS=`; the harness downloads/sanitises on first use into
+`data/genomes/<name>.sanitized.fa` (git-ignored). Pre-fetch any subset with
+`bash scripts/fetch_genomes.sh [--list|--force] [names…]`. Custom datasets (pangenomes,
+rice, metagenomes, real reads) and the per-Jaccard mutants are in
+[`data/README.md`](data/README.md).
 
 | Name | Organism | ~Size | Source |
 |---|---|---|---|
-| `sarscov2` / `ecoli` | SARS-CoV-2 / E. coli | 30 kb / 4.6 Mb | local fixture |
+| `sarscov2` / `ecoli` | SARS-CoV-2 / E. coli | 30 kb / 4.6 Mb | NCBI (`NC_045512.2` / `NC_000913.3`) |
 | `yeast` / `celegans` | S. cerevisiae / C. elegans | 12 / 100 Mb | UCSC |
 | `chr21` / `chr20` / `chr1` | human chromosome (hg38) | 40 / 64 / 230 Mb | UCSC |
 | `chm13` | human T2T-CHM13v2 | 3.1 Gb | UCSC (hs1) |
@@ -101,6 +120,7 @@ benchmark/
 │   ├── README.md             # detailed usage, env knobs, CSV schemas
 │   ├── construct.sh  query_single.sh  query_stream.sh  setop.sh   # the 4 experiments
 │   ├── lib.sh  tools.sh      # shared harness (grids, caches, resumability) + tool adapters
+│   ├── genomes.sh  fetch_genomes.sh   # genome catalogue loader + CLI downloader
 │   ├── e2e_helpers.py  mutate.py  plot.py                          # query-gen, mutants, figures
 │   ├── large_scale_e2e.sh    # correctness vs KMC (not a benchmark)
 │   ├── flamegraph_construct.sh
@@ -108,6 +128,7 @@ benchmark/
 │   └── bottleneck/           # set-op time decomposition + perf categorisation
 ├── data/
 │   ├── README.md             # dataset catalogue + download/prepare
+│   ├── genomes.tsv           # genome catalogue (single source of truth; fetch_genomes.sh reads it)
 │   ├── genomes/              # sanitise cache + mutants/ (git-ignored)
 │   └── tools_src/            # built competitor binaries + tools.env (git-ignored)
 └── results/
@@ -125,18 +146,21 @@ copying the relevant CSVs/figures to `results/reference/` and committing.
 # 1. Build a Release sskm where the harness expects it (DEBUG/ASan skews RSS & time).
 cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release && cmake --build build-bench -j --target sskm
 
-# 2. Run the four experiments (needs kmc, kmc_tools on PATH). Override grids to scope.
+# 2. Fetch the genomes (or a subset). Optional: the harness also fetches on first use.
+bash benchmark/scripts/fetch_genomes.sh                 # all; or e.g.: fetch_genomes.sh sarscov2 ecoli
+
+# 3. Run the four experiments (needs kmc, kmc_tools on PATH). Override grids to scope.
 bash benchmark/scripts/construct.sh
 bash benchmark/scripts/query_single.sh
 bash benchmark/scripts/query_stream.sh
 bash benchmark/scripts/setop.sh
 #   e.g. a quick slice:  DATASETS=ecoli KM="21,11" THREADS="1 8" bash benchmark/scripts/setop.sh
 
-# 3. Figures (one-off venv for pandas + matplotlib).
+# 4. Figures (one-off venv for pandas + matplotlib).
 python3 -m venv benchmark/scripts/.venv && benchmark/scripts/.venv/bin/pip install pandas matplotlib
 benchmark/scripts/.venv/bin/python benchmark/scripts/plot.py    # -> results/latest/figs/
 
-# 4. Competitors (optional; clones + builds into data/tools_src/).
+# 5. Competitors (optional; clones + builds into data/tools_src/).
 bash benchmark/scripts/tools/setup.sh
 ```
 

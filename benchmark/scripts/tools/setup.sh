@@ -35,9 +35,16 @@ setup_bcalm() {
     clone bcalm https://github.com/GATB/bcalm || return 1
     local bin="$TOOLS_SRC/bcalm/build/bcalm"
     if [[ ! -x "$bin" ]]; then
-        say "bcalm: building"
+        say "bcalm: building (system gcc; gatb-core's bundled HDF5 needs old-C flags clang-22 rejects)"
         run mkdir -p "$TOOLS_SRC/bcalm/build"
-        ( cd "$TOOLS_SRC/bcalm/build" && run cmake -DCMAKE_BUILD_TYPE=Release .. && run make -j"$JOBS" )
+        # Build with system g++/gcc + -fcommon and lenient implicit declarations (the gatb-core/HDF5
+        # idioms that clang-22 and gcc-10+ otherwise error on). CPATH/LIBRARY_PATH unset -> system libs.
+        local bcf="-fcommon -Wno-error=implicit-function-declaration -Wno-implicit-function-declaration -Wno-error=implicit-int"
+        ( cd "$TOOLS_SRC/bcalm/build" \
+            && CPATH= LIBRARY_PATH= LD_LIBRARY_PATH= run cmake -DCMAKE_BUILD_TYPE=Release \
+                 -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+                 -DCMAKE_C_FLAGS="$bcf" -DCMAKE_CXX_FLAGS="-fcommon" .. \
+            && CPATH= LIBRARY_PATH= LD_LIBRARY_PATH= run make -j"$JOBS" )
     fi
     [[ -x "$bin" ]] && record BCALM_BIN "$bin" || say "bcalm: BUILD FAILED (see log)"
 }
@@ -58,11 +65,20 @@ setup_sshash() {
 # ---------------------------------------------------------------- sbwt
 setup_sbwt() {
     clone SBWT https://github.com/algbio/SBWT || return 1
+    # clang-22 fixes: (1) sdsl-lite louds_tree typo (members are m_bv_select{0,1}, not m_select{0,1});
+    # (2) force-include <cstdint> (uint8_t no longer transitively included). CPATH (set by _job_common)
+    # gives SeqIO conda's zlib.h. Patch the submodule source up front, and any build/external copy below.
+    local lt='s/tree\.m_select1/tree.m_bv_select1/g; s/tree\.m_select0/tree.m_bv_select0/g'
+    sed -i "$lt" "$TOOLS_SRC/SBWT/sdsl-lite/include/sdsl/louds_tree.hpp" 2>/dev/null || true
     local bdir="$TOOLS_SRC/SBWT/build" bin
-    if ! find "$bdir" -name sbwt -perm -u+x >/dev/null 2>&1; then
+    # NB: the SBWT repo ships an empty build/, so `find` exits 0 with no match -> the old
+    # `! find ... >/dev/null` skipped the build entirely. Test for actual output (a binary).
+    if ! find "$bdir" -name sbwt -perm -u+x 2>/dev/null | grep -q .; then
         say "sbwt: building (MAX_KMER_LENGTH=32)"
         rm -rf "$bdir"; mkdir -p "$bdir"   # clean dir: stale CMake state can fail the build
-        ( cd "$bdir" && run cmake -DCMAKE_BUILD_TYPE=Release -DMAX_KMER_LENGTH=32 .. && run make -j"$JOBS" )
+        ( cd "$bdir" && run cmake -DCMAKE_BUILD_TYPE=Release -DMAX_KMER_LENGTH=32 -DCMAKE_CXX_FLAGS="-include cstdint" .. \
+            && find "$TOOLS_SRC/SBWT" -name louds_tree.hpp -exec sed -i "$lt" {} + \
+            && run make -j"$JOBS" )
     fi
     bin="$(find "$bdir" -maxdepth 3 -type f -name sbwt -perm -u+x 2>/dev/null | head -1)"
     [[ -n "$bin" ]] && record SBWT_BIN "$bin" || say "sbwt: BUILD FAILED (see log)"
@@ -71,6 +87,10 @@ setup_sbwt() {
 # ---------------------------------------------------------------- bqf (clone only)
 setup_bqf() {
     clone bqf https://github.com/vicLeva/bqf || return 1
+    # Toolchain fix: bqf's bundled FQFeeder hardcodes -stdlib=libc++ (needs LLVM libc++); the per-(k,z)
+    # build uses g++ + libstdc++, which rejects that flag, so strip it. (No-op if absent.)
+    sed -i 's@.*-stdlib=libc++.*@    # patched out: -stdlib=libc++ needs libc++; this toolchain uses libstdc++@' \
+        "$TOOLS_SRC/bqf/bundled/FQFeeder/CMakeLists.txt" 2>/dev/null || true
     # BQF is specialized at compile time by (k,z) (-DBQF_INDEX_K/-DBQF_INDEX_Z), so the
     # wrapper compiles a per-(k,z) binary on demand; here we just record the source tree.
     record BQF_SRC "$TOOLS_SRC/bqf"

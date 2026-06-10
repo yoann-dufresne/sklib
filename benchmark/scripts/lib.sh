@@ -28,64 +28,27 @@ need_tools() {
 # tests/sequences_2_fa.sh is a slow bash loop; wrap raw sequence lines into FASTA with awk.
 seq2fa() { awk '{print ">s" NR; print $0}'; }
 
-# ---- genome catalogue -----------------------------------------------------
-# Remote genomes resolvable by a single URL.
-genome_url() {
-    case "$1" in
-        yeast)    echo "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.fa.gz" ;;
-        celegans) echo "https://hgdownload.soe.ucsc.edu/goldenPath/ce11/bigZips/ce11.fa.gz" ;;
-        chr21)    echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz" ;;
-        chr20)    echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr20.fa.gz" ;;
-        chr1)     echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz" ;;
-        chm13)    echo "https://hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.fa.gz" ;;
-        *)        echo "" ;;
-    esac
-}
-# Local genome fixtures (no download).
-genome_local() {
-    case "$1" in
-        ecoli)    echo "$BENCH_REPO_ROOT/data/ecoli.fa" ;;
-        sarscov2) echo "$BENCH_REPO_ROOT/data/sarscov2.fa" ;;
-        *)        echo "" ;;
-    esac
-}
-
-# Resolve a genome name to a sanitized (uppercased, split at non-ACGT) FASTA path.
-# Sets the global SAN. Returns non-zero on failure.
-prepare_genome() {
-    local name="$1" raw san url local_path
-    san="$BENCH_GEN_DIR/$name.sanitized.fa"
-    SAN="$san"
-    if [[ -f "$san" ]]; then log "$name: using cached sanitized FASTA"; return 0; fi
-
-    local_path="$(genome_local "$name")"
-    if [[ -n "$local_path" ]]; then
-        raw="$local_path"
-        [[ -f "$raw" ]] || { warn "$name: local fixture missing: $raw"; return 1; }
-    else
-        url="$(genome_url "$name")"
-        [[ -n "$url" ]] || { warn "$name: unknown genome (no URL/fixture)"; return 1; }
-        raw="$BENCH_GEN_DIR/$name.fa"
-        if [[ ! -f "$raw" ]]; then
-            log "$name: downloading $url"
-            curl -fSL --retry 3 "$url" -o "$BENCH_GEN_DIR/$name.fa.gz" || { warn "$name: download failed"; return 1; }
-            gzip -dc "$BENCH_GEN_DIR/$name.fa.gz" > "$raw" || { warn "$name: gunzip failed"; return 1; }
-        fi
-    fi
-    log "$name: sanitizing (uppercase + split at non-ACGT runs)"
-    python3 "$BENCH_HELPER" sanitize "$raw" > "$san.tmp" && mv "$san.tmp" "$san" || { warn "$name: sanitize failed"; return 1; }
-    return 0
-}
+# ---- genome catalogue + fetch (shared single source of truth) -------------
+# The catalogue (benchmark/data/genomes.tsv) and the fetch/sanitize logic now live
+# in genomes.sh, shared with large_scale_e2e.sh and fetch_genomes.sh so there is one
+# catalogue instead of drifting copies. It provides prepare_genome <name>, which sets
+# the global SAN to the cached sanitized FASTA -- the same contract as before.
+# shellcheck source=benchmark/scripts/genomes.sh
+source "$(dirname "$BENCH_HELPER")/genomes.sh"
 
 # ---- measurement ----------------------------------------------------------
-# Run a command under /usr/bin/time -v; capture wall seconds + peak RSS (KB).
+# GNU time binary used for wall + peak RSS. Defaults to /usr/bin/time (the laptop). Override on
+# hosts that lack it -- e.g. RHEL compute nodes: TIME_BIN="$CONDA_PREFIX/bin/time" (GNU time 1.9).
+# Must be GNU time (the bash builtin has no -v / "Maximum resident set size").
+TIME_BIN="${TIME_BIN:-/usr/bin/time}"
+# Run a command under "$TIME_BIN" -v; capture wall seconds + peak RSS (KB).
 # Sets RUN_SEC, RUN_RSS_KB. Returns the command's exit status.
 RUN_SEC=0; RUN_RSS_KB=0
 run_timed() {
     local tlog t0 t1 status
     tlog="$(mktemp)"
     t0=$(date +%s.%N)
-    /usr/bin/time -v "$@" >/dev/null 2>"$tlog"
+    "$TIME_BIN" -v "$@" >/dev/null 2>"$tlog"
     status=$?
     t1=$(date +%s.%N)
     RUN_SEC=$(awk "BEGIN{printf \"%.3f\", $t1-$t0}")
@@ -114,15 +77,23 @@ run_timed_median() {
 # ---- KMC oracle -----------------------------------------------------------
 # Count distinct canonical k-mers in a FASTA (the bits/kmer denominator).
 # Echoes the count.  $1=fasta $2=k
+# Memoised: the distinct count is tool-independent, so it is cached by
+# (basename, file-size, k) under RESULTS/distinct_cache and reused across the
+# whole tool sweep and across resumes (KMC on a multi-GB genome is not free).
 kmc_distinct_count() {
-    local in="$1" kk="$2" db="$BENCH_KMC_TMP/cnt_$$_$RANDOM"
+    local in="$1" kk="$2" db cdir cache sz n
+    cdir="${BENCH_DISTINCT_CACHE:-${RESULTS:-$BENCH_REPO_ROOT/benchmark/results/latest}/distinct_cache}"
+    sz=$(stat -c%s "$in" 2>/dev/null || echo 0)
+    cache="$cdir/$(basename "$in").sz${sz}.k${kk}"
+    if [[ -s "$cache" ]]; then n=$(<"$cache"); [[ "$n" =~ ^[0-9]+$ ]] && { echo "$n"; return 0; }; fi
+    db="$BENCH_KMC_TMP/cnt_$$_$RANDOM"
     if ! kmc -k"$kk" -ci1 -fm "$in" "$db" "$BENCH_KMC_TMP" >/dev/null 2>&1; then
         rm -f "$db".kmc_pre "$db".kmc_suf; echo "NA"; return 1
     fi
     # #unique k-mers counted is reported in the KMC database stats.
-    local n
     n=$(kmc_tools transform "$db" dump /dev/stdout 2>/dev/null | wc -l)
     rm -f "$db".kmc_pre "$db".kmc_suf
+    if [[ "$n" =~ ^[0-9]+$ ]]; then mkdir -p "$cdir"; printf '%s' "$n" > "$cache"; fi
     echo "$n"
 }
 
@@ -160,6 +131,27 @@ BENCH_SCRIPTS="$(dirname "$BENCH_HELPER")"      # benchmark/scripts (mutate.py l
 HOST="${HOST:-$(hostname)}"
 CPU="$(csv_escape "$(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)")"
 NPROC="$(nproc)"
+
+# CPU spec (for taskset -c) of a th-thread query run. Default: contiguous cores from 0 -- the
+# single-machine case where we own cores 0..NPROC-1. On a *shared* scheduler allocation (Slurm
+# --cpus-per-task, etc.) we only own an arbitrary subset of the node's cores: export
+# BENCH_ALLOWED_CPUS=<our cpu list, e.g. `taskset -cp $$`> and the pin is taken from the first
+# th of *our* cores, so pinning never lands on a neighbour's cores. Unset => unchanged behaviour.
+pin_cpus_for() {
+    local th="$1" tok lo hi c out=()
+    if [[ -n "${BENCH_ALLOWED_CPUS:-}" ]]; then
+        # Expand "3-5,12-15" / "3,4,5" (taskset -cp form) to individual cpus, then take exactly
+        # the first th -- so a th-thread run pins to th of *our* cores regardless of layout.
+        local IFS=', '
+        for tok in $BENCH_ALLOWED_CPUS; do
+            [[ -z "$tok" ]] && continue
+            if [[ "$tok" == *-* ]]; then lo=${tok%-*}; hi=${tok#*-}; for ((c=lo; c<=hi; c++)); do out+=("$c"); done
+            else out+=("$tok"); fi
+        done
+        local sel=("${out[@]:0:th}"); local IFS=,; echo "${sel[*]}"
+    elif (( th > 1 )); then echo "0-$((th-1))"
+    else echo "0"; fi
+}
 
 # ---- shared grids (every one env-overridable to scope a run) ----
 DATASETS="${DATASETS:-sarscov2 ecoli yeast celegans chr21 chr1}"
@@ -228,8 +220,11 @@ qset_single() {                                        # <san> <k> <p> <n> <seed
     fa="$QCACHE/$(basename "${san%.fa}").k$k.single.p$p.n$n.s$seed.fa"
     QSET_FA="$fa"; QSET_PRES=$(( n * p / 100 )); QSET_ABS=$(( n - QSET_PRES ))
     [[ -s "$fa" ]] && return 0
-    { (( QSET_PRES > 0 )) && python3 "$BENCH_HELPER" sample_positive "$san" "$k" "$QSET_PRES" "$seed"
-      (( QSET_ABS  > 0 )) && python3 "$BENCH_HELPER" randkmers "$k" "$QSET_ABS" "$seed"; } \
+    # Use `if` (not `(( … )) && cmd`): a false `(( … > 0 ))` returns exit 1, which under
+    # `set -o pipefail` fails the whole pipeline and SKIPS the `&& mv` -> the final .fa is
+    # never created. That broke p=100 (QSET_ABS=0) -> missing present-query file for all tools.
+    { if (( QSET_PRES > 0 )); then python3 "$BENCH_HELPER" sample_positive "$san" "$k" "$QSET_PRES" "$seed"; fi
+      if (( QSET_ABS  > 0 )); then python3 "$BENCH_HELPER" randkmers "$k" "$QSET_ABS" "$seed"; fi; } \
       | python3 "$BENCH_HELPER" shuffle /dev/stdin "$seed" | seq2fa > "$fa.tmp" && mv "$fa.tmp" "$fa"
 }
 # qset_stream: nrec sequence records of len bp at target present-fraction p% -- present
@@ -241,8 +236,8 @@ qset_stream() {                                        # <san> <k> <p> <nrec> <l
     QSET_FA="$fa"; npres=$(( nrec * p / 100 )); nabs=$(( nrec - npres )); kpr=$(( len - k + 1 ))
     QSET_PRES=$(( npres * kpr )); QSET_ABS=$(( nabs * kpr ))
     [[ -s "$fa" ]] && return 0
-    { (( npres > 0 )) && python3 "$BENCH_HELPER" simreads "$san" "$len" "$npres" 0.0 "$seed"
-      (( nabs  > 0 )) && python3 "$BENCH_HELPER" simreads "$san" "$len" "$nabs" 1.0 "$((seed+1))"; } \
+    { if (( npres > 0 )); then python3 "$BENCH_HELPER" simreads "$san" "$len" "$npres" 0.0 "$seed"; fi
+      if (( nabs  > 0 )); then python3 "$BENCH_HELPER" simreads "$san" "$len" "$nabs" 1.0 "$((seed+1))"; fi; } \
       > "$fa.tmp" && mv "$fa.tmp" "$fa"
 }
 

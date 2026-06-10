@@ -1,0 +1,25 @@
+# sklib benchmark genome catalogue — the single source of truth for fetchable genomes.
+# Read by benchmark/scripts/genomes.sh (shared by lib.sh, large_scale_e2e.sh,
+# fetch_genomes.sh). Lines starting with '#' and blank lines are ignored.
+#
+# Columns are whitespace-separated; the description is the trailing free-text field
+# (so only it may contain spaces):
+#   name    short id used in DATASETS= / GENOMES= and on the fetch_genomes.sh CLI
+#   kind    url = a direct .fa.gz URL (curl + gunzip)
+#           ncbi = an NCBI nuccore accession, fetched as FASTA via E-utilities efetch (no toolkit)
+#   source  the URL (kind=url) or the accession (kind=ena)
+#   size    approximate decompressed size (informational only)
+#   description  free text
+#
+# Update a reference  -> edit its row.
+# Re-fetch one genome -> benchmark/scripts/fetch_genomes.sh --force <name>
+#
+# name      kind  source                                                                   size    description
+sarscov2    ncbi  NC_045512.2                                                              30kb    SARS-CoV-2 (Wuhan-Hu-1)
+ecoli       ncbi  NC_000913.3                                                              4.6Mb   E. coli K-12 MG1655
+yeast       url   https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.fa.gz 12Mb    S. cerevisiae (sacCer3)
+celegans    url   https://hgdownload.soe.ucsc.edu/goldenPath/ce11/bigZips/ce11.fa.gz       100Mb   C. elegans (ce11)
+chr21       url   https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz  40Mb    human chr21 (hg38)
+chr20       url   https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr20.fa.gz  64Mb    human chr20 (hg38)
+chr1        url   https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz   230Mb   human chr1 (hg38)
+chm13       url   https://hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.fa.gz         3.1Gb   human T2T-CHM13v2 (hs1)

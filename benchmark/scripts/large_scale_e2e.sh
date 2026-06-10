@@ -74,24 +74,14 @@ done
 [[ -x "$REL_BIN" ]] || die "release binary missing: $REL_BIN (build it first)"
 [[ -x "$DBG_BIN" ]] || die "debug binary missing: $DBG_BIN (build it first)"
 
-# ---- genome catalogue ----
-genome_url() {
-    case "$1" in
-        yeast) echo "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.fa.gz" ;;
-        chr21) echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz" ;;
-        chr20) echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr20.fa.gz" ;;
-        chr1)  echo "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz" ;;
-        *)     echo "" ;;
-    esac
-}
-# Local genome fixtures (no download).
-genome_local() {
-    case "$1" in
-        ecoli)    echo "$REPO_ROOT/data/ecoli.fa" ;;
-        sarscov2) echo "$REPO_ROOT/data/sarscov2.fa" ;;
-        *)        echo "" ;;
-    esac
-}
+# ---- genome catalogue + fetch (shared single source of truth) ----
+# The catalogue (benchmark/data/genomes.tsv) and fetch/sanitize logic live in genomes.sh,
+# shared with the perf harness (lib.sh) and fetch_genomes.sh, so this script no longer
+# carries its own (previously drifting -- it lacked celegans/chm13) copy.
+BENCH_GEN_DIR="$GEN_DIR"; BENCH_HELPER="$HELPER"
+# shellcheck source=benchmark/scripts/genomes.sh
+source "$SCRIPT_DIR/genomes.sh"
+
 # Construct under the DEBUG build (asserts on) for small genomes, Release for big
 # ones. Query is the slow, assert-light path, so it always uses the Release build.
 construct_bin() {
@@ -102,33 +92,8 @@ construct_bin() {
 }
 query_bin() { echo "$REL_BIN"; }
 
-# Resolve a genome name to a sanitized FASTA path (download + decompress + split).
-# Sets global SAN.
-prepare_genome() {
-    local name="$1" raw san url
-    san="$GEN_DIR/$name.sanitized.fa"
-    SAN="$san"
-    if [[ -f "$san" ]]; then log "$name: using cached sanitized FASTA"; return 0; fi
-
-    local local_path
-    local_path="$(genome_local "$name")"
-    if [[ -n "$local_path" ]]; then
-        raw="$local_path"
-        [[ -f "$raw" ]] || { log "$name: local fixture missing: $raw"; return 1; }
-    else
-        url="$(genome_url "$name")"
-        [[ -n "$url" ]] || { log "$name: unknown genome (no URL)"; return 1; }
-        raw="$GEN_DIR/$name.fa"
-        if [[ ! -f "$raw" ]]; then
-            log "$name: downloading $url"
-            curl -fSL --retry 3 "$url" -o "$GEN_DIR/$name.fa.gz" || { log "$name: download failed"; return 1; }
-            gzip -dc "$GEN_DIR/$name.fa.gz" > "$raw" || { log "$name: gunzip failed"; return 1; }
-        fi
-    fi
-    log "$name: sanitizing (uppercase + split at non-ACGT runs)"
-    python3 "$HELPER" sanitize "$raw" > "$san.tmp" && mv "$san.tmp" "$san" || { log "$name: sanitize failed"; return 1; }
-    return 0
-}
+# prepare_genome <name> (download + decompress + sanitize; sets the global SAN) is
+# provided by genomes.sh, sourced above.
 
 # Build a sorted-unique list of canonical k-mers from a FASTA via KMC.
 # $1=input fasta  $2=format flag (-fa/-fm)  $3=k  $4=output file

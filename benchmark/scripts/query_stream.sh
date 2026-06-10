@@ -13,7 +13,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export BENCH_REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"; source "$SCRIPT_DIR/tools.sh"
-need_tools kmc kmc_tools /usr/bin/time python3
+need_tools kmc kmc_tools "$TIME_BIN" python3
 
 CSV="${CSV:-$RESULTS/query_stream.csv}"
 csv_init "$CSV" "timestamp,host,cpu,tool,tool_version,dataset,k,m,threads,presence,n_kmers,present_kmers,absent_kmers,time_s,peak_rss_kb,throughput_Mkmer_s"
@@ -38,7 +38,7 @@ for dataset in $DATASETS; do
                     (( th > NPROC )) && continue
                     key="$(mk_key "$tool" "$tver" "$HOST" "$dataset" "$k" "$m" "$th" "$p")"
                     is_done "$key" && continue
-                    cpus="0"; (( th > 1 )) && cpus="0-$((th-1))"
+                    cpus="$(pin_cpus_for "$th")"
                     RUN_REPS="$REPS"
                     if query_"$tool" "$idx" "$QSET_FA" "$k" "$m" "$cpus"; then
                         printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \

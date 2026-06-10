@@ -16,7 +16,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export BENCH_REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib.sh"; source "$SCRIPT_DIR/tools.sh"
-need_tools kmc kmc_tools /usr/bin/time python3
+need_tools kmc kmc_tools "$TIME_BIN" python3
 [[ -x "$SSKM_BIN" ]] || die "sskm not found at $SSKM_BIN"
 
 CSV="${CSV:-$RESULTS/setop.csv}"

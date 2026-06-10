@@ -9,7 +9,7 @@ cd "$REPO_ROOT"
 
 K="${K:-21}"
 M="${M:-11}"
-INPUT="${INPUT:-data/ecoli.fa}"
+INPUT="${INPUT:-benchmark/data/genomes/ecoli.sanitized.fa}"
 FREQ="${FREQ:-997}"
 BUILD_DIR="${BUILD_DIR:-build-profile}"
 OUT_DIR="${OUT_DIR:-benchmark/results/latest}"
@@ -17,6 +17,7 @@ FLAMEGRAPH_DIR="${FLAMEGRAPH_DIR:-thirdparty/FlameGraph}"
 
 if [[ ! -f "$INPUT" ]]; then
     echo "error: input FASTA not found: $INPUT" >&2
+    echo "       fetch a catalogued genome first, e.g.: bash benchmark/scripts/fetch_genomes.sh ecoli" >&2
     exit 1
 fi
 

@@ -27,7 +27,12 @@ _bqf_binary() {
     if [[ ! -x "$bin" ]]; then
         warn "bqf: compiling binary for k=$k z=$z (one-off)"
         mkdir -p "$bdir"
-        ( cd "$bdir" && cmake -DCMAKE_BUILD_TYPE=Release -DBQF_INDEX_K="$k" -DBQF_INDEX_Z="$z" .. \
+        # bqf relies on GCC's -fpermissive (its CMakeLists) for const-correctness that clang rejects,
+        # so build with the system g++ (its intended compiler). Unset CPATH/LIBRARY_PATH so g++ uses
+        # its own libstdc++ (not conda's headers) + system zlib. (No-op on hosts without those vars.)
+        ( cd "$bdir" && CPATH= LIBRARY_PATH= LD_LIBRARY_PATH= \
+            cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc \
+                  -DBQF_INDEX_K="$k" -DBQF_INDEX_Z="$z" .. \
             && make -j"$(nproc)" bqf ) >"$bdir/build.log" 2>&1
     fi
     [[ -x "$bin" ]] && echo "$bin"
@@ -64,5 +69,11 @@ construct_bqf() {
 
 query_bqf() {
     local idx="$1" qfa="$2" k="$3" m="$4" cpus="$5"
-    run_timed_median taskset -c "$cpus" "${BQF_BIN_CACHED:?bqf binary not set}" query -b "$idx" -i "$qfa" -o /dev/null
+    # Resolve the per-(k,z) binary here, don't rely on BQF_BIN_CACHED (a construct_bqf
+    # side-effect): a cached index skips construct_bqf, leaving it unset -> query aborts
+    # (the bug that wiped cbl's query_stream; bqf shares the pattern).
+    local s=$(( BQF_S <= k-1 ? BQF_S : k-1 )) z bin
+    z=$(( k - s ))
+    bin="$(_bqf_binary "$k" "$z")" || { warn "bqf: binary unavailable for k=$k z=$z"; return 1; }
+    run_timed_median taskset -c "$cpus" "$bin" query -b "$idx" -i "$qfa" -o /dev/null
 }

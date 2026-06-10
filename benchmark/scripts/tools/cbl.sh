@@ -58,6 +58,10 @@ construct_cbl() {
 }
 
 query_cbl() {
-    local idx="$1" qfa="$2" k="$3" m="$4" cpus="$5"
-    run_timed_median taskset -c "$cpus" "${CBL_BIN_CACHED:?cbl binary not set}" query "$idx" "$qfa"
+    local idx="$1" qfa="$2" k="$3" m="$4" cpus="$5" bin
+    # Resolve the per-K binary here, don't rely on CBL_BIN_CACHED (a construct_cbl
+    # side-effect): when the index is cached, construct_cbl isn't re-run, so that global
+    # is unset and the query aborts -- which broke query_stream entirely (cached index).
+    bin="$(_cbl_binary "$k")" || { warn "cbl: binary unavailable for k=$k"; return 1; }
+    run_timed_median taskset -c "$cpus" "$bin" query "$idx" "$qfa"
 }
