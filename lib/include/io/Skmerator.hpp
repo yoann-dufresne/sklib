@@ -453,17 +453,29 @@ public:
             Skmer<kuint> & skmer = m_skmer_buffer_array[ m_ptr_current & m_buffer_mask ];
             orientation_t const orient = m_skmer_orientation[ m_ptr_current & m_buffer_mask ];
 
-            // Sequence left extremity limitation
-            if (m_seq.length() - m_remaining_nucleotides >= 2 * k - m)
-                update_skmer_left_size(skmer, orient, k-m);
+            // Sequence extremity limitation. In the steady state (past the first 2k-m bases and before
+            // the final k-m) both limits are k-m, which sets pref=suff=k-m whatever the orientation --
+            // so take that path directly and skip the two orientation-dependent (data-unpredictable)
+            // branches inside update_skmer_left/right_size. Only the rare per-sequence ends fall back to
+            // the orientation-aware partial sizes (kept identical to the original).
+            const bool left_full  {m_seq.length() - m_remaining_nucleotides >= 2 * k - m};
+            const bool right_full {m_remaining_nucleotides >= 0};
+            if (left_full && right_full)
+            {
+                skmer.m_pref_size = skmer.m_suff_size = static_cast<uint16_t>(k - m);
+            }
             else
-                update_skmer_left_size(skmer, orient, m_seq.length() - m_remaining_nucleotides - k);
+            {
+                if (left_full)
+                    update_skmer_left_size(skmer, orient, k-m);
+                else
+                    update_skmer_left_size(skmer, orient, m_seq.length() - m_remaining_nucleotides - k);
 
-            // Sequence right extremity limitation
-            if (m_remaining_nucleotides >= 0)
-                update_skmer_right_size(skmer, orient, k-m);
-            else
-                update_skmer_right_size(skmer, orient, k-m+m_remaining_nucleotides);
+                if (right_full)
+                    update_skmer_right_size(skmer, orient, k-m);
+                else
+                    update_skmer_right_size(skmer, orient, k-m+m_remaining_nucleotides);
+            }
 
             return skmer;
         }
