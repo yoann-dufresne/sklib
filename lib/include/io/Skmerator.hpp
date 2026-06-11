@@ -622,18 +622,19 @@ public:
 
         void update_skmer_right_size(Skmer<kuint>& skmer, orientation_t orientation, uint64_t size)
         {
-            if (orientation == forward_c)
-                skmer.m_suff_size = size;
-            else
-                skmer.m_pref_size = size;
+            // Branchless: forward -> right flank is the suffix, reverse -> the prefix. The orientation
+            // is data-dependent (per-base in operator++'s common branch), so select without branching.
+            const uint16_t s {static_cast<uint16_t>(size)};
+            skmer.m_suff_size = orientation ? s : skmer.m_suff_size;
+            skmer.m_pref_size = orientation ? skmer.m_pref_size : s;
         }
 
         void update_skmer_left_size(Skmer<kuint>& skmer, orientation_t orientation, uint64_t size)
         {
-            if (orientation == forward_c)
-                skmer.m_pref_size = size;
-            else
-                skmer.m_suff_size = size;
+            // Branchless (see update_skmer_right_size): forward -> left flank is the prefix.
+            const uint16_t s {static_cast<uint16_t>(size)};
+            skmer.m_pref_size = orientation ? s : skmer.m_pref_size;
+            skmer.m_suff_size = orientation ? skmer.m_suff_size : s;
         }
 
         uint16_t get_skmer_left_size(Skmer<kuint> const & skmer, orientation_t orientation) const

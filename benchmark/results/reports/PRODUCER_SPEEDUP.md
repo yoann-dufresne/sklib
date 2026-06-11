@@ -161,10 +161,12 @@ expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load 
 | A1 | `add_nucleotide`: scalar central-nucleotide transfer — the suffix↔prefix central nucleotide is one 2-bit value that never straddles a word, so precompute its word/offset once and move it with a per-word read/OR instead of 4 branchy full-`pair` shifts/base. Helps the wide (`__uint128`) path most | 2.76→2.80 +1.4 % (noise) | 2.75→2.75 ±0 | 0.94→0.98 **+4.3 %** | 0.87→0.90 **+3.4 %** | **committed** — digest identical, ctest green; clear k63 win, no k31 regression |
 | C1 | `phi`: compute the mixer in `uint64_t` when 2m≤64 even if `kuint` is wider — only the low 2m bits survive the mask, so a 64-bit `mul` is bit-identical to the `__uint128` one and replaces a full 128-bit multiply per base. Pure k63 win (compile-time dead for k≤31, so that codegen is unchanged) | (same binary) | (same binary) | 0.98→1.02 **+4.1 %** | 0.90→0.95 **+5.6 %** | **committed** — digest identical, ctest green |
 | E1 | `compute_new_candidate_skmer` (`Skmerator.hpp`): orientation-branch-free steady state — away from sequence ends both extremity limits are k-m, which sets pref=suff=k-m regardless of orientation, so store both directly and skip the two data-unpredictable orientation branches per base (ends keep the original path). Per-base, helps both k | 2.80→2.87 **+2.5 %** | 2.75→2.85 **+3.6 %** | 1.02→1.05 **+2.9 %** | 0.95→0.96 +1.1 % | **committed** — digest identical, ctest green |
+| E2 | `update_skmer_left/right_size` (`Skmerator.hpp`): **branchless** (cmov) instead of an `if (orientation==forward_c)` store. Called every base in `operator++`'s common branch with a data-dependent, ~unpredictable orientation -- the misprediction was the single biggest per-base stall (it is much of why `operator++` showed ~44 % self at k=31). Select the prefix/suffix field without branching | 2.87→**3.67** **+27.9 %** | 2.85→**3.61** **+26.7 %** | 1.05→1.14 **+8.6 %** | 0.96→1.08 **+12.5 %** | **committed** — digest identical, ctest green |
 
-Best-known after E1 (median-of-9, Mskmer/s): chr21 k31 **2.87** · cel k31 **2.85** · chr21 k63 **1.05** · cel k63 **0.96**.
-Cumulative vs baseline b8f2780: chr21 k31 **+8.7 %**, cel k31 **+7.5 %**, chr21 k63 **+14.1 %**, cel k63 **+11.6 %**.
+Best-known after E2 (median-of-9, Mskmer/s): chr21 k31 **3.67** · cel k31 **3.61** · chr21 k63 **1.14** · cel k63 **1.08**.
+Cumulative vs baseline b8f2780: chr21 k31 **+39.0 %**, cel k31 **+36.2 %**, chr21 k63 **+23.9 %**, cel k63 **+25.6 %**.
 (k31 unchanged by C1 — its `sizeof(kuint)>8` branch is compile-time dead at width 8; the ±noise wobble is the same binary.)
+**E2 is the headline win**: the per-base orientation branch was mispredicting heavily; making it branchless removed the dominant stall (+27 % at k=31 alone).
 
 **Tried and rejected (reverted):**
 
