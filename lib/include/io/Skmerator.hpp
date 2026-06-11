@@ -2,6 +2,7 @@
 #include <string>
 #include <memory>
 #include <algorithm>
+#include <bit>
 #include <kseq++/seqio.hpp>
 
 #include <io/Skmer.hpp>
@@ -74,8 +75,21 @@ public:
 
         // Buffered unmasked skmers
         uint64_t m_buffer_size;
+        // Allocated ring-buffer capacity = next power of two >= m_buffer_size, so the slot index
+        // uses a bit-mask (idx & m_buffer_mask) instead of a runtime modulo by m_buffer_size, which
+        // clang compiled to a hardware div on the per-base hot path. Output-identical: every access
+        // maps a given absolute index to the same slot, and the live window never exceeds
+        // m_buffer_size <= capacity, so no two live indices alias.
+        uint64_t m_buffer_capacity;
+        uint64_t m_buffer_mask;
         std::vector<Skmer<kuint> > m_skmer_buffer_array;
-        std::vector<bool> m_skmer_orientation;
+        // Per-position strand flag (forward_c/reverse_c). Stored as uint8_t, NOT std::vector<bool>:
+        // the bit-packed vector<bool> routes every access through _Bit_iterator word-index+mask
+        // arithmetic, which the producer profile showed at ~13% of its time (and it does not inline
+        // away). A byte buffer makes each read/write a plain load/store; the stored 0/1 values are
+        // identical, so the yielded super-k-mer stream is byte-for-byte unchanged. Matches the
+        // convention already used in SkmerManipulator::canonical_pieces ("not vector<bool>").
+        std::vector<uint8_t> m_skmer_orientation;
         uint64_t m_ptr_current;
         uint64_t m_ptr_min;
         uint64_t m_ptr_last_round;
@@ -101,8 +115,10 @@ public:
             , m_consumed(false), m_isend(false)
             , m_manip(skmerator.m_manip), m_current_minimizer(~static_cast<kuint>(0))
             , m_buffer_size(2 * skmerator.m_manip.k - skmerator.m_manip.m)
-            , m_skmer_buffer_array(std::vector<Skmer<kuint> >(m_buffer_size))
-            , m_skmer_orientation(std::vector<bool>(m_buffer_size))
+            , m_buffer_capacity(std::bit_ceil(m_buffer_size))
+            , m_buffer_mask(m_buffer_capacity - 1)
+            , m_skmer_buffer_array(std::vector<Skmer<kuint> >(m_buffer_capacity))
+            , m_skmer_orientation(std::vector<uint8_t>(m_buffer_capacity))
             , m_ptr_current(skmerator.m_manip.k - skmerator.m_manip.m)
             , m_ptr_min(0) // minimizer_position
             , m_ptr_last_round(0)
@@ -133,8 +149,10 @@ public:
             m_current_minimizer = other.m_current_minimizer;
 
             m_buffer_size = other.m_buffer_size;
+            m_buffer_capacity = other.m_buffer_capacity;
+            m_buffer_mask = other.m_buffer_mask;
             m_skmer_buffer_array = std::vector(other.m_skmer_buffer_array);
-            m_skmer_orientation = std::vector<bool>(other.m_skmer_orientation);
+            m_skmer_orientation = std::vector<uint8_t>(other.m_skmer_orientation);
 
             m_ptr_current = other.m_ptr_current;
             m_ptr_min = other.m_ptr_min;
@@ -187,7 +205,7 @@ public:
             // Buffers keep their capacity (size 2k-m, constant for a given manipulator); clearing
             // them reproduces a fresh value-initialized construction exactly.
             std::fill(m_skmer_buffer_array.begin(), m_skmer_buffer_array.end(), Skmer<kuint>{});
-            std::fill(m_skmer_orientation.begin(), m_skmer_orientation.end(), false);
+            std::fill(m_skmer_orientation.begin(), m_skmer_orientation.end(), uint8_t{0});
 
             if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
             {
@@ -273,11 +291,11 @@ public:
                 do
                 {
                     m_ptr_last_round += 1;
-                    // cout << "m_ptr_last_round " << (m_ptr_last_round % m_buffer_size);
-                    // cout << " m_ptr_current " << (m_ptr_current % m_buffer_size) << endl;
+                    // cout << "m_ptr_last_round " << (m_ptr_last_round & m_buffer_mask);
+                    // cout << " m_ptr_current " << (m_ptr_current & m_buffer_mask) << endl;
 
                     // Get yielding candidate
-                    Skmer<kuint>& skmer {m_skmer_buffer_array[m_ptr_last_round % m_buffer_size]};
+                    Skmer<kuint>& skmer {m_skmer_buffer_array[m_ptr_last_round & m_buffer_mask]};
 
                     // Yield if needed
                     if (skmer.m_pref_size + skmer.m_suff_size >= k - m)
@@ -287,13 +305,13 @@ public:
                         finalize_and_yield();
 
                         // Avoid jumping around the final condition of the do-while
-                        if ((m_ptr_last_round % m_buffer_size) == (m_ptr_current % m_buffer_size))
+                        if ((m_ptr_last_round & m_buffer_mask) == (m_ptr_current & m_buffer_mask))
                             m_consumed = true;
 
                         return *this;
                     }
                 }
-                while ((m_ptr_last_round % m_buffer_size) != (m_ptr_current % m_buffer_size));
+                while ((m_ptr_last_round & m_buffer_mask) != (m_ptr_current & m_buffer_mask));
 
                 // debug_print_buffer();
                 m_consumed = true;
@@ -306,9 +324,9 @@ public:
             while (m_remaining_nucleotides + k - m > 0)
             {
                 // -- Save the skmer to eventually yield
-                m_rator.m_yielded_skmer = m_skmer_buffer_array[(m_ptr_current + 1) % m_buffer_size];
+                m_rator.m_yielded_skmer = m_skmer_buffer_array[(m_ptr_current + 1) & m_buffer_mask];
                 // pp << m_rator.m_yielded_skmer;
-                // cout << pp << " " << ((m_ptr_current + 1) % m_buffer_size);
+                // cout << pp << " " << ((m_ptr_current + 1) & m_buffer_mask);
                 // cout << " remaining " << m_remaining_nucleotides << endl;
 
                 // -- On out of context minimizer
@@ -319,7 +337,7 @@ public:
 
                 // Get the next candidate skmer
                 Skmer<kuint>& candidate {compute_new_candidate_skmer()};
-                auto const candidate_orient {m_skmer_orientation[m_ptr_current % m_buffer_size]};
+                auto const candidate_orient {m_skmer_orientation[m_ptr_current & m_buffer_mask]};
 
                 // Get the minimizer order key (φ-rank, not the raw value)
                 const kuint candidate_minimizer {m_manip.minimizer_rank(candidate)};
@@ -359,7 +377,7 @@ public:
             // Update the last skmers that are not selected to remove their right part.
             for(uint64_t idx{m_ptr_min+1} ; idx<=m_ptr_current ; idx++)
             {
-                Skmer<kuint>& unused_skmer = m_skmer_buffer_array[idx % m_buffer_size];
+                Skmer<kuint>& unused_skmer = m_skmer_buffer_array[idx & m_buffer_mask];
                 unused_skmer.m_pref_size = unused_skmer.m_suff_size = 0;
             }
 
@@ -377,8 +395,8 @@ public:
             const uint64_t m {m_manip.m};
 
             // Set the suffix size of the ooc skmer
-            Skmer<kuint>& ooc_skmer {m_skmer_buffer_array[m_ptr_min % m_buffer_size]};
-            auto const ooc_orientation {m_skmer_orientation[m_ptr_min % m_buffer_size]};
+            Skmer<kuint>& ooc_skmer {m_skmer_buffer_array[m_ptr_min & m_buffer_mask]};
+            auto const ooc_orientation {m_skmer_orientation[m_ptr_min & m_buffer_mask]};
             update_skmer_right_size(ooc_skmer, ooc_orientation, k - m);
 
             this->recompute_minimizer(m_ptr_min + 1, m_ptr_current);
@@ -392,7 +410,7 @@ public:
             // Limit the size on the right of the previous skmers
             for (uint64_t idx{0} ; idx < (k - m) ; idx++)
             {
-                auto const pred_buff_idx {(m_ptr_current - (k - m) + idx) % m_buffer_size};
+                auto const pred_buff_idx {(m_ptr_current - (k - m) + idx) & m_buffer_mask};
                 Skmer<kuint>& predecessor {m_skmer_buffer_array[pred_buff_idx]};
                 auto const pred_orient {m_skmer_orientation[pred_buff_idx]};
                 // Mask the nucleotides from the predecessor that are part of this skmer.
@@ -419,11 +437,11 @@ public:
             const kuint nucl {
                     m_remaining_nucleotides >= 0 ?(static_cast<kuint>((m_seq[m_ptr_current] >> 1) & 0b11U)) : static_cast<kuint>(0b11U)};
 
-            m_skmer_buffer_array[ m_ptr_current % m_buffer_size ] = (m_remaining_nucleotides >= 0) ? m_manip.add_nucleotide(nucl) : m_manip.add_empty_nucleotide();
-            m_skmer_orientation[ m_ptr_current % m_buffer_size ] = m_manip.is_forward();
+            m_skmer_buffer_array[ m_ptr_current & m_buffer_mask ] = (m_remaining_nucleotides >= 0) ? m_manip.add_nucleotide(nucl) : m_manip.add_empty_nucleotide();
+            m_skmer_orientation[ m_ptr_current & m_buffer_mask ] = m_manip.is_forward();
 
-            Skmer<kuint> & skmer = m_skmer_buffer_array[ m_ptr_current % m_buffer_size ];
-            orientation_t const orient = m_skmer_orientation[ m_ptr_current % m_buffer_size ];
+            Skmer<kuint> & skmer = m_skmer_buffer_array[ m_ptr_current & m_buffer_mask ];
+            orientation_t const orient = m_skmer_orientation[ m_ptr_current & m_buffer_mask ];
 
             // Sequence left extremity limitation
             if (m_seq.length() - m_remaining_nucleotides >= 2 * k - m)
@@ -446,10 +464,10 @@ public:
             const uint64_t m{m_manip.m};
 
             const uint64_t pos_diff {ptr_equivalent - m_ptr_min};
-            Skmer<kuint>& current_skmer {m_skmer_buffer_array[ptr_equivalent % m_buffer_size]};
-            auto const curr_orient {m_skmer_orientation[ptr_equivalent % m_buffer_size]};
-            Skmer<kuint>& prev_skmer {m_skmer_buffer_array[m_ptr_min % m_buffer_size]};
-            auto const prev_orient {m_skmer_orientation[m_ptr_min % m_buffer_size]};
+            Skmer<kuint>& current_skmer {m_skmer_buffer_array[ptr_equivalent & m_buffer_mask]};
+            auto const curr_orient {m_skmer_orientation[ptr_equivalent & m_buffer_mask]};
+            Skmer<kuint>& prev_skmer {m_skmer_buffer_array[m_ptr_min & m_buffer_mask]};
+            auto const prev_orient {m_skmer_orientation[m_ptr_min & m_buffer_mask]};
 
 
             // Define the kmers to compare
@@ -478,7 +496,7 @@ public:
             // Invalidates skmers in between the 2 equivalent minimizers
             for (uint64_t idx{m_ptr_min+1} ; idx<ptr_equivalent ; idx++)
             {
-                Skmer<kuint>& invalid {m_skmer_buffer_array[idx % m_buffer_size]};
+                Skmer<kuint>& invalid {m_skmer_buffer_array[idx & m_buffer_mask]};
                 invalid.m_pref_size = invalid.m_suff_size = 0;
             }
 
@@ -497,7 +515,7 @@ public:
         void recompute_minimizer(uint64_t buff_start, uint64_t buff_stop)
         {
             // 0 - Select first candidate
-            Skmer<kuint>& first = m_skmer_buffer_array[buff_start % m_buffer_size];
+            Skmer<kuint>& first = m_skmer_buffer_array[buff_start & m_buffer_mask];
             m_current_minimizer = m_manip.minimizer_rank(first);
             m_ptr_min = buff_start;
             uint64_t first_equal_mini {m_ptr_min};
@@ -506,7 +524,7 @@ public:
             // 1 - Compute the minimizer in the window
             for (uint64_t idx{buff_start+1} ; idx<=buff_stop ; idx++)
             {
-                Skmer<kuint>& candidate = m_skmer_buffer_array[idx % m_buffer_size];
+                Skmer<kuint>& candidate = m_skmer_buffer_array[idx & m_buffer_mask];
                 kuint candidate_minimizer = m_manip.minimizer_rank(candidate);
 
                 if (candidate_minimizer < m_current_minimizer)
@@ -523,7 +541,7 @@ public:
 
             for (uint64_t idx{buff_start} ; idx<=buff_stop ; idx++)
             {
-                Skmer<kuint>& candidate = m_skmer_buffer_array[idx % m_buffer_size];
+                Skmer<kuint>& candidate = m_skmer_buffer_array[idx & m_buffer_mask];
 
                 // Before the last equivalent minimizer we can detroy the candidate skmers with larger minimizers
                 if (idx < first_equal_mini)
@@ -536,8 +554,8 @@ public:
 
                     if (candidate_minimizer == m_current_minimizer)
                     {
-                        Skmer<kuint> & mini_skmer {m_skmer_buffer_array[m_ptr_min % m_buffer_size]};
-                        auto const mini_orient {m_skmer_orientation[m_ptr_min % m_buffer_size]};
+                        Skmer<kuint> & mini_skmer {m_skmer_buffer_array[m_ptr_min & m_buffer_mask]};
+                        auto const mini_orient {m_skmer_orientation[m_ptr_min & m_buffer_mask]};
                         // cout << mini_skmer << endl;
 
                         update_skmer_left_size(mini_skmer, mini_orient, m_ptr_min - buff_start);
@@ -551,7 +569,7 @@ public:
                 // We now only have to update the left part of remaining skmers
                 else
                 {
-                    auto const orient {m_skmer_orientation[idx % m_buffer_size]};
+                    auto const orient {m_skmer_orientation[idx & m_buffer_mask]};
                     update_skmer_left_size(candidate, orient, idx - last_equal_mini - 1);
                 }
             }
@@ -575,7 +593,7 @@ public:
             const uint64_t m{m_manip.m};
             km::SkmerPrettyPrinter<kuint> pp {k, m};
 
-            for (uint64_t i{0} ; i<m_buffer_size ; i++)
+            for (uint64_t i{0} ; i<m_buffer_capacity ; i++)
             {
                 pp << m_skmer_buffer_array[i];
                 std::cout << i << ":\t" << m_skmer_buffer_array[i] << " orientation:" << m_skmer_orientation[i] << "\t" << pp << std::endl;
