@@ -994,9 +994,12 @@ public:
         // so we precompute both and need no per-position reverse-complement.
         kuint center {0};
         for (uint64_t t {0}; t < m; t++) center |= static_cast<kuint>(S[pref + t]) << (2 * t);
-        const kuint canon {std::min(center, rc_mmer(center))};
-        const kuint rc_canon {rc_mmer(canon)};
-        if (canon == rc_canon) return true;                            // palindrome -> orientation ambiguous
+        // The roll below tests membership in {canon, rc_canon} where canon = min(center, rc(center))
+        // and rc_canon = rc_mmer(canon). rc_mmer is an involution, so that set is ALWAYS exactly
+        // {center, rc_center} regardless of which is smaller -- so compare against the two directly and
+        // skip the second rc_mmer + the min/canon (one fewer O(m) loop per yield, identical result).
+        const kuint rc_center {rc_mmer(center)};
+        if (center == rc_center) return true;                          // palindrome -> orientation ambiguous
         // Roll the forward m-mer along the buffer and count occurrences of the minimizer value.
         const uint64_t hi {2 * (m - 1)};
         kuint fwd {0};
@@ -1004,7 +1007,7 @@ public:
         uint64_t count {0};
         for (uint64_t pos {0}; ; pos++)
         {
-            if ((fwd == canon || fwd == rc_canon) && ++count >= 2) return true;
+            if ((fwd == center || fwd == rc_center) && ++count >= 2) return true;
             if (pos + m >= L) break;
             fwd = (fwd >> 2) | (static_cast<kuint>(S[pos + m]) << hi);
         }

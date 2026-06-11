@@ -131,6 +131,34 @@ After the modulo fix, the Release source-line profile is dominated by the **`pai
 These are smaller or riskier than the two wins above; the harness (digest + suite + bench) is in place
 to attempt them safely. Iteration continues while gains stay clear on celegans.
 
+## Iteration log — k=31 / k=63 phase (median-of-9)
+
+The wins above were developed at k=21/m=11 (uint32). This phase targets the two realistic benchmark
+points the construct path actually uses — **k=31/m=15 (uint64)** and **k=63/m=31 (__uint128)** — and
+measures with `benchmark/scripts/producer_median.sh`: N independent process launches per genome,
+**median** Mskmer/s with [min..max] spread (so a delta is judged against run-to-run noise), digest
+gated on every run. Dev signal chr21, verdict celegans.
+
+**Baseline @ b8f2780 (median-of-9, Mskmer/s):**
+
+| combo | median | [min..max] |
+|---|--:|--:|
+| chr21 k=31    | 2.640 | [2.620..2.700] |
+| celegans k=31 | 2.650 | [2.490..2.680] |
+| chr21 k=63    | 0.920 | [0.900..0.930] |
+| celegans k=63 | 0.860 | [0.860..0.870] |
+
+Run-to-run noise is ~±2-3% (chr21), with occasional low outliers on celegans; treat <~3% as noise.
+
+**Profile (build-relg `-O3 -g`, chr21, self%):** at **k=63 `minimizer_is_ambiguous` dominates (~49%)** —
+it runs once per yield and m=31 makes its m-length loops (decode, center, 2×`rc_mmer`, fwd, roll)
+expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load is balanced:
+`operator++` ~22 %, `add_nucleotide` ~21 %, `minimizer_is_ambiguous` ~19 %, `compute_new_candidate` ~13 %.
+
+| # | idea | chr21 k31 | cel k31 | chr21 k63 | cel k63 | status |
+|--:|---|--:|--:|--:|--:|---|
+| B10 | `minimizer_is_ambiguous`: drop redundant 2nd `rc_mmer`+`min` — `{canon,rc_canon}`≡`{center,rc_center}` since `rc_mmer` is an involution, so compare against the pair directly (one fewer O(m) loop/yield) | 2.64→2.76 **+4.5 %** | 2.65→2.75 **+3.8 %** | 0.92→0.94 **+2.2 %** | 0.86→0.87 **+1.2 %** | **committed** — digest identical (chr21+celegans, both k), ctest green |
+
 ## Reproduce
 
 ```bash
