@@ -982,6 +982,37 @@ public:
         return out;
     }
 
+    /** Minimizer repeat / palindrome test over the decoded nucleotides S[0..L-1] (minimizer at index
+     * `pref`): true if the central m-mer equals its own reverse complement, or it occurs (in either
+     * orientation) at >=2 positions. Templated on the roll word type so the per-yield roll runs in
+     * uint64_t when the m-mer fits (2m<=64, e.g. k=63 -> 2m=62) even if kuint is wider -- then center /
+     * rc_center / fwd and every roll compare+shift are 64-bit, not __uint128, for an identical result
+     * (all values are <=2m bits). The set {canon, rc_canon} the old code tested equals {center,
+     * rc_center} since rc is an involution, so we compare the rolled m-mer against those two directly. **/
+    template<typename mword>
+    bool mmer_repeats(const uint8_t* S, uint64_t L, uint64_t pref) const
+    {
+        mword center {0};
+        for (uint64_t t {0}; t < m; t++) center |= static_cast<mword>(S[pref + t]) << (2 * t);
+        mword rc_center {0};
+        {
+            mword c {center};
+            for (uint64_t t {0}; t < m; t++) { rc_center = (rc_center << 2) | ((c & mword{0b11}) ^ mword{0b10}); c >>= 2; }
+        }
+        if (center == rc_center) return true;                          // palindrome -> orientation ambiguous
+        const uint64_t hi {2 * (m - 1)};
+        mword fwd {0};
+        for (uint64_t t {0}; t < m; t++) fwd |= static_cast<mword>(S[t]) << (2 * t);
+        uint64_t count {0};
+        for (uint64_t pos {0}; ; pos++)
+        {
+            if ((fwd == center || fwd == rc_center) && ++count >= 2) return true;
+            if (pos + m >= L) break;
+            fwd = (fwd >> 2) | (static_cast<mword>(S[pos + m]) << hi);
+        }
+        return false;
+    }
+
     /** Cheap, allocation-free ambiguity test on a (raw-canonical) super-k-mer: true if the minimizer
      * is an RC-palindrome (orientation not pinned), or its canonical m-mer value occurs at >=2 of the
      * super-k-mer's m-mer positions (occurrence not pinned). The unique non-palindrome case (false)
@@ -1015,30 +1046,15 @@ public:
             const uint64_t b {4 * (sk_size - 1 - (offset + i)) + 2};
             S[i] = static_cast<uint8_t>((b < W ? (w_lo >> b) : (w_hi >> (b - W))) & kuint{0b11});
         }
-        // The minimizer sits at the centre (present index `pref`); its canonical value is the
-        // super-k-mer's minimizer. A position "is the minimizer" iff its forward m-mer equals the
-        // canonical value or its reverse complement (canonical-value equality, packing-independent),
-        // so we precompute both and need no per-position reverse-complement.
-        kuint center {0};
-        for (uint64_t t {0}; t < m; t++) center |= static_cast<kuint>(S[pref + t]) << (2 * t);
-        // The roll below tests membership in {canon, rc_canon} where canon = min(center, rc(center))
-        // and rc_canon = rc_mmer(canon). rc_mmer is an involution, so that set is ALWAYS exactly
-        // {center, rc_center} regardless of which is smaller -- so compare against the two directly and
-        // skip the second rc_mmer + the min/canon (one fewer O(m) loop per yield, identical result).
-        const kuint rc_center {rc_mmer(center)};
-        if (center == rc_center) return true;                          // palindrome -> orientation ambiguous
-        // Roll the forward m-mer along the buffer and count occurrences of the minimizer value.
-        const uint64_t hi {2 * (m - 1)};
-        kuint fwd {0};
-        for (uint64_t t {0}; t < m; t++) fwd |= static_cast<kuint>(S[t]) << (2 * t);
-        uint64_t count {0};
-        for (uint64_t pos {0}; ; pos++)
+        // Roll the central m-mer over the decoded buffer to detect a palindrome or a repeat. Run it in
+        // uint64_t when the m-mer fits (2m<=64) even if kuint is wider (k=63): every roll compare+shift
+        // is then 64-bit instead of __uint128, for an identical boolean. k<=31 keeps kuint (uint64 is
+        // already its width, so unchanged). See mmer_repeats.
+        if constexpr (sizeof(kuint) > 8)
         {
-            if ((fwd == center || fwd == rc_center) && ++count >= 2) return true;
-            if (pos + m >= L) break;
-            fwd = (fwd >> 2) | (static_cast<kuint>(S[pos + m]) << hi);
+            if (2 * m <= 64) return mmer_repeats<uint64_t>(S, L, pref);
         }
-        return false;
+        return mmer_repeats<kuint>(S, L, pref);
     }
 
     /** Strand-invariant minimizer occurrence for the k-mer S[start..start+k-1]: (1) minimal
