@@ -974,10 +974,29 @@ public:
         const uint16_t suff {static_cast<uint16_t>(end - mini_abs - m + 1)};
         const uint64_t base {k - m - pref};                            // piece's absolute linear start
         const uint64_t L {static_cast<uint64_t>(pref) + m + suff};
-        kpair pair {};
-        for (uint64_t i {0}; i < L; i++)
-            pair |= kpair(static_cast<kuint>(S[start + i])) << slot_shift(base + i);
-        Skmer<kuint> out {pair, pref, suff};
+        // Pack the interleaved pair word-by-word in two branch-free regimes (prefix half: bit 4p;
+        // suffix half: bit 4*(2k-m-1-p)+2), each a single 2-bit nucleotide that never straddles a word
+        // -- a scalar per-word OR instead of slot_shift + a full-pair shift per nucleotide. Identical
+        // bits; this is the inner loop of the ambiguous-path k-mer reframing (hot at k=63). See decode.
+        constexpr uint64_t W {sizeof(kuint) * 8};
+        const uint64_t pref_slots {(sk_size + 1) / 2};
+        uint64_t split {(pref_slots > base) ? (pref_slots - base) : uint64_t{0}};
+        if (split > L) split = L;
+        kuint w0 {0};
+        kuint w1 {0};
+        for (uint64_t i {0}; i < split; i++)
+        {
+            const uint64_t b {4 * (base + i)};
+            const kuint v {static_cast<kuint>(S[start + i])};
+            if (b < W) w0 |= static_cast<kuint>(v << b); else w1 |= static_cast<kuint>(v << (b - W));
+        }
+        for (uint64_t i {split}; i < L; i++)
+        {
+            const uint64_t b {4 * (sk_size - 1 - (base + i)) + 2};
+            const kuint v {static_cast<kuint>(S[start + i])};
+            if (b < W) w0 |= static_cast<kuint>(v << b); else w1 |= static_cast<kuint>(v << (b - W));
+        }
+        Skmer<kuint> out {kpair{w0, w1}, pref, suff};
         mask_absent_nucleotides(out);
         return out;
     }
