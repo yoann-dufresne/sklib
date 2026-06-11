@@ -434,6 +434,11 @@ protected:
     kpair m_minimizer_mask;
     kpair* m_pref_masks;
     kpair* m_suff_masks;
+    // Per-(pref/suff size) "absent flank" fill masks: 0b11 over the absent (low) flank slots. Lets
+    // mask_absent_nucleotides (a per-yield hot path, also called inside reverse_complement) be a pair
+    // of table lookups instead of two per-call loops. Indexed by prefix/suffix size in [0, k-m].
+    kpair* m_absent_pref_masks;
+    kpair* m_absent_suff_masks;
 
     // --- Minimizer-order permutation φ (hash-prospector-class, bijective on 2m bits) ---
     // The minimizer occupies the top 2m bits of m_pair (above bit 4(k-m)). φ relabels
@@ -489,6 +494,23 @@ public:
             m_suff_masks[i] = m_suff_masks[i-1] | (suff_seed << (4 * (k - m - i)));
         }
 
+        // Precompute the absent-flank fill masks once (same bits mask_absent_nucleotides would set in
+        // its loops): for prefix/suffix size p, OR of 0b11 over the low (k-m-p) flank slots.
+        m_absent_pref_masks = new kpair[k-m+1];
+        m_absent_suff_masks = new kpair[k-m+1];
+        for (uint64_t p{0} ; p<=k-m ; p++)
+        {
+            kpair pm {};
+            kpair sm {};
+            for (uint64_t i{0} ; i<(k-m-p) ; i++)
+            {
+                pm |= kpair(static_cast<kuint>(0b11U)) << (4 * i);
+                sm |= kpair(static_cast<kuint>(0b11U)) << (4 * i + 2);
+            }
+            m_absent_pref_masks[p] = pm;
+            m_absent_suff_masks[p] = sm;
+        }
+
         // Minimizer mask
         kpair sub_maks = max_pair_value >> (2 * sizeof(kuint) * 8 - 4 * (k - m));
         m_minimizer_mask = m_mask ^ sub_maks;
@@ -526,6 +548,8 @@ public:
     {
         delete[] m_pref_masks;
         delete[] m_suff_masks;
+        delete[] m_absent_pref_masks;
+        delete[] m_absent_suff_masks;
     }
 
     void init_skmer()
@@ -761,14 +785,10 @@ public:
      **/
     void mask_absent_nucleotides(Skmer<kuint>& skmer) const
     {
-        using kpair = km::Skmer<kuint>::pair;
-        // Mask prefix
-        for (uint64_t i{0} ; i<(k-m-skmer.m_pref_size) ; i++)
-            skmer.m_pair |= kpair(0b11U) << (4 * i);
-
-        // Mask suffix
-        for (uint64_t i{0} ; i<(k-m-skmer.m_suff_size) ; i++)
-            skmer.m_pair |= kpair(0b11U) << (4 * i + 2);
+        // O(1) precomputed equivalent of the old per-call prefix/suffix fill loops (set 0b11 over the
+        // absent flank slots). Identical bits set; pref/suff sizes are always in [0, k-m].
+        skmer.m_pair |= m_absent_pref_masks[skmer.m_pref_size];
+        skmer.m_pair |= m_absent_suff_masks[skmer.m_suff_size];
     }
 
     /** Reverse-complement of a super-k-mer in the minimizer-centered interleaved

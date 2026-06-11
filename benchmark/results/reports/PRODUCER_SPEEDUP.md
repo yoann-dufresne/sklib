@@ -13,8 +13,9 @@ machine state, `sskm-produce`, each baseline = the previous committed state):
 |--:|---|--:|--:|
 | 1 | ring-buffer modulo `% (2k-m)` → power-of-two mask (`Skmerator.hpp`) | 2.31 → 2.64 Mskmer/s (**+14.3 %**) | 2.43 → 2.74 Mskmer/s (**+12.8 %**) |
 | 2 | word-level `reverse_complement` — drop branchy `pair` shifts (`Skmer.hpp`) | 2.70 → 2.87 Mskmer/s (**+6.3 %**) | 2.81 → 2.97 Mskmer/s (**+5.7 %**) |
+| 3 | precompute `mask_absent_nucleotides` flank masks — O(1) (`Skmer.hpp`) | 2.83 → 3.08 Mskmer/s (**+8.8 %**) | 2.95 → 3.18 Mskmer/s (**+7.8 %**) |
 
-Cumulative ≈ **+21 % (chr21) / +19 % (celegans)** vs the pre-optimization producer, output exactly
+Cumulative ≈ **+30 % (chr21) / +28 % (celegans)** vs the pre-optimization producer, output exactly
 preserved — so every `sskm construct` / `query` result built on it is unchanged.
 
 ## What landed
@@ -38,6 +39,12 @@ multiple of 4, no lane straddles the word boundary, so each lane is now read/wri
 single-word shift (the same trick `minimizer_is_ambiguous` already used), and the output pair is
 assembled in two `kuint` accumulators. Same bits placed → output-identical (digest + strand-invariance
 / bug / framing tests all green).
+
+**Precomputed `mask_absent_nucleotides`** (`lib/include/io/Skmer.hpp`). The "fill absent flank slots
+with 0b11" step ran two per-call loops, and it is on the per-yield path *twice* (once in `operator++`,
+once inside every `reverse_complement`). The flank fill depends only on the prefix/suffix size, so it
+is now a pair of O(1) table lookups (`m_absent_pref_masks[pref] | m_absent_suff_masks[suff]`),
+precomputed in the manipulator ctor next to `m_pref_masks`. Same bits set → output-identical.
 
 Also kept (correctness-neutral cleanup): **`m_skmer_orientation` `std::vector<bool>` →
 `std::vector<uint8_t>`**. The bit-packed `vector<bool>` looked large in the `-fno-inline` profile, but
@@ -72,8 +79,8 @@ After the modulo fix, the Release source-line profile is dominated by the **`pai
 - The per-base `pair` shift operators themselves (`operator<<=`/`operator>>=`) still carry the 4-way
   branch ladder; a single-word fast path needs a branch that stays correct for every backend width
   (at k=21/m=11 the 62-bit value genuinely spans both 32-bit words, so this is not a free win).
-- `minimizer_is_ambiguous` + `mask_absent_nucleotides` run per yield and could share the decode /
-  use precomputed flank masks.
+- `minimizer_is_ambiguous` runs per yield (O(L) decode + scan); at odd m it can only fire on a
+  repeated minimizer, so the iterator could often skip it from state it already tracks.
 
 These are smaller or riskier than the two wins above; the harness (digest + suite + bench) is in place
 to attempt them safely. Iteration continues while gains stay clear on celegans.
