@@ -167,6 +167,21 @@ expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load 
 
 Best-known after F5 (median-of-9, Mskmer/s): chr21 k31 **3.63** · cel k31 **3.66** · chr21 k63 **1.33** · cel k63 **1.27**.
 Cumulative vs baseline b8f2780: chr21 k31 **+37.5 %**, cel k31 **+38.1 %**, chr21 k63 **+44.6 %**, cel k63 **+47.7 %**.
+
+**Definitive end-to-end (baseline b8f2780 vs HEAD, back-to-back, same machine state, median-of-9):**
+
+| combo | baseline | HEAD | speedup |
+|---|--:|--:|--:|
+| chr21 k=31    | 2.37 | 3.48 | **+46.8 %** |
+| celegans k=31 | 2.49 | 3.55 | **+42.6 %** |
+| chr21 k=63    | 0.87 | 1.29 | **+48.3 %** |
+| celegans k=63 | 0.81 | 1.23 | **+51.9 %** |
+
+The stream **digest is identical between baseline and HEAD on all four combos** (chr21 k31
+`0x58528ba97417f1f8`, cel k31 `0x0b1ad3dc47e17fa3`, chr21 k63 `0x7625eb9923ca0bf0`, cel k63
+`0x4b1be326e3074e95`) — the whole k=31/k=63 series is output-bit-identical end-to-end, so every
+`sskm construct`/`query` result is unchanged. (Verify: `git checkout b8f2780 -- lib/include/io/*.hpp`,
+rebuild + `producer_median.sh`, then restore HEAD.)
 (k31 unchanged by C1/F4 — both narrow only the wider-than-uint64 path; the ±noise wobble is the same binary. Absolute k31 numbers drift ±0.1 across sessions with machine state; rely on back-to-back A/B.)
 **E2 is the headline win**: the per-base orientation branch was mispredicting heavily; making it branchless removed the dominant stall (+27 % at k=31 alone).
 
