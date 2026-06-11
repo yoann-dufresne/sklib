@@ -165,6 +165,17 @@ Best-known after C1 (median-of-9, Mskmer/s): chr21 k31 **2.80** · cel k31 **2.7
 Cumulative vs baseline b8f2780: chr21 k31 **+6.1 %**, cel k31 **+3.8 %**, chr21 k63 **+10.9 %**, cel k63 **+10.5 %**.
 (k31 unchanged by C1 — its `sizeof(kuint)>8` branch is compile-time dead at width 8; the ±noise wobble is the same binary.)
 
+**Tried and rejected (reverted):**
+
+- **B11 — word-parallel `rc_mmer`** (2-bit-group-reversal butterfly + complement, masks precomputed,
+  unrolled by width). Correct (digest identical, verified end-to-end) but **flat at both k on both
+  genomes** (k31 2.75/2.75, k63 1.02/0.94 — within noise). `rc_mmer` runs once per *yield* and yields
+  are ~1 per 9 bases, so even removing it entirely is <2 % (below the ±2-3 % floor); the scalar m-loop
+  was already cheap and the post-B10 single call is not where `minimizer_is_ambiguous` spends its time
+  (that is the per-nucleotide decode + the roll). Reverted to keep the code lean — no unverified win.
+  Lesson: a function's profile self-% is a per-call cost; weight it by call frequency (per-yield ≠
+  per-base) before estimating the end-to-end lever.
+
 ## Reproduce
 
 ```bash
