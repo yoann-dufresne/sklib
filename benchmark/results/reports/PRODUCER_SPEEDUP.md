@@ -14,8 +14,9 @@ machine state, `sskm-produce`, each baseline = the previous committed state):
 | 1 | ring-buffer modulo `% (2k-m)` → power-of-two mask (`Skmerator.hpp`) | 2.31 → 2.64 Mskmer/s (**+14.3 %**) | 2.43 → 2.74 Mskmer/s (**+12.8 %**) |
 | 2 | word-level `reverse_complement` — drop branchy `pair` shifts (`Skmer.hpp`) | 2.70 → 2.87 Mskmer/s (**+6.3 %**) | 2.81 → 2.97 Mskmer/s (**+5.7 %**) |
 | 3 | precompute `mask_absent_nucleotides` flank masks — O(1) (`Skmer.hpp`) | 2.83 → 3.08 Mskmer/s (**+8.8 %**) | 2.95 → 3.18 Mskmer/s (**+7.8 %**) |
+| 4 | word-parallel `reverse_complement` — nibble-swap + complement (`Skmer.hpp`) | 3.01 → 3.47 Mskmer/s (**+15.3 %**) | 3.15 → 3.56 Mskmer/s (**+13.0 %**) |
 
-Cumulative ≈ **+30 % (chr21) / +28 % (celegans)** vs the pre-optimization producer, output exactly
+Cumulative ≈ **+50 % (chr21) / +45 % (celegans)** vs the pre-optimization producer, output exactly
 preserved — so every `sskm construct` / `query` result built on it is unchanged.
 
 ## What landed
@@ -31,14 +32,17 @@ contain **0** `div`. This is the `perf stat` prediction realized: the loop was f
 throughput bound (IPC ~2.2, 0.36 % branch-miss, low backend), and removing a multi-cycle `div` per
 base cut instructions on the critical path.
 
-**Word-level `reverse_complement`** (`lib/include/io/Skmer.hpp`). `canonicalize` runs
-`reverse_complement` on every yielded super-k-mer (the per-yield path was ~37 % of the producer), and
-it rebuilt the RC slot-by-slot through the **branch-heavy `pair` `>>`/`<<` operators** (each a copy +
-a 4-way shift ladder). Since every interleaved 2-bit lane is nibble-aligned and the word width is a
-multiple of 4, no lane straddles the word boundary, so each lane is now read/written with a plain
-single-word shift (the same trick `minimizer_is_ambiguous` already used), and the output pair is
-assembled in two `kuint` accumulators. Same bits placed → output-identical (digest + strand-invariance
-/ bug / framing tests all green).
+**Word-parallel `reverse_complement`** (`lib/include/io/Skmer.hpp`, rows 2 then 4). `canonicalize`
+runs `reverse_complement` on every yielded super-k-mer (the per-yield path was ~37 % of the producer,
+and RC alone was the single top symbol at ~18 %), and it rebuilt the RC slot-by-slot through the
+**branch-heavy `pair` `>>`/`<<` operators**. The interleaving is built so that RC is a *within-lane*
+prefix↔suffix swap plus a per-nucleotide complement — i.e. "swap the two 2-bit halves of every nibble
+and XOR each with 0b10". That is now done **word-parallel** in a few ops per word
+(`((w & 0x3..) << 2) | ((w & 0xC..) >> 2)` then `^ 0xA..`, masks precomputed per kuint), instead of a
+~15-iteration per-lane loop. The one asymmetric case — the central self-mapping lane for odd 2k-m
+(which is exactly k=21/m=11) — is fixed up explicitly, and a final `& m_mask` clears the tail the loop
+left zero. Output-identical: digest unchanged and the full suite (strand-invariance, bug05/06/07,
+framing) green. (An intermediate per-lane direct-word version, row 2, preceded this.)
 
 **Precomputed `mask_absent_nucleotides`** (`lib/include/io/Skmer.hpp`). The "fill absent flank slots
 with 0b11" step ran two per-call loops, and it is on the per-yield path *twice* (once in `operator++`,

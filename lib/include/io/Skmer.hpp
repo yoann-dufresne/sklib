@@ -439,6 +439,12 @@ protected:
     // of table lookups instead of two per-call loops. Indexed by prefix/suffix size in [0, k-m].
     kpair* m_absent_pref_masks;
     kpair* m_absent_suff_masks;
+    // Per-nibble RC patterns (0x3 / 0xC / 0xA in every nibble): isolate each lane's low/high 2-bit
+    // half and the per-nucleotide complement, so reverse_complement swaps prefix<->suffix and
+    // complements word-parallel instead of lane-by-lane.
+    kuint m_rc_lo;
+    kuint m_rc_hi;
+    kuint m_rc_compl;
 
     // --- Minimizer-order permutation φ (hash-prospector-class, bijective on 2m bits) ---
     // The minimizer occupies the top 2m bits of m_pair (above bit 4(k-m)). φ relabels
@@ -510,6 +516,13 @@ public:
             m_absent_pref_masks[p] = pm;
             m_absent_suff_masks[p] = sm;
         }
+
+        // Per-nibble RC patterns: 0x1 in every nibble, scaled to 0x3 / 0xC / 0xA (each fits a nibble,
+        // so the multiply never carries across nibbles).
+        const kuint ones_nibble {static_cast<kuint>((~static_cast<kuint>(0)) / static_cast<kuint>(0xF))};
+        m_rc_lo    = static_cast<kuint>(ones_nibble * static_cast<kuint>(0x3));
+        m_rc_hi    = static_cast<kuint>(ones_nibble * static_cast<kuint>(0xC));
+        m_rc_compl = static_cast<kuint>(ones_nibble * static_cast<kuint>(0xA));
 
         // Minimizer mask
         kpair sub_maks = max_pair_value >> (2 * sizeof(kuint) * 8 - 4 * (k - m));
@@ -802,41 +815,37 @@ public:
     Skmer<kuint> reverse_complement(const Skmer<kuint>& skmer) const
     {
         using kpair = typename Skmer<kuint>::pair;
-        const uint64_t buf_pref {(sk_size + 1) / 2};
-        const uint64_t buf_suff {sk_size / 2};
         constexpr uint64_t W {sizeof(kuint) * 8};
 
-        // Read/write each interleaved 2-bit lane with a plain single-word shift instead of the
-        // branch-heavy pair >>/<< operators (this RC runs once per yield via canonicalize and was a
-        // top hot spot). Every lane is nibble-aligned (bit 4*slot or 4*slot+2) and W is a multiple of
-        // 4, so a 2-bit lane never straddles the word boundary -- a single word + shift addresses it.
-        const kuint w0 {skmer.m_pair.m_value[0]};
-        const kuint w1 {skmer.m_pair.m_value[1]};
-        kuint o0 {0};
-        kuint o1 {0};
-        auto rd = [&](uint64_t bit) -> kuint {
-            return (bit < W) ? static_cast<kuint>((w0 >> bit)       & kuint{0b11})
-                             : static_cast<kuint>((w1 >> (bit - W)) & kuint{0b11});
+        // RC is a within-lane prefix<->suffix swap plus a per-nucleotide complement: the interleaving
+        // is built so linear positions p and 2k-m-1-p share a lane (prefix half <-> suffix half), so
+        // reverse-complementing is "swap the two 2-bit halves of every nibble, XOR each with 0b10".
+        // Do it word-parallel (a few ops/word) instead of looping per lane -- this RC runs once per
+        // yield via canonicalize and was the top producer hot spot.
+        auto rc_word = [&](kuint w) -> kuint {
+            const kuint swapped {static_cast<kuint>(((w & m_rc_lo) << 2) | ((w & m_rc_hi) >> 2))};
+            return static_cast<kuint>(swapped ^ m_rc_compl);
         };
-        auto wr = [&](uint64_t bit, kuint nucl) {
-            if (bit < W) o0 |= static_cast<kuint>(nucl << bit);
-            else         o1 |= static_cast<kuint>(nucl << (bit - W));
-        };
+        kuint s0 {rc_word(skmer.m_pair.m_value[0])};
+        kuint s1 {rc_word(skmer.m_pair.m_value[1])};
 
-        for (uint64_t slot {0} ; slot < buf_suff ; slot++)
+        // Odd 2k-m: the central prefix lane maps to itself (complemented) and has no suffix partner.
+        // The generic swap pairs it with its absent suffix half, so rewrite that one nibble: keep only
+        // compl(central prefix) in the prefix half, drop the suffix half (re-masked away below).
+        if (((sk_size + 1) / 2) > (sk_size / 2))
         {
-            const kuint pref_nucl {rd(4 * slot)};
-            const kuint suff_nucl {rd(4 * slot + 2)};
-            wr(4 * slot,     static_cast<kuint>(suff_nucl ^ kuint{0b10})); // new prefix = compl(old suffix)
-            wr(4 * slot + 2, static_cast<kuint>(pref_nucl ^ kuint{0b10})); // new suffix = compl(old prefix)
-        }
-        if (buf_pref > buf_suff) // odd 2k-m: central prefix slot maps to itself
-        {
-            const uint64_t slot {buf_suff};
-            wr(4 * slot, static_cast<kuint>(rd(4 * slot) ^ kuint{0b10}));
+            const uint64_t cbit {4 * (sk_size / 2)};                          // central prefix lane bit
+            const kuint in_c {(cbit < W)
+                ? static_cast<kuint>((skmer.m_pair.m_value[0] >> cbit)       & kuint{0b11})
+                : static_cast<kuint>((skmer.m_pair.m_value[1] >> (cbit - W)) & kuint{0b11})};
+            const kuint out_c {static_cast<kuint>(in_c ^ kuint{0b10})};
+            if (cbit < W) s0 = static_cast<kuint>((s0 & ~(static_cast<kuint>(0xF) << cbit))       | (out_c << cbit));
+            else          s1 = static_cast<kuint>((s1 & ~(static_cast<kuint>(0xF) << (cbit - W))) | (out_c << (cbit - W)));
         }
 
-        Skmer<kuint> rc {kpair{o0, o1}, skmer.m_suff_size, skmer.m_pref_size};
+        kpair out {s0, s1};
+        out &= m_mask; // clear lanes beyond the skmer (the per-lane loop left this tail zero)
+        Skmer<kuint> rc {out, skmer.m_suff_size, skmer.m_pref_size};
         mask_absent_nucleotides(rc);
         return rc;
     }
