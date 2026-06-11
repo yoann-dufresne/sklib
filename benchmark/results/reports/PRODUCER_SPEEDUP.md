@@ -18,8 +18,18 @@ machine state, `sskm-produce`, each baseline = the previous committed state):
 | 5 | cache minimizer φ-rank per buffer slot (`Skmerator.hpp`) | 3.37 → 3.60 Mskmer/s (**+6.8 %**) | 3.51 → 3.69 Mskmer/s (**+5.1 %**) |
 | 6 | branch-free decode in `minimizer_is_ambiguous` (`Skmer.hpp`) | 3.44 → 3.53 Mskmer/s (**+2.6 %**) | 3.59 → 3.63 Mskmer/s (**+1.1 %**) |
 
-Cumulative ≈ **+64 % (chr21) / +54 % (celegans)** vs the pre-optimization producer, output exactly
-preserved — so every `sskm construct` / `query` result built on it is unchanged.
+**End-to-end, measured directly** (original producer @ commit 2441d4a vs current, same binary/harness,
+best-of-11, same machine state):
+
+| genome | original | current | speedup | wall |
+|---|--:|--:|--:|--:|
+| chr21    | 2.20 Mskmer/s | 3.51 Mskmer/s | **+59.5 %** | 3.063 s → 1.924 s (−37 %) |
+| celegans | 2.28 Mskmer/s | 3.59 Mskmer/s | **+57.5 %** | 7.340 s → 4.667 s (−36 %) |
+
+The digest is **identical between the original and the optimized producer** on both genomes
+(chr21 `0xfd02872bc3f3ed34`, celegans `0x93d267f24daa8af8`) — an end-to-end proof that the whole
+optimization series is output-bit-identical, so every `sskm construct` / `query` result built on the
+producer is unchanged.
 
 ## What landed
 
