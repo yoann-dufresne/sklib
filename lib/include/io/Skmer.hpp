@@ -972,9 +972,20 @@ public:
         const kuint w_lo {sk.m_pair.m_value[0]};
         const kuint w_hi {sk.m_pair.m_value[1]};
         constexpr uint64_t W {sizeof(kuint) * 8};
-        for (uint64_t i {0}; i < L; i++)
+        // Decode in two branch-free regimes instead of a per-nucleotide slot_shift: the leading
+        // positions live in the prefix half (bit 4p, increasing), the rest in the suffix half
+        // (bit 4*(2k-m-1-p)+2). boundary = first linear index whose position reaches pref_slots.
+        const uint64_t pref_slots {(sk_size + 1) / 2};
+        uint64_t boundary {(pref_slots > offset) ? (pref_slots - offset) : uint64_t{0}};
+        if (boundary > L) boundary = L;
+        for (uint64_t i {0}; i < boundary; i++)
         {
-            const uint64_t b {slot_shift(offset + i)};
+            const uint64_t b {4 * (offset + i)};
+            S[i] = static_cast<uint8_t>((b < W ? (w_lo >> b) : (w_hi >> (b - W))) & kuint{0b11});
+        }
+        for (uint64_t i {boundary}; i < L; i++)
+        {
+            const uint64_t b {4 * (sk_size - 1 - (offset + i)) + 2};
             S[i] = static_cast<uint8_t>((b < W ? (w_lo >> b) : (w_hi >> (b - W))) & kuint{0b11});
         }
         // The minimizer sits at the centre (present index `pref`); its canonical value is the

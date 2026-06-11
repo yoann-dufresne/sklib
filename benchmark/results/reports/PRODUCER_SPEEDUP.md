@@ -16,8 +16,9 @@ machine state, `sskm-produce`, each baseline = the previous committed state):
 | 3 | precompute `mask_absent_nucleotides` flank masks — O(1) (`Skmer.hpp`) | 2.83 → 3.08 Mskmer/s (**+8.8 %**) | 2.95 → 3.18 Mskmer/s (**+7.8 %**) |
 | 4 | word-parallel `reverse_complement` — nibble-swap + complement (`Skmer.hpp`) | 3.01 → 3.47 Mskmer/s (**+15.3 %**) | 3.15 → 3.56 Mskmer/s (**+13.0 %**) |
 | 5 | cache minimizer φ-rank per buffer slot (`Skmerator.hpp`) | 3.37 → 3.60 Mskmer/s (**+6.8 %**) | 3.51 → 3.69 Mskmer/s (**+5.1 %**) |
+| 6 | branch-free decode in `minimizer_is_ambiguous` (`Skmer.hpp`) | 3.44 → 3.53 Mskmer/s (**+2.6 %**) | 3.59 → 3.63 Mskmer/s (**+1.1 %**) |
 
-Cumulative ≈ **+60 % (chr21) / +52 % (celegans)** vs the pre-optimization producer, output exactly
+Cumulative ≈ **+64 % (chr21) / +54 % (celegans)** vs the pre-optimization producer, output exactly
 preserved — so every `sskm construct` / `query` result built on it is unchanged.
 
 ## What landed
