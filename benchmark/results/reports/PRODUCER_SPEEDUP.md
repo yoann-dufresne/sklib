@@ -179,6 +179,15 @@ Cumulative vs baseline b8f2780: chr21 k31 **+39.0 %**, cel k31 **+36.2 %**, chr2
   Lesson: a function's profile self-% is a per-call cost; weight it by call frequency (per-yield ≠
   per-base) before estimating the end-to-end lever.
 
+- **E3 — branchless canonical-orientation pick in `add_nucleotide`** (`if (m_rev < m_fwd)` →
+  `rev_smaller ? … : …` for both the orientation and the returned reference). Correct (digest
+  identical) but **regressed k31 −4.6 %** (3.67→3.50), flat k63. Opposite of E2 even though both are
+  "orientation" branches: E2's branch reads a *stored* `m_skmer_orientation[idx]` value (history-poor →
+  mispredicts), whereas this one is on a *freshly computed* `m_rev < m_fwd` the predictor tracks well,
+  so cmov only added a data dependency + an indirect struct copy. Reverted. Lesson: branchless wins on
+  loaded-value / poorly-predicted branches, not on freshly-computed, well-predicted ones — measure,
+  don't assume "branchless = faster".
+
 ## Reproduce
 
 ```bash
