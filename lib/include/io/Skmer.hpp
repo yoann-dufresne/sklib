@@ -754,6 +754,23 @@ public:
     kuint phi(kuint x) const
     {
         const kuint mask = m_phi_mask;
+        // The mixer only needs the low 2m bits. When 2m <= 64 (every k up to 64, e.g. k=63 -> 2m=62)
+        // do it in uint64_t even if kuint is wider (__uint128/_BitInt): each step's surviving bits are
+        // the low 2m, and a 64-bit multiply yields exactly the low 64 product bits -- identical after
+        // the mask -- while replacing one full 128/256-bit multiply per call (phi runs once per base).
+        // Result (and the digest) is unchanged. Wider 2m keeps full-width kuint arithmetic.
+        if (sizeof(kuint) > 8 && m_phi_w <= 64)
+        {
+            const uint64_t m64 {static_cast<uint64_t>(mask)};
+            uint64_t u {static_cast<uint64_t>(x) & m64};
+            u ^= u >> m_phi_s1;
+            u = (u * static_cast<uint64_t>(m_phi_c1)) & m64;
+            u ^= u >> m_phi_s2;
+            u = (u * static_cast<uint64_t>(m_phi_c2)) & m64;
+            u ^= u >> m_phi_s3;
+            u ^= static_cast<uint64_t>(m_phi_k);
+            return static_cast<kuint>(u & m64);
+        }
         x &= mask;
         x ^= x >> m_phi_s1;
         x = (x * m_phi_c1) & mask;

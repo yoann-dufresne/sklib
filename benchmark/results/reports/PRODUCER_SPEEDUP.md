@@ -159,9 +159,11 @@ expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load 
 |--:|---|--:|--:|--:|--:|---|
 | B10 | `minimizer_is_ambiguous`: drop redundant 2nd `rc_mmer`+`min` — `{canon,rc_canon}`≡`{center,rc_center}` since `rc_mmer` is an involution, so compare against the pair directly (one fewer O(m) loop/yield) | 2.64→2.76 **+4.5 %** | 2.65→2.75 **+3.8 %** | 0.92→0.94 **+2.2 %** | 0.86→0.87 **+1.2 %** | **committed** — digest identical (chr21+celegans, both k), ctest green |
 | A1 | `add_nucleotide`: scalar central-nucleotide transfer — the suffix↔prefix central nucleotide is one 2-bit value that never straddles a word, so precompute its word/offset once and move it with a per-word read/OR instead of 4 branchy full-`pair` shifts/base. Helps the wide (`__uint128`) path most | 2.76→2.80 +1.4 % (noise) | 2.75→2.75 ±0 | 0.94→0.98 **+4.3 %** | 0.87→0.90 **+3.4 %** | **committed** — digest identical, ctest green; clear k63 win, no k31 regression |
+| C1 | `phi`: compute the mixer in `uint64_t` when 2m≤64 even if `kuint` is wider — only the low 2m bits survive the mask, so a 64-bit `mul` is bit-identical to the `__uint128` one and replaces a full 128-bit multiply per base. Pure k63 win (compile-time dead for k≤31, so that codegen is unchanged) | (same binary) | (same binary) | 0.98→1.02 **+4.1 %** | 0.90→0.95 **+5.6 %** | **committed** — digest identical, ctest green |
 
-Best-known after A1 (median-of-9, Mskmer/s): chr21 k31 **2.80** · cel k31 **2.75** · chr21 k63 **0.98** · cel k63 **0.90**.
-Cumulative vs baseline b8f2780: chr21 k31 **+6.1 %**, cel k31 **+3.8 %**, chr21 k63 **+6.5 %**, cel k63 **+4.7 %**.
+Best-known after C1 (median-of-9, Mskmer/s): chr21 k31 **2.80** · cel k31 **2.75** · chr21 k63 **1.02** · cel k63 **0.95**.
+Cumulative vs baseline b8f2780: chr21 k31 **+6.1 %**, cel k31 **+3.8 %**, chr21 k63 **+10.9 %**, cel k63 **+10.5 %**.
+(k31 unchanged by C1 — its `sizeof(kuint)>8` branch is compile-time dead at width 8; the ±noise wobble is the same binary.)
 
 ## Reproduce
 
