@@ -15,8 +15,9 @@ machine state, `sskm-produce`, each baseline = the previous committed state):
 | 2 | word-level `reverse_complement` — drop branchy `pair` shifts (`Skmer.hpp`) | 2.70 → 2.87 Mskmer/s (**+6.3 %**) | 2.81 → 2.97 Mskmer/s (**+5.7 %**) |
 | 3 | precompute `mask_absent_nucleotides` flank masks — O(1) (`Skmer.hpp`) | 2.83 → 3.08 Mskmer/s (**+8.8 %**) | 2.95 → 3.18 Mskmer/s (**+7.8 %**) |
 | 4 | word-parallel `reverse_complement` — nibble-swap + complement (`Skmer.hpp`) | 3.01 → 3.47 Mskmer/s (**+15.3 %**) | 3.15 → 3.56 Mskmer/s (**+13.0 %**) |
+| 5 | cache minimizer φ-rank per buffer slot (`Skmerator.hpp`) | 3.37 → 3.60 Mskmer/s (**+6.8 %**) | 3.51 → 3.69 Mskmer/s (**+5.1 %**) |
 
-Cumulative ≈ **+50 % (chr21) / +45 % (celegans)** vs the pre-optimization producer, output exactly
+Cumulative ≈ **+60 % (chr21) / +52 % (celegans)** vs the pre-optimization producer, output exactly
 preserved — so every `sskm construct` / `query` result built on it is unchanged.
 
 ## What landed
@@ -49,6 +50,13 @@ with 0b11" step ran two per-call loops, and it is on the per-yield path *twice* 
 once inside every `reverse_complement`). The flank fill depends only on the prefix/suffix size, so it
 is now a pair of O(1) table lookups (`m_absent_pref_masks[pref] | m_absent_suff_masks[suff]`),
 precomputed in the manipulator ctor next to `m_pref_masks`. Same bits set → output-identical.
+
+**Cached minimizer φ-rank** (`lib/include/io/Skmerator.hpp`). `minimizer_rank` (a `phi()`
+xorshift-multiply over the m-mer) is computed once per base in `operator++`; on every out-of-context
+event `recompute_minimizer` re-scanned the window and recomputed `phi` for each slot again
+(~13 % of the producer). A slot's minimizer bits don't change once its candidate is built (only the
+prefix/suffix sizes do), so the per-base rank is now cached in a buffer-parallel array and
+`recompute_minimizer` reads it instead of re-running `phi`. Output-identical (same ranks).
 
 Also kept (correctness-neutral cleanup): **`m_skmer_orientation` `std::vector<bool>` →
 `std::vector<uint8_t>`**. The bit-packed `vector<bool>` looked large in the `-fno-inline` profile, but

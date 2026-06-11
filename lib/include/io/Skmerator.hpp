@@ -90,6 +90,11 @@ public:
         // identical, so the yielded super-k-mer stream is byte-for-byte unchanged. Matches the
         // convention already used in SkmerManipulator::canonical_pieces ("not vector<bool>").
         std::vector<uint8_t> m_skmer_orientation;
+        // Cached phi-rank of each buffered candidate's minimizer, computed once per base in operator++.
+        // recompute_minimizer reuses it instead of recomputing phi over the whole window: a slot's
+        // minimizer bits do not change once the candidate is built (only its prefix/suffix sizes do),
+        // so the cache stays valid. Output-identical -- same ranks, fewer phi evaluations.
+        std::vector<kuint> m_skmer_minimizer_rank;
         uint64_t m_ptr_current;
         uint64_t m_ptr_min;
         uint64_t m_ptr_last_round;
@@ -119,6 +124,7 @@ public:
             , m_buffer_mask(m_buffer_capacity - 1)
             , m_skmer_buffer_array(std::vector<Skmer<kuint> >(m_buffer_capacity))
             , m_skmer_orientation(std::vector<uint8_t>(m_buffer_capacity))
+            , m_skmer_minimizer_rank(std::vector<kuint>(m_buffer_capacity))
             , m_ptr_current(skmerator.m_manip.k - skmerator.m_manip.m)
             , m_ptr_min(0) // minimizer_position
             , m_ptr_last_round(0)
@@ -153,6 +159,7 @@ public:
             m_buffer_mask = other.m_buffer_mask;
             m_skmer_buffer_array = std::vector(other.m_skmer_buffer_array);
             m_skmer_orientation = std::vector<uint8_t>(other.m_skmer_orientation);
+            m_skmer_minimizer_rank = std::vector<kuint>(other.m_skmer_minimizer_rank);
 
             m_ptr_current = other.m_ptr_current;
             m_ptr_min = other.m_ptr_min;
@@ -206,6 +213,7 @@ public:
             // them reproduces a fresh value-initialized construction exactly.
             std::fill(m_skmer_buffer_array.begin(), m_skmer_buffer_array.end(), Skmer<kuint>{});
             std::fill(m_skmer_orientation.begin(), m_skmer_orientation.end(), uint8_t{0});
+            std::fill(m_skmer_minimizer_rank.begin(), m_skmer_minimizer_rank.end(), kuint{0});
 
             if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
             {
@@ -339,8 +347,10 @@ public:
                 Skmer<kuint>& candidate {compute_new_candidate_skmer()};
                 auto const candidate_orient {m_skmer_orientation[m_ptr_current & m_buffer_mask]};
 
-                // Get the minimizer order key (φ-rank, not the raw value)
+                // Get the minimizer order key (φ-rank, not the raw value), and cache it so an
+                // out-of-context recompute can reuse it instead of re-running phi over the window.
                 const kuint candidate_minimizer {m_manip.minimizer_rank(candidate)};
+                m_skmer_minimizer_rank[m_ptr_current & m_buffer_mask] = candidate_minimizer;
 
                 // -- A new minimizer has been discovered
                 if (candidate_minimizer < m_current_minimizer) {
@@ -514,9 +524,8 @@ public:
          **/
         void recompute_minimizer(uint64_t buff_start, uint64_t buff_stop)
         {
-            // 0 - Select first candidate
-            Skmer<kuint>& first = m_skmer_buffer_array[buff_start & m_buffer_mask];
-            m_current_minimizer = m_manip.minimizer_rank(first);
+            // 0 - Select first candidate (reuse its cached φ-rank)
+            m_current_minimizer = m_skmer_minimizer_rank[buff_start & m_buffer_mask];
             m_ptr_min = buff_start;
             uint64_t first_equal_mini {m_ptr_min};
             uint64_t last_equal_mini {m_ptr_min};
@@ -524,8 +533,7 @@ public:
             // 1 - Compute the minimizer in the window
             for (uint64_t idx{buff_start+1} ; idx<=buff_stop ; idx++)
             {
-                Skmer<kuint>& candidate = m_skmer_buffer_array[idx & m_buffer_mask];
-                kuint candidate_minimizer = m_manip.minimizer_rank(candidate);
+                kuint candidate_minimizer = m_skmer_minimizer_rank[idx & m_buffer_mask];
 
                 if (candidate_minimizer < m_current_minimizer)
                 {
@@ -550,7 +558,7 @@ public:
                 }
                 else if (idx <= last_equal_mini)
                 {
-                    kuint candidate_minimizer = m_manip.minimizer_rank(candidate);
+                    kuint candidate_minimizer = m_skmer_minimizer_rank[idx & m_buffer_mask];
 
                     if (candidate_minimizer == m_current_minimizer)
                     {
