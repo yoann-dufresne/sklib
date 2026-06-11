@@ -782,27 +782,41 @@ public:
     Skmer<kuint> reverse_complement(const Skmer<kuint>& skmer) const
     {
         using kpair = typename Skmer<kuint>::pair;
-        const uint64_t sk_size {2 * k - m};
         const uint64_t buf_pref {(sk_size + 1) / 2};
         const uint64_t buf_suff {sk_size / 2};
-        const kpair in {skmer.m_pair};
-        kpair out {};
+        constexpr uint64_t W {sizeof(kuint) * 8};
+
+        // Read/write each interleaved 2-bit lane with a plain single-word shift instead of the
+        // branch-heavy pair >>/<< operators (this RC runs once per yield via canonicalize and was a
+        // top hot spot). Every lane is nibble-aligned (bit 4*slot or 4*slot+2) and W is a multiple of
+        // 4, so a 2-bit lane never straddles the word boundary -- a single word + shift addresses it.
+        const kuint w0 {skmer.m_pair.m_value[0]};
+        const kuint w1 {skmer.m_pair.m_value[1]};
+        kuint o0 {0};
+        kuint o1 {0};
+        auto rd = [&](uint64_t bit) -> kuint {
+            return (bit < W) ? static_cast<kuint>((w0 >> bit)       & kuint{0b11})
+                             : static_cast<kuint>((w1 >> (bit - W)) & kuint{0b11});
+        };
+        auto wr = [&](uint64_t bit, kuint nucl) {
+            if (bit < W) o0 |= static_cast<kuint>(nucl << bit);
+            else         o1 |= static_cast<kuint>(nucl << (bit - W));
+        };
 
         for (uint64_t slot {0} ; slot < buf_suff ; slot++)
         {
-            const kuint pref_nucl (static_cast<kuint>(in >> (4 * slot))     & kuint{0b11});
-            const kuint suff_nucl (static_cast<kuint>(in >> (4 * slot + 2)) & kuint{0b11});
-            out |= kpair(static_cast<kuint>(suff_nucl ^ 0b10U)) << (4 * slot);     // new prefix = compl(old suffix)
-            out |= kpair(static_cast<kuint>(pref_nucl ^ 0b10U)) << (4 * slot + 2); // new suffix = compl(old prefix)
+            const kuint pref_nucl {rd(4 * slot)};
+            const kuint suff_nucl {rd(4 * slot + 2)};
+            wr(4 * slot,     static_cast<kuint>(suff_nucl ^ kuint{0b10})); // new prefix = compl(old suffix)
+            wr(4 * slot + 2, static_cast<kuint>(pref_nucl ^ kuint{0b10})); // new suffix = compl(old prefix)
         }
         if (buf_pref > buf_suff) // odd 2k-m: central prefix slot maps to itself
         {
             const uint64_t slot {buf_suff};
-            const kuint pref_nucl (static_cast<kuint>(in >> (4 * slot)) & kuint{0b11});
-            out |= kpair(static_cast<kuint>(pref_nucl ^ 0b10U)) << (4 * slot);
+            wr(4 * slot, static_cast<kuint>(rd(4 * slot) ^ kuint{0b10}));
         }
 
-        Skmer<kuint> rc {out, skmer.m_suff_size, skmer.m_pref_size};
+        Skmer<kuint> rc {kpair{o0, o1}, skmer.m_suff_size, skmer.m_pref_size};
         mask_absent_nucleotides(rc);
         return rc;
     }

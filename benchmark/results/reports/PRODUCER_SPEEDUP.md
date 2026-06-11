@@ -5,17 +5,17 @@
 gated by the producer digest (`benchmark/results/reference/producer_digest.tsv`, chr21 + celegans) and
 the full `ctest` suite; chr21 is the dev signal, celegans the verdict.
 
-**Result.** One confirmed win: replacing the ring-buffer's runtime modulo with a power-of-two mask
-(`Skmerator.hpp`) gives **+12.8 % (celegans) / +14.3 % (chr21)** producer throughput, output
-byte-identical. Controlled back-to-back A/B (best-of-7, same machine state, `sskm-produce`):
+**Result.** Confirmed monothread wins, each **output-bit-identical** (digest unchanged on chr21 *and*
+celegans, full `ctest` green) and measured in its own controlled back-to-back A/B (best-of-7, same
+machine state, `sskm-produce`, each baseline = the previous committed state):
 
-| genome | baseline wall | opt wall | baseline Mskmer/s | opt Mskmer/s | speedup | digest |
-|---|--:|--:|--:|--:|--:|:--|
-| chr21    | 2.9176 s | 2.5532 s | 2.31 | 2.64 | **+14.3 %** | identical (0xfd02872bc3f3ed34) |
-| celegans | 6.9088 s | 6.1176 s | 2.43 | 2.74 | **+12.8 %** | identical (0x93d267f24daa8af8) |
+| # | change (file) | chr21 | celegans |
+|--:|---|--:|--:|
+| 1 | ring-buffer modulo `% (2k-m)` → power-of-two mask (`Skmerator.hpp`) | 2.31 → 2.64 Mskmer/s (**+14.3 %**) | 2.43 → 2.74 Mskmer/s (**+12.8 %**) |
+| 2 | word-level `reverse_complement` — drop branchy `pair` shifts (`Skmer.hpp`) | 2.70 → 2.87 Mskmer/s (**+6.3 %**) | 2.81 → 2.97 Mskmer/s (**+5.7 %**) |
 
-The digest is unchanged on both genomes (and the in-RAM golden test + full suite stay green), so the
-producer's output — hence every `sskm construct` / `query` result built on it — is exactly preserved.
+Cumulative ≈ **+21 % (chr21) / +19 % (celegans)** vs the pre-optimization producer, output exactly
+preserved — so every `sskm construct` / `query` result built on it is unchanged.
 
 ## What landed
 
@@ -29,6 +29,15 @@ slot, and the live window (`≤ 2k-m ≤ capacity`) never aliases. After the cha
 contain **0** `div`. This is the `perf stat` prediction realized: the loop was frontend/instruction-
 throughput bound (IPC ~2.2, 0.36 % branch-miss, low backend), and removing a multi-cycle `div` per
 base cut instructions on the critical path.
+
+**Word-level `reverse_complement`** (`lib/include/io/Skmer.hpp`). `canonicalize` runs
+`reverse_complement` on every yielded super-k-mer (the per-yield path was ~37 % of the producer), and
+it rebuilt the RC slot-by-slot through the **branch-heavy `pair` `>>`/`<<` operators** (each a copy +
+a 4-way shift ladder). Since every interleaved 2-bit lane is nibble-aligned and the word width is a
+multiple of 4, no lane straddles the word boundary, so each lane is now read/written with a plain
+single-word shift (the same trick `minimizer_is_ambiguous` already used), and the output pair is
+assembled in two `kuint` accumulators. Same bits placed → output-identical (digest + strand-invariance
+/ bug / framing tests all green).
 
 Also kept (correctness-neutral cleanup): **`m_skmer_orientation` `std::vector<bool>` →
 `std::vector<uint8_t>`**. The bit-packed `vector<bool>` looked large in the `-fno-inline` profile, but
@@ -60,13 +69,14 @@ After the modulo fix, the Release source-line profile is dominated by the **`pai
 `add_nucleotide`, and the **per-yield `canonicalize`/`reverse_complement`** (`finalize_and_yield`
 ~37 % children). Both are in `Skmer.hpp`, **shared with the query path** and exactness-critical:
 
-- A single-word fast path for `2*(2k-m) ≤ 64` (high word always 0) would cut the per-base `pair`
-  shift/copy work, but needs a branch that stays correct for every backend width.
-- A word-level (bit-parallel) `reverse_complement` would cut per-yield cost vs the current slot loop.
+- The per-base `pair` shift operators themselves (`operator<<=`/`operator>>=`) still carry the 4-way
+  branch ladder; a single-word fast path needs a branch that stays correct for every backend width
+  (at k=21/m=11 the 62-bit value genuinely spans both 32-bit words, so this is not a free win).
+- `minimizer_is_ambiguous` + `mask_absent_nucleotides` run per yield and could share the decode /
+  use precomputed flank masks.
 
-These are larger, riskier rewrites with uncertain payoff; the harness (digest + suite + bench) is in
-place to attempt them safely if a further push is wanted. Stopping here banks a clean, verified
-~13 % monothread gain.
+These are smaller or riskier than the two wins above; the harness (digest + suite + bench) is in place
+to attempt them safely. Iteration continues while gains stay clear on celegans.
 
 ## Reproduce
 
