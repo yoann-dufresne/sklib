@@ -423,6 +423,14 @@ protected:
     Skmer<kuint>::pair m_rev_suffix_buff;
     Skmer<kuint>::pair m_rev_prefix_buff;
 
+    // Precomputed (loop-invariant) word index + in-word offset of the two central-nucleotide
+    // transfer slots, so add_nucleotide moves the central nucleotide prefix<->suffix with a scalar
+    // word op instead of two branchy full-pair shifts per base. A = topmost suffix slot (bit
+    // m_suff_size*4-2), B = topmost prefix slot (bit (m_pref_size-1)*4). The moved value is a single
+    // 2-bit nucleotide whose bit pair never straddles a word (both slot bits are ≡0/2 mod 4 and the
+    // word width is a multiple of 4), so a per-word read/OR reproduces the pair-shift result exactly.
+    uint64_t m_cA_word, m_cA_off, m_cB_word, m_cB_off;
+
     // Number of high φ-minimizer bits not stored (quotiented into the bucket id). 0 for a
     // full-width list; b>0 narrows the meaningful skmer to 2*(2k-m)-b bits, so m_mask (and every
     // mask derived from it via the generators) covers only the retained low bits. See truncate_skmer.
@@ -476,6 +484,14 @@ public:
     SkmerManipulator(const uint64_t k, const uint64_t m, const uint64_t b = 0)
         : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
+        // Central-nucleotide transfer slots (members m_cA_*/m_cB_*). Computed here in the init list
+        // (not the body) because generate_masks_*() below call add_nucleotide, which reads them, while
+        // still initializing prefix_suffix_mask/kmer_masks/nucleotide_masks -- so they must be ready
+        // before those members. Declared before the mask vectors, so declaration order guarantees it.
+        , m_cA_word((m_suff_size * 4 - 2) / (sizeof(kuint) * 8))
+        , m_cA_off((m_suff_size * 4 - 2) % (sizeof(kuint) * 8))
+        , m_cB_word(((m_pref_size - 1) * 4) / (sizeof(kuint) * 8))
+        , m_cB_off(((m_pref_size - 1) * 4) % (sizeof(kuint) * 8))
         , m_quotient_bits(b)
         , max_pair_value(static_cast<kuint>(~static_cast<kuint>(0)), static_cast<kuint>(~static_cast<kuint>(0)))
         , m_mask( max_pair_value >> (2 * sizeof(kuint) * 8 - (2 * sk_size - b)) ), prefix_suffix_mask(generate_masks_sp())
@@ -601,20 +617,20 @@ public:
     inline Skmer<kuint>& add_nucleotide(const kuint nucl)
     {
         // --- forward prefix ---
-        // Shift prefix to the right
+        // Shift prefix to the right, then move the central nucleotide (topmost suffix slot A ->
+        // topmost prefix slot B). It is a single 2-bit nucleotide that never straddles a word, so a
+        // scalar per-word read/OR reproduces the old pair-shift result with no branchy pair shifts.
+        // Read the suffix BEFORE it is rewritten below.
         m_fwd_prefix_buff >>= 4;
-        // Get nucleotide that move from suffix to prefix
-        const auto fwd_central_nucl {m_fwd_suffix_buff >> (m_suff_size * 4 - 2)};
-        // Include the nucleotide in the prefix
-        m_fwd_prefix_buff |= fwd_central_nucl << ((m_pref_size-1) * 4);
+        const kuint fwd_central_nucl {static_cast<kuint>((m_fwd_suffix_buff.m_value[m_cA_word] >> m_cA_off) & kuint{0b11})};
+        m_fwd_prefix_buff.m_value[m_cB_word] |= static_cast<kuint>(fwd_central_nucl << m_cB_off);
 
         // --- reverse suffix ---
-        // Shift the suffix to the right
+        // Shift the suffix to the right, then move the central nucleotide (topmost prefix slot B ->
+        // topmost suffix slot A). Read the prefix BEFORE it is rewritten below.
         m_rev_suffix_buff >>= 4;
-        // Get the nucleotide to transfer from the prefix to suffix
-        const auto rev_central_nucl {m_rev_prefix_buff >> ((m_pref_size - 1) * 4)};
-        // Include the transfered nucleotide
-        m_rev_suffix_buff |= rev_central_nucl << (m_suff_size * 4 - 2);
+        const kuint rev_central_nucl {static_cast<kuint>((m_rev_prefix_buff.m_value[m_cB_word] >> m_cB_off) & kuint{0b11})};
+        m_rev_suffix_buff.m_value[m_cA_word] |= static_cast<kuint>(rev_central_nucl << m_cA_off);
 
         // --- forward suffix ---
         // Shift the suffix
@@ -654,21 +670,15 @@ public:
     {
         // empty nucleotide
         const kuint nucl = 0b11U;
-        // --- forward prefix ---
-        // Shift prefix to the right
+        // --- forward prefix --- (scalar central-nucleotide transfer A->B; see add_nucleotide)
         m_fwd_prefix_buff >>= 4;
-        // Get nucleotide that move from suffix to prefix
-        const auto fwd_central_nucl {m_fwd_suffix_buff >> (m_suff_size * 4 - 2)};
-        // Include the nucleotide in the prefix
-        m_fwd_prefix_buff |= fwd_central_nucl << ((m_pref_size-1) * 4);
+        const kuint fwd_central_nucl {static_cast<kuint>((m_fwd_suffix_buff.m_value[m_cA_word] >> m_cA_off) & kuint{0b11})};
+        m_fwd_prefix_buff.m_value[m_cB_word] |= static_cast<kuint>(fwd_central_nucl << m_cB_off);
 
-        // --- reverse suffix ---
-        // Shift the suffix to the right
+        // --- reverse suffix --- (scalar central-nucleotide transfer B->A)
         m_rev_suffix_buff >>= 4;
-        // Get the nucleotide to transfer from the prefix to suffix
-        const auto rev_central_nucl {m_rev_prefix_buff >> ((m_pref_size - 1) * 4)};
-        // Include the transfered nucleotide
-        m_rev_suffix_buff |= rev_central_nucl << (m_suff_size * 4 - 2);
+        const kuint rev_central_nucl {static_cast<kuint>((m_rev_prefix_buff.m_value[m_cB_word] >> m_cB_off) & kuint{0b11})};
+        m_rev_suffix_buff.m_value[m_cA_word] |= static_cast<kuint>(rev_central_nucl << m_cA_off);
 
         // --- forward suffix ---
         // Shift the suffix
