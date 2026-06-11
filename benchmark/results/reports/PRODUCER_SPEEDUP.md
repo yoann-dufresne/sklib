@@ -190,6 +190,51 @@ Cumulative vs baseline b8f2780: chr21 k31 **+37.5 %**, cel k31 **+38.1 %**, chr2
   loaded-value / poorly-predicted branches, not on freshly-computed, well-predicted ones — measure,
   don't assume "branchless = faster".
 
+## État des lieux after E2/F5 — regime shift to throughput-bound
+
+The k=31/k=63 phase added six committed wins (B10, A1, C1, E1, E2, F4, F5) for a cumulative
+**+37–38 % at k=31** and **+45–48 % at k=63** over b8f2780, all output-bit-identical (digests pinned in
+`producer_digest.tsv`, ctest green). Two were reverted (B11, E3).
+
+**The bottleneck regime changed.** Before E2 the producer was *misprediction-bound*: the per-base
+orientation branches (in `update_skmer_*` and the extremity limits) mispredicted ~50 % and stalled
+`operator++` (it showed ~44 % self at k=31). E2+E1 removed them. `perf stat` now reads **IPC 3.50
+(k=31) / 3.70 (k=63), branch-miss 1.0–1.6 %** — i.e. the loop is now *throughput-bound* (few stalls
+left to recover). Further wins must cut **instruction count**, not mispredicts; that is why the late
+ideas were the narrow-int ones (C1/F4: 128→64-bit) and the scalar bit-packers (A1/F5: drop full-`pair`
+shifts), and why removing already-predicted branches (B11, E3, and likely a decode split) is flat.
+
+**Current hot spots (self-%, noisy under inlining; trust `perf stat` + back-to-back A/B):**
+- k=31: `compute_new_candidate_skmer`/`add_nucleotide` (~29 %, per-base pair arithmetic) and
+  `operator++` (~26 %, buffer ring + minimizer compares) dominate; `minimizer_is_ambiguous` ~12 %.
+- k=63: similar, plus the ambiguous path (`build_skmer_from_nucleotides`/`choose_kmer_minimizer`)
+  is a real share because it fires often at m=31.
+
+**Unexplored leads (instruction-count reduction — the lever that still bites in this regime):**
+1. **`add_nucleotide` pair arithmetic** (the biggest per-base cost, ~29 % at k=31). The 4-buffer
+   scheme does ~10 full-`pair` ops/base (two `>>=4`, two `<<=4`, two `&= m_mask`, two merge `|`, one
+   `<`). The masks and cross-word shift-by-4 look irreducible in this layout; a different buffer
+   layout (e.g. maintaining `m_fwd`/`m_rev` directly, or a single rolling register when `2*sk_size`
+   fits one word — true for k≤15) might cut ops. Highest value but needs a real rethink.
+2. **Per-base `Skmer` copies** — `compute_new_candidate` copies the manipulator result into the ring
+   slot every base; `operator++` copies the slide-out slot into `m_yielded_skmer` every base but uses
+   it ~1/9 (k31) – 1/17 (k63) of the time. Deferring the latter behind the yield test could save a
+   per-base 20–36 B copy (idea D, untried — needs care: the slot is overwritten by the next
+   `compute_new_candidate`, so peek sizes then copy only if yielding).
+3. **Decode split** in `minimizer_is_ambiguous` / `decode_to_nucleotides`: replace the per-element
+   `b < W ? w_lo : w_hi` select with word-boundary-split sub-loops. Pure instruction trim; expected
+   small (the branch is well-predicted) but it is throughput, not mispredict — worth a measured try.
+4. **Ambiguous-path frequency** at k=63: `choose_kmer_minimizer` rebuilds k-m+1 framings per k-mer and
+   canonicalizes each. Adjacent k-mers share most framings — memoizing across the super-k-mer could
+   cut the O(nk·(k-m)) rebuilds. Higher value at k=63 but correctness-critical (strand-invariance,
+   issue #7) — treat carefully.
+5. **SIMD / wider** the decode+roll, or `add_nucleotide` across the 4 buffers — speculative, portable
+   only via compiler auto-vec; unmeasured.
+
+Resume protocol: re-`perf stat` first (confirm still throughput-bound), then attack #1 or #2; gate
+every attempt on `producer_median.sh` (digest) + ctest, and **revert anything that does not beat the
+noise floor on chr21 back-to-back** (the lesson from B11/E3).
+
 ## Reproduce
 
 ```bash
