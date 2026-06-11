@@ -190,6 +190,14 @@ Cumulative vs baseline b8f2780: chr21 k31 **+37.5 %**, cel k31 **+38.1 %**, chr2
   loaded-value / poorly-predicted branches, not on freshly-computed, well-predicted ones — measure,
   don't assume "branchless = faster".
 
+- **D — defer the per-base `m_yielded_skmer` copy** (`operator++`): peek the slide-out slot's sizes,
+  copy the full skmer only when it will be yielded (used ~1/9–1/17 of bases). Correct (digest
+  identical) but **flat** on a back-to-back A/B (k31 3.58→3.61, k63 1.32→1.34 — within noise, ranges
+  overlap). At IPC 3.5–3.7 the small (20–36 B) L1-resident struct copy is absorbed off the critical
+  path, so removing it frees instructions that were not the bottleneck. Reverted (no confirmed gain,
+  `operator++` is exactness-critical). Confirms the regime is throughput-bound on the *pair arithmetic*,
+  not on per-base bookkeeping.
+
 ## État des lieux after E2/F5 — regime shift to throughput-bound
 
 The k=31/k=63 phase added six committed wins (B10, A1, C1, E1, E2, F4, F5) for a cumulative
