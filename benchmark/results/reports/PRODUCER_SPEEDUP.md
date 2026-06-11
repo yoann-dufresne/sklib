@@ -31,6 +31,29 @@ The digest is **identical between the original and the optimized producer** on b
 optimization series is output-bit-identical, so every `sskm construct` / `query` result built on the
 producer is unchanged.
 
+### Generalization across k / integer width
+
+All the work above used k=21/m=11, which the build packs in **uint32** (width 4). The optimizations are
+width-templated, so the same series was re-measured end-to-end (original @ 2441d4a vs current) at the
+two other realistic widths — **k=31/m=15 → uint64 (width 8)** and **k=63/m=31 → __uint128 (width 16)**
+— on both genomes (Mskmer/s, chr21 / celegans):
+
+| k / m | width | original | current | **speedup** |
+|---|---|--:|--:|--:|
+| 21 / 11 | 4 (uint32)   | 2.20 / 2.28 | 3.51 / 3.59 | **+59.5 % / +57.5 %** |
+| 31 / 15 | 8 (uint64)   | 1.60 / 1.68 | 2.54 / 2.57 | **+58.8 % / +53.0 %** |
+| 63 / 31 | 16 (__uint128) | 0.52 / 0.47 | 0.90 / 0.85 | **+73.1 % / +80.9 %** |
+
+Two takeaways: (1) the digest is **identical original-vs-current at every width** (the optimizations
+stay output-bit-identical for uint32/uint64/__uint128, not just the k=21 case) — these reference
+digests are pinned in `benchmark/results/reference/producer_digest.tsv`; (2) the speedup **holds and
+even grows with width** — at width 16 it reaches +73–81 %, because the word-parallel `reverse_complement`
+and the branch eliminations save more when each per-element op is heavier and the super-k-mer
+(2k-m = 95 nt at k=63) is longer. So the wins are not a width-4 artifact; they generalize, with k=31
+(the most realistic benchmark k) gaining ~+53–59 %.
+
+Verify any width with e.g. `K=31 M=15 bash benchmark/scripts/producer_bench.sh` (digest-gated).
+
 ## What landed
 
 **Ring-buffer modulo → power-of-two mask** (`lib/include/io/Skmerator.hpp`). The per-position super-
