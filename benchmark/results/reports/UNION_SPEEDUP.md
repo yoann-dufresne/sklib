@@ -117,6 +117,48 @@ is far above it; all 12 `verify=PASS`, byte-identical):
 k31 (`uint64`) −11 to −15 %; k63 (`__uint128`) **−25 to −38 %** — the fast-path removes the `O(n·(k-m))`
 scan that hit k=63 (32 columns) hardest. Throughput at k=63 rose ~6 → ~9 Mkmer/s.
 
+### #2 — hash join in `get_candidate_overlaps` — **COMMITTED** (`738913b`)
+
+**Mechanism.** After #1, `get_candidate_overlaps` was the top hotspot (~54 % k31 / ~59 % k63): it
+joined two adjacent columns on their shared overlap (k-1)-mer by **sorting** the right column's keys
+(`O(R log R)`) then a **`lower_bound`** per left key (`O(L log R)`) — both hammering the wide
+`pair::operator<` (15 % / 26 % self). Replaced with an **array-based chaining hash join**: build
+`head[]`/`next[]` over the right keys (`O(R)`), probe each left key (`O(L)`) → `O(R+L)`, no sort, no
+binary search. Two flat `int64` arrays reused across columns (`O(R)` memory), so unlike the original
+per-key `unordered_map` it does **not** blow up peak RAM on repeat-rich buckets. A width-agnostic
+`hash_kpair` folds each store word to 64 bits (uint64/__uint128/kuint256). Both `colinear_chaining`
+and `greedy_chaining` **sort** their input, so the (different) candidate emit order selects the **same**
+chain — output **byte-identical** for construction *and* set-ops (`VirtualSkmer.hpp`).
+
+The `GetCandidateOverlap*` unit tests pinned the candidate *order*; that is now an implementation
+detail, so they were made order-insensitive (compare as sets) — `tests/km/VirtualSkmer.cpp`.
+
+**Correctness.** Output **byte-identical** (sha256 match k31 & k63 J0.5); bits/kmer unchanged
+(23.89 / 24.24); 213/213 unit tests (construction golden digests included); KMC cross-check PASS.
+
+**Result (interleaved A/B, idea#1 → idea#2):**
+
+| config | idea#1 s | idea#2 s | delta | band |
+|---|--:|--:|--:|--:|
+| chr21 k31 J0.5 | 4.094 | 2.569 | **−37.3 %** | ±0.20 % |
+| chr21 k63 J0.5 | 5.315 | 2.834 | **−46.7 %** | ±0.11 % |
+
+Cumulative vs the original baseline (`135283b`): chr21 k31 J0.5 4.72 → 2.57 s (**−46 %**),
+k63 J0.5 7.40 → 2.83 s (**−62 %**).
+
+**Full 12-config sweep, cumulative vs baseline** (idea#1+#2; all 12 `verify=PASS`, byte-identical):
+
+| dataset | k | baseline s (J.1/.5/.9) | idea#2 s (J.1/.5/.9) | gain |
+|---|--:|--:|--:|--:|
+| chr21 | 31 | 6.76 / 4.72 / 3.40 | 3.68 / 2.60 / 1.82 | **−45 to −46 %** |
+| chr21 | 63 | 11.51 / 7.40 / 5.19 | 3.98 / 2.84 / 2.00 | **−61 to −65 %** |
+| celegans | 31 | 19.33 / 13.40 / 9.84 | 10.06 / 7.28 / 5.14 | **−46 to −48 %** |
+| celegans | 63 | 32.46 / 23.50 / 17.78 | 10.95 / 7.88 / 5.66 | **−66 to −68 %** |
+
+k31 (`uint64`) ~−46 %; k63 (`__uint128`) **~−63 to −68 %** — the union is now ~2× (k31) to ~3× (k63)
+faster than `135283b`.
+
 | # | idea (file) | mechanism | result (k31 / k63, J0.5) | status |
 |--:|---|---|---|---|
 | 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
+| 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `738913b` |

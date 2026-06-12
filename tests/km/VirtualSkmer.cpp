@@ -492,6 +492,10 @@ namespace km
             auto computed_overlaps{m_list.get_candidate_overlaps(m_skmer_vector, left_column_position, left_column_order, right_column_order)};
             std::vector<std::pair<uint64_t, uint64_t>> expected_overlaps{};
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 std::cerr << "Unexpected overlap: " << computed_overlaps[i].first << computed_overlaps[i].second << std::endl;
@@ -524,6 +528,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -556,6 +564,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -588,6 +600,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -625,6 +641,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -662,6 +682,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -699,6 +723,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -733,6 +761,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);
@@ -767,6 +799,10 @@ namespace km
 
             ASSERT_EQ(computed_overlaps.size(), expected_overlaps.size());
 
+            // candidate-overlap order is an implementation detail (both colinear_chaining and
+            // greedy_chaining sort their input), so compare as sets.
+            std::sort(computed_overlaps.begin(), computed_overlaps.end());
+            std::sort(expected_overlaps.begin(), expected_overlaps.end());
             for (uint64_t i{0}; i < computed_overlaps.size(); i += 1)
             {
                 ASSERT_EQ(computed_overlaps[i], expected_overlaps[i]);

@@ -142,6 +142,13 @@ int run_verify(const Args& a) {
     auto Oref = km::sortedlist::BucketedSkmerListReader<store>::open(a.ref);
     const uint64_t inter {km::sortedlist::intersection_size<store>(Oopt, Oref, 1)};
 
+    // bits/kmer = compaction quality (payload bits / k-mers). It must not jump up — a fast but
+    // poorly-compacted result (towards one record per k-mer) would inflate it. Guaranteed not to grow
+    // by the records_opt <= records_ref gate (bits/kmer is proportional to records here).
+    const double rec_bits {static_cast<double>(sizeof(km::Skmer<store>)) * 8.0};
+    const double bpk_opt {expected ? records_opt * rec_bits / static_cast<double>(expected) : 0.0};
+    const double bpk_ref {expected ? records_ref * rec_bits / static_cast<double>(expected) : 0.0};
+
     const bool ok_count   {kmers == expected};
     const bool ok_set     {inter == expected};
     const bool ok_compact {records_opt <= records_ref};
@@ -149,13 +156,15 @@ int run_verify(const Args& a) {
 
     std::cerr << "[verify] expected=" << expected << "  kmers=" << kmers
               << "  inter(O_opt,O_ref)=" << inter
-              << "  records_opt=" << records_opt << "  records_ref=" << records_ref << "\n";
+              << "  records_opt=" << records_opt << "  records_ref=" << records_ref
+              << "  bits/kmer opt=" << bpk_opt << " ref=" << bpk_ref << "\n";
     if (!ok_count)   std::cerr << "[verify] FAIL: union k-mer count != union_size(A,B)\n";
     if (!ok_set)     std::cerr << "[verify] FAIL: k-mer set differs from reference\n";
     if (!ok_compact) std::cerr << "[verify] FAIL: compaction regressed (more records than reference)\n";
     std::cout << (pass ? "VERIFY\tPASS" : "VERIFY\tFAIL")
               << "\texpected=" << expected << "\tkmers=" << kmers << "\tinter=" << inter
-              << "\trecords_opt=" << records_opt << "\trecords_ref=" << records_ref << std::endl;
+              << "\trecords_opt=" << records_opt << "\trecords_ref=" << records_ref
+              << "\tbits_per_kmer=" << bpk_opt << std::endl;
     return pass ? 0 : 1;
 }
 

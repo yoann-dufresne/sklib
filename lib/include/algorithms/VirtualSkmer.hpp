@@ -635,6 +635,11 @@ class SortedVirtualSkmerList {
     SkmerManipulator<kuint> m_manip;
     std::vector<Skmer<kuint>> m_skmer_list;           // Final storage, I do not need the uint in the virtual skmer
     LList m_merge_scratch;                            // Reused merge target (ping-pong with the working list)
+    // Reused scratch for get_candidate_overlaps' hash join (array-based chaining over the right
+    // column's overlap (k-1)-mer keys), so the join is O(R+L) with no per-column sort / binary search.
+    std::vector<typename Skmer<kuint>::pair> m_gco_keys;   // right column's overlap keys (parallel to right_column)
+    std::vector<int64_t> m_gco_head;                       // hash bucket -> first right index in its chain, or -1
+    std::vector<int64_t> m_gco_next;                       // right index -> next index in the same chain, or -1
 
     private:
 
@@ -685,6 +690,22 @@ class SortedVirtualSkmerList {
         return valid_skmer_ids;
     }
 
+    // Hash a Skmer pair (an overlap (k-1)-mer key) to 64 bits, folding each kuint word so it works at
+    // every store width (uint64 / __uint128 / kuint256). Collisions are resolved by comparing the full
+    // key on the chain, so the hash only needs to spread.
+    static size_t hash_kpair(typename Skmer<kuint>::pair const& k) {
+        auto fold = [](kuint x) -> uint64_t {
+            uint64_t h {static_cast<uint64_t>(x)};
+            if constexpr (sizeof(kuint) > 8)
+                for (size_t i {8}; i < sizeof(kuint); i += 8) { x >>= 64; h ^= static_cast<uint64_t>(x); }
+            return h;
+        };
+        uint64_t h {(fold(k.m_value[0]) + 0x9E3779B97F4A7C15ULL) * 0xff51afd7ed558ccdULL};
+        h ^= (fold(k.m_value[1]) + 0x9E3779B97F4A7C15ULL) * 0xc4ceb9fe1a85ec53ULL;
+        h ^= h >> 33;
+        return static_cast<size_t>(h);
+    }
+
     /** Returns candidate overlaps between two columns of Virtual skmer ids
      * @param skmer_enumeration the enumeration of skmer from the iterator
      * @param left_position the "column" position: i.e. the starting point of leftmost kmer considered for the overlap
@@ -694,35 +715,42 @@ class SortedVirtualSkmerList {
      **/
     std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column){
         using kpair = typename Skmer<kuint>::pair;
-        using keyed_pos = std::pair<kpair, uint64_t>;
 
-        // Index the right column's prefix (k-1)-mers in a sorted array of
-        // (key, right_pos), replacing the per-column hash map (whose nodes
-        // dominated peak RAM on repeat-rich buckets). Sorting by (key, pos) keeps
-        // each key group's positions ascending.
-        std::vector<keyed_pos> right_keys;
-        right_keys.reserve(right_column.size());
-        for (uint64_t pos {0}; pos < right_column.size(); pos++) {
-            assert(right_column[pos] < skmer_enumeration.size());
-            right_keys.emplace_back(
-                m_manip.extract_prefix_suffix(skmer_enumeration[right_column[pos]], left_position + 1), pos);
+        std::vector<overlap> candidate_overlaps;
+        const size_t R {right_column.size()};
+        const size_t L {left_column.size()};
+        if (R == 0 || L == 0) return candidate_overlaps;
+
+        // Join the two columns on their shared overlap (k-1)-mer (key = extract_prefix_suffix at
+        // left_position+1) with an array-based chaining hash instead of a sort + per-left binary
+        // search: O(R+L) rather than O((R+L)·log R) — the previous get_candidate_overlaps was ~40 %
+        // of the union (the sort + lower_bound both hammer the wide pair compare). The old per-key
+        // std::unordered_map blew up peak RAM on repeat-rich buckets; this is two flat int arrays
+        // (head/next, O(R), reused across columns). Both colinear_chaining and greedy_chaining sort
+        // their input, so this (different) emit order selects the SAME chain — byte-identical output
+        // for construction and set-ops alike.
+        m_gco_keys.resize(R);
+        for (size_t j {0}; j < R; ++j) {
+            assert(right_column[j] < skmer_enumeration.size());
+            m_gco_keys[j] = m_manip.extract_prefix_suffix(skmer_enumeration[right_column[j]], left_position + 1);
         }
-        std::sort(right_keys.begin(), right_keys.end(),
-            [](keyed_pos const& a, keyed_pos const& b) {
-                return a.first == b.first ? a.second < b.second : a.first < b.first;
-            });
+        size_t cap {1};
+        while (cap < (R << 1)) cap <<= 1;                 // power-of-two table, load factor < 0.5
+        const size_t mask {cap - 1};
+        m_gco_head.assign(cap, -1);
+        m_gco_next.resize(R);
+        for (size_t j {0}; j < R; ++j) {
+            const size_t h {hash_kpair(m_gco_keys[j]) & mask};
+            m_gco_next[j] = m_gco_head[h];
+            m_gco_head[h] = static_cast<int64_t>(j);
+        }
 
-        // Walk the left column in order; each left suffix (k-1)-mer matches a
-        // contiguous range of right_keys (binary search). Emitting (suffix_pos,
-        // right_pos) this way reproduces the previous (left asc, right asc) order.
-        std::vector<std::pair<uint64_t,uint64_t> > candidate_overlaps;
-        for (uint64_t suffix_pos {0}; suffix_pos < left_column.size(); suffix_pos++) {
+        for (size_t suffix_pos {0}; suffix_pos < L; ++suffix_pos) {
             assert(left_column[suffix_pos] < skmer_enumeration.size());
-            const kpair suffix {m_manip.extract_prefix_suffix(skmer_enumeration[left_column[suffix_pos]], left_position + 1)};
-            auto it = std::lower_bound(right_keys.begin(), right_keys.end(), suffix,
-                [](keyed_pos const& e, kpair const& k) { return e.first < k; });
-            for (; it != right_keys.end() && it->first == suffix; ++it)
-                candidate_overlaps.emplace_back(suffix_pos, it->second);
+            const kpair key {m_manip.extract_prefix_suffix(skmer_enumeration[left_column[suffix_pos]], left_position + 1)};
+            for (int64_t j {m_gco_head[hash_kpair(key) & mask]}; j >= 0; j = m_gco_next[static_cast<size_t>(j)])
+                if (m_gco_keys[static_cast<size_t>(j)] == key)
+                    candidate_overlaps.emplace_back(suffix_pos, static_cast<uint64_t>(j));
         }
         return candidate_overlaps;
     }
