@@ -303,3 +303,41 @@ at its floor.
 |--:|---|---|---|---|
 | 5 | difference-array `build_column_csr` (`SetOperations.hpp`) | range-update pass-1 count, `O(records)` not `O(total k-mers)` | diff −19/−11 %, inter −10/−5 %, union −6/−0.8 % (byte-identical) | committed `120a2c6` |
 | 6 | pre-masked contiguous keys in `merge_columns` | linearise + pre-mask the compare | inter −4..−9 % but **diff +2..+13 %**, union +1 %, **peak RAM +44..79 %** | reverted-regression |
+
+## Combined operator `multi_setop` (the one-pass {∩, ∪, A\B, B\A})
+
+`multi_setop` shares the merge + recompaction with the single-op path, so #2/#3/#5 already applied —
+but **#1 did not**: it materialises up to four relations and re-compacts each with its own recompactor,
+and those calls fed `generate_sorted_list_from_enumeration` **without** `col_offsets`, so every one of
+the (up to 4) per-bucket recompactions still did the `O(n·(k-m))` `has_valid_kmer` re-scan. It was
+therefore the *most* recompaction-starved set op.
+
+### #7 — column-offset fast-path for `multi_setop` — **COMMITTED** (`<hash7>`)
+
+**Mechanism.** Each output buffer in `multi_setop` is column-grouped + per-column sorted+distinct (the
+merge fans column-major into it), exactly like the single-op `col`. `MultiCollectSink` now keeps a
+per-column kept count **per channel** (incremented as each k-mer is fanned out — `both`→inter&union,
+`only_a`→A\B&union, `only_b`→B\A&union); `multi_setop` prefix-sums each into block offsets and passes
+them to that channel's recompaction (idea #1, per output). Byte-identical — same ids, so each of the
+four outputs is bit-for-bit unchanged (`MultiCollectSink` + `multi_setop` in `SetOperations.hpp`).
+
+**Correctness.** All four outputs **byte-identical** (sha256) before/after across chr21/celegans ×
+k31/k63 × J; and (as the single-op design already guaranteed) each equals the matching single-op
+materialization; 213/213 tests; KMC `setop_multi_verif.sh` PASS.
+
+**Result (interleaved A/B, idea#5 → #7, all four relations materialized):**
+
+| config | idea#5 s | #7 s | delta | band |
+|---|--:|--:|--:|--:|
+| chr21 k31 J0.5 | 4.84 | 3.65 | **−24.5 %** | ±0.47 % |
+| chr21 k63 J0.5 | 10.19 | 4.54 | **−55.4 %** | ±3.39 % |
+| chr21 k31 J0.1 | 6.96 | 5.27 | **−24.3 %** | ±0.63 % |
+| chr21 k63 J0.1 | 15.89 | 6.34 | **−60.1 %** | ±1.25 % |
+
+k31 ~**−24 %**, k63 **−55 to −60 %** — the biggest single win in the journal, because `multi_setop` ran
+the slow per-column scan **four times per bucket** and k63 (32 columns) suffered most. The harness now
+takes `--op multi` (bench mode; 4 outputs, summed throughput).
+
+| # | idea (file) | mechanism | result (k31 / k63) | status |
+|--:|---|---|---|---|
+| 7 | column-offset fast-path for `multi_setop` (`SetOperations.hpp`) | per-channel column counts → offsets to each output's recompaction | **−24 % / −55..−60 %** (byte-identical) | committed `<hash7>` |

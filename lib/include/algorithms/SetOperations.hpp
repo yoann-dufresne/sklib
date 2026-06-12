@@ -543,30 +543,37 @@ struct MultiCollectSink {
     std::vector<km::Skmer<store>>* uni;       // nullable: A∪B
     std::vector<km::Skmer<store>>* diff_ab;   // nullable: A\B
     std::vector<km::Skmer<store>>* diff_ba;   // nullable: B\A
+    // Per-column kept counts, one per buffer (non-null iff the buffer is). Each buffer is filled in
+    // column-major, k-mer-ascending order (merge_columns visits columns in order), so its prefix sum
+    // gives the contiguous per-column blocks the re-compaction needs (the idea-#1 fast-path).
+    std::vector<uint64_t>* cnt_inter {nullptr};
+    std::vector<uint64_t>* cnt_uni {nullptr};
+    std::vector<uint64_t>* cnt_ab {nullptr};
+    std::vector<uint64_t>* cnt_ba {nullptr};
     uint64_t n_inter {0}, n_only_a {0}, n_only_b {0};
 
     void both(const km::Skmer<store>& r, uint64_t c) {
         ++n_inter;
         if (inter || uni) {
             const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
-            if (inter) inter->push_back(s);
-            if (uni)   uni->push_back(s);
+            if (inter) { inter->push_back(s); ++(*cnt_inter)[c]; }
+            if (uni)   { uni->push_back(s);   ++(*cnt_uni)[c]; }
         }
     }
     void only_a(const km::Skmer<store>& r, uint64_t c) {
         ++n_only_a;
         if (diff_ab || uni) {
             const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
-            if (diff_ab) diff_ab->push_back(s);
-            if (uni)     uni->push_back(s);
+            if (diff_ab) { diff_ab->push_back(s); ++(*cnt_ab)[c]; }
+            if (uni)     { uni->push_back(s);     ++(*cnt_uni)[c]; }
         }
     }
     void only_b(const km::Skmer<store>& r, uint64_t c) {
         ++n_only_b;
         if (diff_ba || uni) {
             const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
-            if (diff_ba) diff_ba->push_back(s);
-            if (uni)     uni->push_back(s);
+            if (diff_ba) { diff_ba->push_back(s); ++(*cnt_ba)[c]; }
+            if (uni)     { uni->push_back(s);     ++(*cnt_uni)[c]; }
         }
     }
 };
@@ -719,6 +726,11 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
     // One collected buffer per output channel, per worker (reused across buckets).
     std::vector<std::vector<std::vector<km::Skmer<store>>>> collected(
         nthr, std::vector<std::vector<km::Skmer<store>>>(nout));
+    // Per-channel per-column kept counts (cc) and their prefix-sum offsets (co), per worker — feed the
+    // idea-#1 column-offset fast-path to each output's recompaction so it skips the per-column rescan.
+    const uint64_t kmm {k - m};
+    std::vector<std::vector<std::vector<uint64_t>>> collected_cnt(nthr, std::vector<std::vector<uint64_t>>(nout));
+    std::vector<std::vector<std::vector<uint64_t>>> collected_off(nthr, std::vector<std::vector<uint64_t>>(nout));
     std::vector<uint64_t> acc_inter(nthr, 0), acc_a(nthr, 0), acc_b(nthr, 0);  // per-worker counts
     std::vector<std::ifstream> fhA, fhB;
     manips.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
@@ -745,13 +757,18 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
             read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
 
             std::vector<std::vector<km::Skmer<store>>>& col {collected[tid]};
-            for (std::vector<km::Skmer<store>>& v : col) v.clear();
+            std::vector<std::vector<uint64_t>>& cc {collected_cnt[tid]};
+            for (size_t ci {0}; ci < nout; ++ci) { col[ci].clear(); cc[ci].assign(kmm + 1, 0); }
             MultiCollectSink<store> sink{
                 *manips[tid],
                 ch_inter >= 0 ? &col[ch_inter] : nullptr,
                 ch_union >= 0 ? &col[ch_union] : nullptr,
                 ch_ab    >= 0 ? &col[ch_ab]    : nullptr,
-                ch_ba    >= 0 ? &col[ch_ba]    : nullptr};
+                ch_ba    >= 0 ? &col[ch_ba]    : nullptr,
+                ch_inter >= 0 ? &cc[ch_inter] : nullptr,
+                ch_union >= 0 ? &cc[ch_union] : nullptr,
+                ch_ab    >= 0 ? &cc[ch_ab]    : nullptr,
+                ch_ba    >= 0 ? &cc[ch_ba]    : nullptr};
             merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
                                  bufB[tid].data(), bufB[tid].size(), sink);
             acc_inter[tid] += sink.n_inter;
@@ -769,7 +786,12 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
                     std::sort(cv.begin(), cv.end());
                     bundle[ci] = std::move(cv);               // cv re-cleared at the top of the next bucket
                 } else {
-                    subs[tid][ci]->generate_sorted_list_from_enumeration(cv, /*greedy_chain*/ true);
+                    // Prefix-sum this channel's per-column counts into block offsets (idea #1).
+                    std::vector<uint64_t>& bo {collected_off[tid][ci]};
+                    bo.resize(kmm + 2);
+                    bo[0] = 0;
+                    for (uint64_t c {0}; c <= kmm; ++c) bo[c + 1] = bo[c] + cc[ci][c];
+                    subs[tid][ci]->generate_sorted_list_from_enumeration(cv, /*greedy_chain*/ true, &bo);
                     bundle[ci] = subs[tid][ci]->take_list();  // dedicated per-output recompactor (see above)
                 }
             }

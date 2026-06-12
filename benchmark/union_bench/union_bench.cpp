@@ -79,8 +79,9 @@ Args parse(int argc, char** argv) {
         else usage(argv[0], "unknown argument: " + k);
     }
     if (a.a.empty() || a.b.empty()) usage(argv[0], "--a and --b are required");
-    if (a.op != "union" && a.op != "intersection" && a.op != "diff") usage(argv[0], "--op must be union|intersection|diff");
+    if (a.op != "union" && a.op != "intersection" && a.op != "diff" && a.op != "multi") usage(argv[0], "--op must be union|intersection|diff|multi");
     if (a.mode != "bench" && a.mode != "verify") usage(argv[0], "--mode must be bench or verify");
+    if (a.op == "multi" && a.mode == "verify") usage(argv[0], "--op multi supports --mode bench only (verify multi via the sskm CLI + sha256)");
     if (a.mode == "verify" && a.ref.empty()) usage(argv[0], "--mode verify requires --ref");
     if (a.mode == "bench" && a.reps == 0) usage(argv[0], "--reps must be >= 1");
     return a;
@@ -108,8 +109,45 @@ Stats stats_of(std::vector<double> v) {
     return s;
 }
 
+// Bench the combined single-pass operator (all four relations materialized at once) — the case
+// multi_setop exists for. Times one multi_setop call writing 4 lists; reports the summed output.
+template<typename store>
+int run_multi_bench(const Args& a) {
+    auto A = km::sortedlist::BucketedSkmerListReader<store>::open(a.a);
+    auto B = km::sortedlist::BucketedSkmerListReader<store>::open(a.b);
+    km::sortedlist::MultiSetOpRequest req;
+    req.inter_out = a.out + ".inter"; req.union_out = a.out + ".union";
+    req.diff_ab_out = a.out + ".ab";  req.diff_ba_out = a.out + ".ba";
+
+    km::sortedlist::MultiSetOpResult r;
+    for (unsigned w {0}; w < a.warmup; ++w) r = km::sortedlist::multi_setop<store>(A, B, req, 1);
+    std::vector<double> times; times.reserve(a.reps);
+    for (unsigned i {0}; i < a.reps; ++i) {
+        const auto t0 {std::chrono::steady_clock::now()};
+        r = km::sortedlist::multi_setop<store>(A, B, req, 1);
+        const auto t1 {std::chrono::steady_clock::now()};
+        times.push_back(std::chrono::duration<double>(t1 - t0).count());
+    }
+    const uint64_t kmers {r.inter_kmers + r.union_kmers + r.diff_ab_kmers + r.diff_ba_kmers};
+    const uint64_t records {km::sortedlist::read_list_header(*req.inter_out).count
+                          + km::sortedlist::read_list_header(*req.union_out).count
+                          + km::sortedlist::read_list_header(*req.diff_ab_out).count
+                          + km::sortedlist::read_list_header(*req.diff_ba_out).count};
+    const Stats s {stats_of(times)};
+    const double mkmer_s {s.median > 0 ? static_cast<double>(kmers) / s.median / 1e6 : 0.0};
+    std::cerr << "[bench] MULTI store=" << sizeof(store) << "B  kmers(4 outputs)=" << kmers
+              << "  records=" << records << "  reps=" << a.reps << "  warmup=" << a.warmup << "\n"
+              << "[bench] median=" << s.median << "s  min=" << s.min << "s  stddev=" << s.stddev
+              << "s  MAD=" << s.mad << "s  " << mkmer_s << " Mkmer/s\n";
+    std::cout << "RESULT\tmedian_s=" << s.median << "\tmin_s=" << s.min << "\tstddev_s=" << s.stddev
+              << "\tmad_s=" << s.mad << "\tkmers=" << kmers << "\trecords=" << records
+              << "\tmkmer_s=" << mkmer_s << "\tstore=" << sizeof(store) << std::endl;
+    return 0;
+}
+
 template<typename store>
 int run_bench(const Args& a) {
+    if (a.op == "multi") return run_multi_bench<store>(a);
     auto A = km::sortedlist::BucketedSkmerListReader<store>::open(a.a);
     auto B = km::sortedlist::BucketedSkmerListReader<store>::open(a.b);
 
