@@ -254,7 +254,7 @@ So intersection@low-J and diff@high-J are **merge-bound** — a hotspot untouche
 `build_column_csr` at **44 %** self (k31 diff J0.9): its pass-1 counting loop increments `off[c+1]` for
 every column a record spans, i.e. `O(total k-mers)` since A/B records are full super-k-mers.
 
-### #5 — difference-array `build_column_csr` pass-1 count — **COMMITTED** (`<hash5>`)
+### #5 — difference-array `build_column_csr` pass-1 count — **COMMITTED** (`120a2c6`)
 
 **Mechanism.** A record valid at columns `[s,hi]` adds 1 to each per-column count — a **range update**,
 applied in `O(1)` as `+1` at `s`, `−1` at `hi+1`, then one prefix sum, instead of the `O(hi−s+1)` loop.
