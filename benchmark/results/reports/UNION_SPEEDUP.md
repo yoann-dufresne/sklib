@@ -200,3 +200,38 @@ without a k63 regression in this shared loop → reverted per the no-regression 
 | 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `2ac3914` |
 | 3 | skip redundant chaining sort (`ColinearChaining.hpp/.cpp`) | hash join already emits `(first asc, second desc)`; `is_sorted` guard skips the `O(n log n)` sort | **−14.4 % / −14.7 %** (byte-identical) | committed `2f379cc` |
 | 4 | skip redundant `get_skmer_of_kmer` in `merge_LList_column` | identity on set-op single-k-mer skmers | **−3.5 % / +1.0 %** (k63 regressed, all 3 variants) | reverted-regression |
+
+## State of play after #1–#3 (and the regenerated backlog)
+
+**Cumulative:** chr21 k31 J0.5 4.72 → 2.25 s (**−52 %**), k63 J0.5 7.40 → 2.43 s (**−67 %**); celegans
+similar (k31 −54 %, k63 −71 %). Throughput ~10 → ~21 Mkmer/s (k31), ~6 → ~20 Mkmer/s (k63). Output
+**byte-identical** to `135283b` end-to-end (CLI `sskm setop --op union` sha256 match), so bits/kmer,
+packing and the k-mer set are all unchanged. The whole `set_union` is still **87–91 % re-compaction**.
+
+**Profile now (perf self-time, k31 / k63), all within the re-compaction:**
+
+| function | self % | note |
+|---|--:|---|
+| `get_candidate_overlaps` (hash join) | 31 / 28 | already `O(R+L)`: extract + `hash_kpair` + chain walk |
+| `merge_LList_column` | 21 / 23 | `add_kmer` (chain) + `get_skmer_of_kmer` (new vskmers); **k63-codegen-sensitive** |
+| `merge_columns` (CSR + 2-cursor merge + CollectSink) | 18 / 22 | `kmer_compare` + `get_skmer_of_kmer` building `col` (necessary) |
+| `greedy_chaining` | 16 / 16 | the LIS (patience sort) — sort already skipped by #3 |
+| `build_column_csr` | 7 / 4 | 2-pass counting sort of A/B by column |
+
+**Discarded (reasoned/measured), not committed:**
+- *Drop the `get_candidate_overlaps` sort* (pre-#2): refuted — a probe showed `right_keys` is genuinely
+  unsorted on big buckets (the overlap (k-1)-mer is not monotone in the k-mer order).
+- *Skip `get_skmer_of_kmer` in `merge_LList`* (#4): byte-identical, k31 −3.5 % but k63 +1.0–1.3 % in 3
+  variants — the shared wide-store hot loop is codegen-fragile. Reverted.
+
+**Remaining leads — all sub-2 %, several with k63 codegen risk; profile-bounded, not yet worth a commit:**
+- Precompute `~kmer_masks[c] & m_mask` (the get_skmer_of_kmer fill) per column: removes ~4 ops/call but
+  it is 1 of several ops there (~<1 %, below the k63 band; touches the fragile path).
+- `greedy_chaining` buffer reuse (`thread_local` parent/tail): saves only the ~0.4 % malloc.
+- `build_column_csr` single-pass / cache `get_valid_kmer_bounds`: the re-read is cache-resident → ~neutral.
+- Contiguous per-column **record** layout (scatter records, not indices) for cache-friendlier
+  `merge_columns`: plausible but for k63 it 9× the scatter write traffic — likely a wash or worse.
+
+The three algorithmic wins (eliminate the per-column scan, replace the join sort+search with a hash
+join, skip the now-redundant chaining sort) captured the high-value monothread speedup; the
+re-compaction is now memory/compute-bound on irreducible work. Further gains look incremental.
