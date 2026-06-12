@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.0)
-project(sklib VERSION 0.7.0 LANGUAGES C CXX)
+project(sklib VERSION 0.8.0 LANGUAGES C CXX)
 
 set(PROJECT_DESCRIPTION "Sorted k-mer library — compact sort and query of k-mers")
 
