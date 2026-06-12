@@ -50,9 +50,15 @@ inline std::vector<overlap> greedy_chaining(std::vector<overlap>::iterator begin
     if (n == 0) return {};
     // (first asc, second desc): same-first overlaps then have descending second, so the strictly
     // increasing LIS on second can never chain two overlaps that share a first coordinate.
-    std::sort(begin, end, [](const overlap& a, const overlap& b) {
+    // get_candidate_overlaps' hash join already emits candidates in exactly this order (outer left
+    // index ascending; matching rights walked head-first down the chain, i.e. descending), so the
+    // sort is usually a no-op — guard it with an O(n) is_sorted check (the result is identical; this
+    // only skips an already-ordered O(n log n) sort, the dominant remaining recompaction cost).
+    auto chain_less = [](const overlap& a, const overlap& b) {
         return a.first != b.first ? a.first < b.first : a.second > b.second;
-    });
+    };
+    if (!std::is_sorted(begin, end, chain_less))
+        std::sort(begin, end, chain_less);
     std::vector<size_t> parent(n, SIZE_MAX);
     std::vector<size_t> tail;   // tail[L] = element index = current minimal tail of a length-(L+1) chain
     for (size_t i = 0; i < n; ++i) {

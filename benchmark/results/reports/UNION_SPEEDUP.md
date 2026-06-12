@@ -158,7 +158,31 @@ k63 J0.5 7.40 → 2.83 s (**−62 %**).
 k31 (`uint64`) ~−46 %; k63 (`__uint128`) **~−63 to −68 %** — the union is now ~2× (k31) to ~3× (k63)
 faster than `135283b`.
 
+### #3 — skip the redundant chaining sort (`is_sorted` guard) — **COMMITTED** (`<hash3>`)
+
+**Mechanism.** After #2 the colinear-chaining of each column pair was the top recompaction cost; its
+first step `std::sort`s the candidate overlaps by `(first asc, second desc)`. But #2's hash join
+already emits them in exactly that order — the probe walks left indices ascending, and for each left
+key the matching rights come out of the chain head-first, i.e. in **descending** index order (insertion
+was ascending). So the sort is a no-op. Guard it with an `O(n)` `std::is_sorted` check in **both**
+`greedy_chaining` (set-ops, `ColinearChaining.hpp`) and `colinear_chaining` (construction,
+`ColinearChaining.cpp`): the already-ordered `O(n log n)` sort is skipped, the result is identical.
+Byte-identical for set-ops *and* construction (golden digests unchanged).
+
+**Correctness.** Output **byte-identical** (sha256 match k31 & k63 J0.5); bits/kmer unchanged; 213/213
+unit tests (construction golden digests included); KMC cross-check PASS.
+
+**Result (interleaved A/B, idea#2 → idea#3):**
+
+| config | idea#2 s | idea#3 s | delta | band |
+|---|--:|--:|--:|--:|
+| chr21 k31 J0.5 | 2.627 | 2.249 | **−14.4 %** | ±0.45 % |
+| chr21 k63 J0.5 | 2.851 | 2.430 | **−14.7 %** | ±0.40 % |
+
+Cumulative vs `135283b`: chr21 k31 J0.5 4.72 → 2.25 s (**−52 %**), k63 J0.5 7.40 → 2.43 s (**−67 %**).
+
 | # | idea (file) | mechanism | result (k31 / k63, J0.5) | status |
 |--:|---|---|---|---|
 | 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
 | 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `2ac3914` |
+| 3 | skip redundant chaining sort (`ColinearChaining.hpp/.cpp`) | hash join already emits `(first asc, second desc)`; `is_sorted` guard skips the `O(n log n)` sort | **−14.4 % / −14.7 %** (byte-identical) | committed `<hash3>` |

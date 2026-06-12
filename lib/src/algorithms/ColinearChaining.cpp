@@ -34,10 +34,14 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     //
     // We sort and index the caller's range in place (it is not reused after, and the
     // contract already documents that the input order changes) — no private copy, so
-    // the per-overlap state is just the DP vectors below.
-    std::sort(begin, end, [](overlap const& a, overlap const& b) {
+    // the per-overlap state is just the DP vectors below. get_candidate_overlaps' hash join
+    // already emits candidates in (first asc, second desc) order, so the sort is usually a no-op;
+    // an O(n) is_sorted guard skips the already-ordered O(n log n) sort (identical result).
+    auto chain_less = [](overlap const& a, overlap const& b) {
         return a.first != b.first ? a.first < b.first : a.second > b.second;
-    });
+    };
+    if (!std::is_sorted(begin, end, chain_less))
+        std::sort(begin, end, chain_less);
 
     // Coordinate-compress the second coordinates.
     std::vector<uint64_t> ys;
