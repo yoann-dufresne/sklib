@@ -181,8 +181,22 @@ unit tests (construction golden digests included); KMC cross-check PASS.
 
 Cumulative vs `135283b`: chr21 k31 J0.5 4.72 → 2.25 s (**−52 %**), k63 J0.5 7.40 → 2.43 s (**−67 %**).
 
+### #4 — skip redundant `get_skmer_of_kmer` in the recompaction — **REVERTED (regression)**
+
+**Idea.** On the set-op path `col` already holds single-k-mer skmers valid at exactly their column, and
+`get_skmer_of_kmer(S, column_pos)` is the identity on such an `S`, so `merge_LList_column` re-derives
+what it already has. Replacing those calls with the element directly was **byte-identical** (sha256
+match, 213 tests, golden digests) but **regressed k63**: interleaved A/B at chr21 J0.5 gave k31
+**−3.5 %** but k63 **+1.0 %**. Tried three variants — return by value (k63 +1.02 %), by `const&` via a
+reused scratch (+1.24 %), and a compile-time width gate `if constexpr (sizeof(kuint) <= 8)` so the wide
+store is excluded (+1.30 %). The width-gated one *still* regressed k63, which is the tell: merely adding
+the `frame` indirection + the `single_kmer_enum` parameter to the shared `merge_LList_column` hot loop
+perturbs the `__uint128` codegen unfavourably, independent of the skip. The k31 win is unreachable
+without a k63 regression in this shared loop → reverted per the no-regression rule (`git checkout`).
+
 | # | idea (file) | mechanism | result (k31 / k63, J0.5) | status |
 |--:|---|---|---|---|
 | 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
 | 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `2ac3914` |
 | 3 | skip redundant chaining sort (`ColinearChaining.hpp/.cpp`) | hash join already emits `(first asc, second desc)`; `is_sorted` guard skips the `O(n log n)` sort | **−14.4 % / −14.7 %** (byte-identical) | committed `2f379cc` |
+| 4 | skip redundant `get_skmer_of_kmer` in `merge_LList_column` | identity on set-op single-k-mer skmers | **−3.5 % / +1.0 %** (k63 regressed, all 3 variants) | reverted-regression |
