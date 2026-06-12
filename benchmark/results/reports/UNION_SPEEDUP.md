@@ -117,7 +117,7 @@ is far above it; all 12 `verify=PASS`, byte-identical):
 k31 (`uint64`) −11 to −15 %; k63 (`__uint128`) **−25 to −38 %** — the fast-path removes the `O(n·(k-m))`
 scan that hit k=63 (32 columns) hardest. Throughput at k=63 rose ~6 → ~9 Mkmer/s.
 
-### #2 — hash join in `get_candidate_overlaps` — **COMMITTED** (`738913b`)
+### #2 — hash join in `get_candidate_overlaps` — **COMMITTED** (`2ac3914`)
 
 **Mechanism.** After #1, `get_candidate_overlaps` was the top hotspot (~54 % k31 / ~59 % k63): it
 joined two adjacent columns on their shared overlap (k-1)-mer by **sorting** the right column's keys
@@ -161,4 +161,4 @@ faster than `135283b`.
 | # | idea (file) | mechanism | result (k31 / k63, J0.5) | status |
 |--:|---|---|---|---|
 | 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
-| 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `738913b` |
+| 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `2ac3914` |
