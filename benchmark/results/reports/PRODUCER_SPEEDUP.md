@@ -169,14 +169,14 @@ expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load 
 Best-known after F6 (drift-immune alternating A/B medians, Mskmer/s): chr21 k31 ~**3.65** · cel k31 ~**3.72** · chr21 k63 ~**1.36** · cel k63 ~**1.38**.
 Cumulative vs baseline b8f2780: ~+38 % (k31) and ~+48–55 % (k63) — see the refreshed capstone table below.
 
-**Definitive end-to-end (baseline b8f2780 vs HEAD, back-to-back, same machine state, median-of-9):**
+**Definitive end-to-end (baseline b8f2780 vs HEAD @ F6, back-to-back, same machine state, median-of-9):**
 
 | combo | baseline | HEAD | speedup |
 |---|--:|--:|--:|
-| chr21 k=31    | 2.37 | 3.48 | **+46.8 %** |
-| celegans k=31 | 2.49 | 3.55 | **+42.6 %** |
-| chr21 k=63    | 0.87 | 1.29 | **+48.3 %** |
-| celegans k=63 | 0.81 | 1.23 | **+51.9 %** |
+| chr21 k=31    | 2.46 | 3.57 | **+45.1 %** |
+| celegans k=31 | 2.46 | 3.67 | **+49.2 %** |
+| chr21 k=63    | 0.87 | 1.33 | **+52.9 %** |
+| celegans k=63 | 0.81 | 1.29 | **+59.3 %** |
 
 The stream **digest is identical between baseline and HEAD on all four combos** (chr21 k31
 `0x58528ba97417f1f8`, cel k31 `0x0b1ad3dc47e17fa3`, chr21 k63 `0x7625eb9923ca0bf0`, cel k63
