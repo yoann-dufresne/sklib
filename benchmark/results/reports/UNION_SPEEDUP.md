@@ -73,7 +73,7 @@ Profile-first; the obvious per-column sort is already short-circuited (`sort_col
 fast-path) and `get_candidate_overlaps` already uses a sorted-array merge, so remaining wins are
 subtler. Each entry: mechanism, numbers (interleaved A/B unless noted), status, commit.
 
-### #1 — column-offset fast-path for `sort_column` — **COMMITTED** (`<hash>`)
+### #1 — column-offset fast-path for `sort_column` — **COMMITTED** (`7cf06f3`)
 
 **Mechanism.** The set-op re-compaction feeds `generate_sorted_list_from_enumeration` an enumeration
 that is already **column-grouped and per-column sorted+distinct** (that is exactly what
@@ -119,4 +119,4 @@ scan that hit k=63 (32 columns) hardest. Throughput at k=63 rose ~6 → ~9 Mkmer
 
 | # | idea (file) | mechanism | result (k31 / k63, J0.5) | status |
 |--:|---|---|---|---|
-| 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `<hash>` |
+| 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
