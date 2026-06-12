@@ -234,4 +234,48 @@ packing and the k-mer set are all unchanged. The whole `set_union` is still **87
 
 The three algorithmic wins (eliminate the per-column scan, replace the join sort+search with a hash
 join, skip the now-redundant chaining sort) captured the high-value monothread speedup; the
-re-compaction is now memory/compute-bound on irreducible work. Further gains look incremental.
+re-compaction is now memory/compute-bound on irreducible work. Further *union* gains look incremental.
+
+## Extending to intersection & diff (the merge phase)
+
+`intersection`/`difference` share `materialize_setop` with `union`, so #1–#3 already sped them up. But
+the harness was union-only; it now takes `--op union|intersection|diff` (same for `union_bench.sh` /
+`union_ab.sh` via `OP=`). The phase timer reveals a very different balance — union always materialises
+*everything* so it is recompaction-bound, but intersection/diff materialise a **subset**, so the
+**merge phase** (`merge_columns` + `build_column_csr`, which still scans *all* of A and B) dominates:
+
+| op (chr21 k31) | J0.1 | J0.5 | J0.9 |
+|---|--:|--:|--:|
+| intersection | merge **70 %** | merge 39 % | recompact 74 % |
+| diff | recompact 56 % | merge 56 % | merge **77 %** |
+| union | recompact 74 % | recompact 72 % | recompact 76 % |
+
+So intersection@low-J and diff@high-J are **merge-bound** — a hotspot untouched by #1–#3. `perf` put
+`build_column_csr` at **44 %** self (k31 diff J0.9): its pass-1 counting loop increments `off[c+1]` for
+every column a record spans, i.e. `O(total k-mers)` since A/B records are full super-k-mers.
+
+### #5 — difference-array `build_column_csr` pass-1 count — **COMMITTED** (`<hash5>`)
+
+**Mechanism.** A record valid at columns `[s,hi]` adds 1 to each per-column count — a **range update**,
+applied in `O(1)` as `+1` at `s`, `−1` at `hi+1`, then one prefix sum, instead of the `O(hi−s+1)` loop.
+Turns pass 1 from `O(total k-mers)` to `O(records)`; the scatter pass and the resulting `off`/`idx` are
+unchanged, so **byte-identical** for every set op (`build_column_csr` in `SetOperations.hpp`). Shared,
+so it speeds up **all** setops (and the `*_size` counts).
+
+**Correctness.** Byte-identical (sha256) for union/intersection/diff at k31 & k63 (8 configs incl. the
+merge-bound extremes); 213/213 unit tests; KMC cross-check PASS.
+
+**Result (interleaved A/B vs #1–#3, chr21):**
+
+| op / config | ref s | idea#5 s | delta | band |
+|---|--:|--:|--:|--:|
+| diff k31 J0.9 (merge 77 %) | 0.330 | 0.267 | **−19.1 %** | ±0.60 % |
+| diff k63 J0.9 | 0.372 | 0.330 | **−11.1 %** | ±1.33 % |
+| intersection k31 J0.1 (merge 70 %) | 0.889 | 0.802 | **−9.8 %** | ±0.61 % |
+| intersection k63 J0.1 | 1.000 | 0.948 | **−5.2 %** | ±0.68 % |
+| union k31 J0.5 | 2.215 | 2.080 | **−6.1 %** | ±0.36 % |
+| union k63 J0.5 | 2.433 | 2.413 | −0.8 % | ±0.32 % |
+
+Wins every op/width, no regressions — biggest on the merge-bound cases; even union gains (its merge is
+~20–25 %). The merge phase's other half (`merge_columns`' `kmer_compare`: a masked wide-`pair` compare,
+~60 % self at k63 intersection) is the next frontier but looks largely irreducible.

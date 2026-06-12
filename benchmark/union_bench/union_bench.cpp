@@ -33,8 +33,25 @@ namespace {
 struct Args {
     std::string a, b, ref, out {"/dev/shm/union_bench_out.sskm"};
     std::string mode {"bench"};
+    std::string op {"union"};   // union | intersection | diff — all share materialize_setop
     unsigned warmup {2}, reps {9};
 };
+
+// The set operation under test + its cardinality oracle (a different sink path), selected by --op.
+template<typename store>
+uint64_t run_setop(const std::string& op, km::sortedlist::BucketedSkmerListReader<store>& A,
+                   km::sortedlist::BucketedSkmerListReader<store>& B, const std::string& out) {
+    if (op == "intersection") return km::sortedlist::intersection<store>(A, B, out, /*no_compact*/ false, 1);
+    if (op == "diff")         return km::sortedlist::difference<store>(A, B, out, false, 1);
+    return km::sortedlist::set_union<store>(A, B, out, false, 1);
+}
+template<typename store>
+uint64_t setop_size(const std::string& op, km::sortedlist::BucketedSkmerListReader<store>& A,
+                    km::sortedlist::BucketedSkmerListReader<store>& B) {
+    if (op == "intersection") return km::sortedlist::intersection_size<store>(A, B, 1);
+    if (op == "diff")         return km::sortedlist::diff_size<store>(A, B, 1);
+    return km::sortedlist::union_size<store>(A, B, 1);
+}
 
 [[noreturn]] void usage(const char* prog, const std::string& msg) {
     std::cerr << msg << "\nusage: " << prog
@@ -56,11 +73,13 @@ Args parse(int argc, char** argv) {
         else if (k == "--ref")    a.ref = need("--ref");
         else if (k == "--out")    a.out = need("--out");
         else if (k == "--mode")   a.mode = need("--mode");
+        else if (k == "--op")     a.op = need("--op");
         else if (k == "--warmup") a.warmup = static_cast<unsigned>(std::stoul(need("--warmup")));
         else if (k == "--reps")   a.reps = static_cast<unsigned>(std::stoul(need("--reps")));
         else usage(argv[0], "unknown argument: " + k);
     }
     if (a.a.empty() || a.b.empty()) usage(argv[0], "--a and --b are required");
+    if (a.op != "union" && a.op != "intersection" && a.op != "diff") usage(argv[0], "--op must be union|intersection|diff");
     if (a.mode != "bench" && a.mode != "verify") usage(argv[0], "--mode must be bench or verify");
     if (a.mode == "verify" && a.ref.empty()) usage(argv[0], "--mode verify requires --ref");
     if (a.mode == "bench" && a.reps == 0) usage(argv[0], "--reps must be >= 1");
@@ -96,13 +115,13 @@ int run_bench(const Args& a) {
 
     uint64_t kmers {0};
     for (unsigned w {0}; w < a.warmup; ++w)
-        kmers = km::sortedlist::set_union<store>(A, B, a.out, /*no_compact*/ false, /*nthreads*/ 1);
+        kmers = run_setop<store>(a.op, A, B, a.out);
 
     std::vector<double> times;
     times.reserve(a.reps);
     for (unsigned r {0}; r < a.reps; ++r) {
         const auto t0 {std::chrono::steady_clock::now()};
-        kmers = km::sortedlist::set_union<store>(A, B, a.out, false, 1);
+        kmers = run_setop<store>(a.op, A, B, a.out);
         const auto t1 {std::chrono::steady_clock::now()};
         times.push_back(std::chrono::duration<double>(t1 - t0).count());
     }
@@ -130,9 +149,9 @@ int run_verify(const Args& a) {
 
     // Reference cardinality, computed via the CountSink path (set_sizes) — a different sink than the
     // CollectSink materialization, so a count==count match is a semi-independent corroboration.
-    const uint64_t expected {km::sortedlist::union_size<store>(A, B, 1)};
+    const uint64_t expected {setop_size<store>(a.op, A, B)};
 
-    const uint64_t kmers {km::sortedlist::set_union<store>(A, B, a.out, /*no_compact*/ false, 1)};
+    const uint64_t kmers {run_setop<store>(a.op, A, B, a.out)};
     const uint64_t records_opt {km::sortedlist::read_list_header(a.out).count};
     const uint64_t records_ref {km::sortedlist::read_list_header(a.ref).count};
 

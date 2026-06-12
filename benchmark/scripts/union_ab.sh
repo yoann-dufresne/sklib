@@ -10,11 +10,11 @@
 # binA = reference (best known), binB = candidate. Positive delta% => candidate SLOWER (regression).
 set -uo pipefail
 binA="$1"; binB="$2"; A="$3"; B="$4"; ROUNDS="${5:-15}"; LABEL="${6:-ab}"
-PIN="${PIN:-5}"
+PIN="${PIN:-5}"; OP="${OP:-union}"
 PINCMD=(); command -v taskset >/dev/null && PINCMD=(taskset -c "$PIN")
 
 sample() {  # bin -> one timed median (reps=1, no warmup) in seconds on stdout
-    "${PINCMD[@]}" "$1" --a "$A" --b "$B" --mode bench --warmup 0 --reps 1 --out "/dev/shm/ab_$$.sskm" 2>/dev/null \
+    "${PINCMD[@]}" "$1" --a "$A" --b "$B" --op "$OP" --mode bench --warmup 0 --reps 1 --out "/dev/shm/ab_$$.sskm" 2>/dev/null \
         | awk -F'\t' '$1=="RESULT"{for(i=2;i<=NF;i++){split($i,a,"=");if(a[1]=="median_s")print a[2]}}'
 }
 median() { printf '%s\n' "$@" | sort -g | awk '{x[NR]=$1} END{print (NR%2)?x[(NR+1)/2]:(x[NR/2]+x[NR/2+1])/2}'; }

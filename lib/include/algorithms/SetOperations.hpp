@@ -101,13 +101,22 @@ template<typename store>
 inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
                              const km::Skmer<store>* L, size_t n, uint64_t ncols,
                              std::vector<uint32_t>& idx, std::vector<uint32_t>& off) {
-    off.assign(ncols + 1, 0);
+    // Pass 1 — per-column counts via a difference array. A record valid at columns [s, hi] contributes
+    // +1 to each; instead of the old per-column loop (O(hi-s+1), i.e. O(total k-mers) since A/B records
+    // are full super-k-mers spanning many columns) apply it in O(1) as +1 at s and -1 at hi+1, then a
+    // single prefix sum. The resulting CSR offsets `off` (and thus `idx`) are byte-identical.
+    thread_local std::vector<int64_t> col_diff;
+    col_diff.assign(ncols + 1, 0);
     for (size_t i {0}; i < n; ++i) {
         const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
         if (e < s) continue;                       // no valid k-mer (unsigned: a wrapped s>e is skipped)
-        for (uint64_t c {s}; c <= e && c < ncols; ++c) ++off[c + 1];
+        const uint64_t hi {e < ncols ? e : ncols - 1};
+        ++col_diff[s];
+        --col_diff[hi + 1];
     }
-    for (uint64_t c {0}; c < ncols; ++c) off[c + 1] += off[c];
+    off.assign(ncols + 1, 0);
+    int64_t running {0};
+    for (uint64_t c {0}; c < ncols; ++c) { running += col_diff[c]; off[c + 1] = off[c] + static_cast<uint32_t>(running); }
     idx.resize(off[ncols]);
     std::vector<uint32_t> cur(off.begin(), off.end() - 1);
     for (size_t i {0}; i < n; ++i) {

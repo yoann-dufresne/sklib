@@ -33,6 +33,7 @@ WARMUP="${WARMUP:-2}"
 REPS="${REPS:-9}"
 PIN="${PIN:-5}"
 TAG="${TAG:-cur}"
+OP="${OP:-union}"                 # union | intersection | diff (all share materialize_setop)
 OUT_TSV="${OUT_TSV:-$ROOT/benchmark/results/union_bench/last.tsv}"
 MODE="${1:-all}"
 
@@ -56,7 +57,7 @@ prepare() {
     A="$S/$ds.k$k.A.sskm"
     mutfa="$S/$ds.k$k.J$J.mut.fa"
     Bf="$S/$ds.k$k.J$J.B.sskm"
-    REF="$S/$ds.k$k.J$J.union.ref.sskm"
+    REF="$S/$ds.k$k.J$J.$OP.ref.sskm"
     [[ -s "$A" ]]  || { log "construct A  $ds k=$k m=$m"; "$SSKM" construct -f "$fa" -k "$k" -m "$m" -o "$A" -t "$(nproc)" 2>/dev/null || return 1; }
     if [[ ! -s "$Bf" ]]; then
         rate="$(rate_of "$k" "$J")"
@@ -65,7 +66,7 @@ prepare() {
         "$SSKM" construct -f "$mutfa" -k "$k" -m "$m" -o "$Bf" -t "$(nproc)" 2>/dev/null || return 1
     fi
     # Frozen reference: created once, never regenerated (set is optimization-invariant).
-    [[ -s "$REF" ]] || { log "FREEZE O_ref (sskm union -t1)  $ds k=$k J=$J"; "$SSKM" setop -a "$A" -b "$Bf" --op union -o "$REF" -t 1 2>/dev/null || return 1; }
+    [[ -s "$REF" ]] || { log "FREEZE O_ref (sskm $OP -t1)  $ds k=$k J=$J"; "$SSKM" setop -a "$A" -b "$Bf" --op "$OP" -o "$REF" -t 1 2>/dev/null || return 1; }
     echo "$A" "$Bf" "$REF"
 }
 
@@ -80,13 +81,13 @@ for ds in $DATASETS; do
         read -r A Bf REF < <(prepare "$ds" "$k" "$J") || { log "prepare failed $ds k=$k J=$J"; fail=1; continue; }
         verir="-"
         if [[ "$MODE" == verify || "$MODE" == all ]]; then
-            vline="$("${PINCMD[@]}" "$HARNESS" --a "$A" --b "$Bf" --mode verify --ref "$REF" --out "$SHM/ub_v.sskm" 2>/dev/null)"
+            vline="$("${PINCMD[@]}" "$HARNESS" --a "$A" --b "$Bf" --op "$OP" --mode verify --ref "$REF" --out "$SHM/ub_v.sskm" 2>/dev/null)"
             verir="$(awk -F'\t' '$1=="VERIFY"{print $2}' <<<"$vline")"
             [[ "$verir" == PASS ]] || { log "VERIFY $verir  $ds k=$k J=$J :: $vline"; fail=1; }
         fi
         med="-"; mn="-"; sd="-"; mad="-"; mk="-"; rec="-"; store="-"
         if [[ "$MODE" == bench || "$MODE" == all ]]; then
-            rline="$("${PINCMD[@]}" "$HARNESS" --a "$A" --b "$Bf" --mode bench --warmup "$WARMUP" --reps "$REPS" --out "$SHM/ub_b.sskm" 2>/dev/null)"
+            rline="$("${PINCMD[@]}" "$HARNESS" --a "$A" --b "$Bf" --op "$OP" --mode bench --warmup "$WARMUP" --reps "$REPS" --out "$SHM/ub_b.sskm" 2>/dev/null)"
             eval "$(awk -F'\t' '$1=="RESULT"{for(i=2;i<=NF;i++){split($i,a,"=");printf "%s=%s\n",a[1],a[2]}}' <<<"$rline")"
             med="${median_s:--}"; mn="${min_s:--}"; sd="${stddev_s:--}"; mad="${mad_s:--}"
             mk="${mkmer_s:--}"; rec="${records:--}"; store="${store:--}"
