@@ -8,6 +8,7 @@
 #include <atomic>
 #include <mutex>
 #include <memory>
+#include <numeric>
 #include <cassert>
 
 
@@ -414,7 +415,8 @@ class SortedVirtualSkmerList {
     // for the set-operation re-compaction (correctness = represented k-mer set). Default false keeps
     // construction's exact, test-pinned behaviour.
     void generate_sorted_list_from_enumeration(std::vector<Skmer<kuint> > const & skmer_enumeration,
-                                               bool greedy_chain = false) {
+                                               bool greedy_chain = false,
+                                               const std::vector<uint64_t>* col_offsets = nullptr) {
         // initialize columns ids, sliding window of column ids, vectors to store overlaps
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
@@ -422,8 +424,26 @@ class SortedVirtualSkmerList {
         std::vector<overlap> candidate_overlaps;
         std::vector<overlap> valid_overlaps;
 
+        // Per-column valid-id list. The generic path (sort_column) re-scans the WHOLE enumeration for
+        // each column (has_valid_kmer x n, the dominant recompaction cost — ~6% at k=31, ~22% at
+        // k=63). When the caller already knows the column layout — the set-op re-compaction feeds a
+        // column-grouped, per-column sorted+distinct enumeration and passes its prefix-sum offsets —
+        // column `pos`'s ids are exactly the contiguous range [off[pos], off[pos+1]); the scan,
+        // is_sorted and unique passes are all redundant and skipped. Produces the SAME ids sort_column
+        // would for that input (ascending index == ascending k-mer, no duplicates), so the result is
+        // byte-identical.
+        auto column_ids = [&](uint64_t pos) -> std::vector<uint64_t> {
+            if (col_offsets) {
+                const uint64_t lo {(*col_offsets)[pos]}, hi {(*col_offsets)[pos + 1]};
+                std::vector<uint64_t> ids(hi - lo);
+                std::iota(ids.begin(), ids.end(), lo);
+                return ids;
+            }
+            return sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), pos);
+        };
+
         // 0 - sort the column ids based on kmers of the first column
-        window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+        window.slide(column_ids(right_column_position));
         // cout << "order col " << 0 << "\t";
         // for (const auto& x : window.right())
         //     cout << x << ",";
@@ -449,7 +469,7 @@ class SortedVirtualSkmerList {
         // while there are columns, compute the next column, compute valid overlaps, merge them into VirtualSkmer
         while(right_column_position <= m_manip.k - m_manip.m ){
             // 1 - sort the column ids based on kmers
-            window.slide(sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), right_column_position));
+            window.slide(column_ids(right_column_position));
             // cout << "order col " << right_column_position << "\t";
             // for (const auto& x : window.right())
             //     cout << x << ",";

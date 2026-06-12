@@ -4,6 +4,7 @@ build-profile/
 build-bench/
 build-timing/
 build-relg/
+build-union/
 .vscode/
 CLAUDE.md
 thirdparty/FlameGraph/
@@ -11,10 +12,17 @@ thirdparty/FlameGraph/
 # Benchmark harness: generated outputs, genome cache, competitor builds, venv.
 # Committed under benchmark/results/: reports/ + reference/ (curated snapshots).
 benchmark/results/latest/
+benchmark/results/union_bench/
 benchmark/data/genomes/
 benchmark/data/tools_src/
 benchmark/scripts/.venv/
 __pycache__/
+
+# Cluster (Zeus) benchmark overlay: rsynced-back results/logs + driver-generated runtime files.
+benchmark_cluster/results/
+benchmark_cluster/logs/
+benchmark_cluster/run.env
+benchmark_cluster/.jobid
 
 # Local data fixtures (data/small.fa is tracked)
 data/ecoli.fa

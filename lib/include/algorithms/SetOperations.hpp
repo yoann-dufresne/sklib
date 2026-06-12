@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <iostream>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -41,6 +44,38 @@
 
 namespace km {
 namespace sortedlist {
+
+// --- optional env-gated phase timing for the mono-thread set-op profile -------------------------
+// Attributes WALL time (including memory/I-O stalls, which perf's instruction sampling misses) to the
+// four per-bucket phases: read / merge+collect / recompact / write. Enabled only when the env var
+// SKLIB_UNION_PHASE_TIMING is set to a non-empty, non-"0" value AND nthreads==1 (the profiling mode);
+// the gate is a single cached read so the timed path pays nothing when it is off. Meaningful only at
+// -t1: the accumulators are plain doubles written from the inline (single-thread) bucket loop.
+namespace detail {
+inline bool setop_phase_timing_enabled() {
+    static const bool on = [] {
+        const char* e = std::getenv("SKLIB_UNION_PHASE_TIMING");
+        return e && e[0] && !(e[0] == '0' && e[1] == '\0');
+    }();
+    return on;
+}
+struct SetopPhaseTimers {
+    double read {0}, merge {0}, recompact {0}, write {0};
+    using clock = std::chrono::steady_clock;
+    static double secs(clock::time_point a, clock::time_point b) {
+        return std::chrono::duration<double>(b - a).count();
+    }
+    void report(const char* tag) const {
+        const double tot {read + merge + recompact + write};
+        const double d {tot > 0 ? tot : 1.0};
+        std::cerr << "[setop-phase " << tag << "] total=" << tot << "s"
+                  << "  read=" << read << "s (" << 100.0 * read / d << "%)"
+                  << "  merge+collect=" << merge << "s (" << 100.0 * merge / d << "%)"
+                  << "  recompact=" << recompact << "s (" << 100.0 * recompact / d << "%)"
+                  << "  write=" << write << "s (" << 100.0 * write / d << "%)\n";
+    }
+};
+} // namespace detail
 
 // Cardinalities of the three disjoint relations, computed in one merge pass.
 struct SetSizes {
@@ -124,15 +159,19 @@ struct CountSink {
 
 // Sink that materializes the selected relation(s): each kept k-mer becomes a single-k-mer skmer
 // (get_skmer_of_kmer) appended to `out`. The manipulator is held by non-const reference because
-// get_skmer_of_kmer is non-const.
+// get_skmer_of_kmer is non-const. `col_count` (optional): per-column count of kept k-mers, filled as
+// they are emitted (merge_columns visits columns in order, k-mers ascending within each), so its
+// prefix sum gives the contiguous per-column blocks of `out` — handed to the re-compaction so it can
+// skip re-discovering the column layout (see generate_sorted_list_from_enumeration's col_offsets).
 template<typename store>
 struct CollectSink {
     km::SkmerManipulator<store>& manip;
     std::vector<km::Skmer<store>>& out;
     bool keep_inter, keep_only_a, keep_only_b;
-    void only_a(const km::Skmer<store>& r, uint64_t c) { if (keep_only_a) out.push_back(manip.get_skmer_of_kmer(r, c)); }
-    void only_b(const km::Skmer<store>& r, uint64_t c) { if (keep_only_b) out.push_back(manip.get_skmer_of_kmer(r, c)); }
-    void both  (const km::Skmer<store>& r, uint64_t c) { if (keep_inter)  out.push_back(manip.get_skmer_of_kmer(r, c)); }
+    std::vector<uint64_t>* col_count {nullptr};
+    void only_a(const km::Skmer<store>& r, uint64_t c) { if (keep_only_a) { out.push_back(manip.get_skmer_of_kmer(r, c)); if (col_count) ++(*col_count)[c]; } }
+    void only_b(const km::Skmer<store>& r, uint64_t c) { if (keep_only_b) { out.push_back(manip.get_skmer_of_kmer(r, c)); if (col_count) ++(*col_count)[c]; } }
+    void both  (const km::Skmer<store>& r, uint64_t c) { if (keep_inter)  { out.push_back(manip.get_skmer_of_kmer(r, c)); if (col_count) ++(*col_count)[c]; } }
 };
 
 // Read bucket `b`'s payload from `R` into `dst` through a caller-owned file handle `fh`. This is the
@@ -325,6 +364,11 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     std::vector<std::unique_ptr<SortedVirtualSkmerList<store>>> subs;
     std::vector<std::vector<km::Skmer<store>>> collected(nthr), bufA(nthr), bufB(nthr);
     std::vector<uint64_t> kmers(nthr, 0);   // result k-mers per worker (== the matching _size, summed)
+    // Per-worker scratch for the column-layout fast-path: col_count[tid] holds the per-column kept
+    // count (filled by the sink), prefix-summed into col_off[tid] and handed to the re-compaction so
+    // it skips re-scanning the enumeration for each column. k-m+1 columns.
+    const uint64_t kmm {k - m};
+    std::vector<std::vector<uint64_t>> col_count(nthr), col_off(nthr);
     std::vector<std::ifstream> fhA, fhB;
     manips.reserve(nthr); subs.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
     for (unsigned t {0}; t < nthr; ++t) {
@@ -345,17 +389,25 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     std::atomic<bool> failed {false};
     std::exception_ptr eptr;
     std::mutex err_mtx;
+    detail::SetopPhaseTimers tmr;
+    const bool timing {nthr == 1 && detail::setop_phase_timing_enabled()};
+    using phase_clock = detail::SetopPhaseTimers::clock;
     parallel_for_dynamic(nb, nthr, [&](uint64_t i, unsigned tid) {
         if (failed.load(std::memory_order_relaxed)) return;
         try {
+            const phase_clock::time_point t0 {timing ? phase_clock::now() : phase_clock::time_point{}};
             read_bucket_into<store>(A, fhA[tid], i, bufA[tid]);
             read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
             std::vector<km::Skmer<store>>& col {collected[tid]};
             col.clear();
-            CollectSink<store> sink{*manips[tid], col, keep_inter, keep_only_a, keep_only_b};
+            std::vector<uint64_t>& cc {col_count[tid]};
+            cc.assign(kmm + 1, 0);
+            CollectSink<store> sink{*manips[tid], col, keep_inter, keep_only_a, keep_only_b, &cc};
+            const phase_clock::time_point t1 {timing ? phase_clock::now() : t0};
             merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
                                  bufB[tid].data(), bufB[tid].size(), sink);
             kmers[tid] += col.size();
+            const phase_clock::time_point t2 {timing ? phase_clock::now() : t0};
 
             // The writer must own the payload (it may buffer it out of order until earlier buckets
             // drain, past this worker's next bucket), so move it out rather than copy: col and the
@@ -368,11 +420,25 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
                     std::sort(col.begin(), col.end());
                     payload = std::move(col);       // col is re-cleared at the top of the next bucket
                 } else {
-                    subs[tid]->generate_sorted_list_from_enumeration(col, /*greedy_chain*/ true);
+                    // Prefix-sum the per-column kept counts into contiguous block offsets so the
+                    // re-compaction reads each column's ids directly instead of re-scanning col.
+                    std::vector<uint64_t>& bo {col_off[tid]};
+                    bo.resize(kmm + 2);
+                    bo[0] = 0;
+                    for (uint64_t c {0}; c <= kmm; ++c) bo[c + 1] = bo[c] + cc[c];
+                    subs[tid]->generate_sorted_list_from_enumeration(col, /*greedy_chain*/ true, &bo);
                     payload = subs[tid]->take_list();
                 }
             }
+            const phase_clock::time_point t3 {timing ? phase_clock::now() : t0};
             writer.submit(i, std::move(payload));   // empty payload still advances the write frontier
+            if (timing) {
+                const phase_clock::time_point t4 {phase_clock::now()};
+                tmr.read      += detail::SetopPhaseTimers::secs(t0, t1);
+                tmr.merge     += detail::SetopPhaseTimers::secs(t1, t2);
+                tmr.recompact += detail::SetopPhaseTimers::secs(t2, t3);
+                tmr.write     += detail::SetopPhaseTimers::secs(t3, t4);
+            }
         } catch (...) {
             {
                 std::lock_guard<std::mutex> lk(err_mtx);
@@ -383,6 +449,7 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
         }
     });
     if (eptr) std::rethrow_exception(eptr);
+    if (timing) tmr.report("materialize");
 
     VirtualSkmerSerializer<store>::patch_directory(out, dir);
     VirtualSkmerSerializer<store>::patch_count(out, writer.total_records);

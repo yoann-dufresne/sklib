@@ -11,6 +11,7 @@ option(PORTABLE_BUILD "Generic x86_64 build" OFF)
 option(WITH_APP "Compile CLI applications" ON)
 option(WITH_TESTS "Compile tests" ON)
 option(STATIC_BUILD "Static build" OFF)
+option(WITH_UNION_BENCH "Compile the set_union mono-thread benchmark harness" OFF)
 
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE="Release")
@@ -77,6 +78,10 @@ add_subdirectory(lib)
 add_subdirectory(app)
 # add_subdirectory(benchmark)
 add_subdirectory(thirdparty)
+
+if (WITH_UNION_BENCH)
+  add_subdirectory(benchmark/union_bench)
+endif()
 
 if (WITH_TESTS)
   enable_testing()
