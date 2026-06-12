@@ -164,9 +164,10 @@ expensive — with `operator++` ~18 %, `add_nucleotide` ~16 %. At k=31 the load 
 | E2 | `update_skmer_left/right_size` (`Skmerator.hpp`): **branchless** (cmov) instead of an `if (orientation==forward_c)` store. Called every base in `operator++`'s common branch with a data-dependent, ~unpredictable orientation -- the misprediction was the single biggest per-base stall (it is much of why `operator++` showed ~44 % self at k=31). Select the prefix/suffix field without branching | 2.87→**3.67** **+27.9 %** | 2.85→**3.61** **+26.7 %** | 1.05→1.14 **+8.6 %** | 0.96→1.08 **+12.5 %** | **committed** — digest identical, ctest green |
 | F4 | `minimizer_is_ambiguous`: run the m-mer roll in **uint64** when 2m≤64 — the central/rc/rolling m-mer is ≤2m=62 bits but used `__uint128` ops because `kuint` is wide; factor the machinery into a width-templated `mmer_repeats<mword>` and dispatch to uint64 (64-bit compares+shifts instead of 128-bit). Pure k63 win (k≤31 already uint64, `if constexpr` discards the branch) | (unchanged) | (unchanged) | 1.14→**1.28** **+12.3 %** | 1.08→**1.18** **+9.3 %** | **committed** — digest identical, ctest green |
 | F5 | `build_skmer_from_nucleotides`: scalar per-word packing — replace `slot_shift` + a full-`pair` shift per nucleotide with two branch-free regimes writing single 2-bit values into the right pair word (like the decode/A1). It is the inner loop of the ambiguous-path k-mer reframing (`choose_kmer_minimizer`), which F4 left as the k63 #1 (~28 % self). Mostly k63 (ambiguous path rare at k31) | 3.63→3.61 ~flat | 3.64→3.66 ~flat | 1.28→**1.33** **+3.9 %** | 1.18→**1.27** **+7.6 %** | **committed** — digest identical, ctest green |
+| F6 | **ambiguous-path memoization** (`choose_kmer_minimizer`/`canonical_pieces`): the per-framing rank `phi(minimizer(canonicalize(framing)))` equals `phi(min(M,RC(M)))` of the m-mer alone (the minimizer is the *top* interleaved bits, so window flanks never change it) → memoize it once per absolute position (`mmer_canonical_rank`) instead of rebuilding+canonicalizing all k-m+1 framings per k-mer. Then build full framings only for the *minimal-rank* candidates (a non-minimal position can't win) for the centrality/canonical-value tie-break + orientation | ~+2–4 % | ~+2 % | **+3–4 %** | **+8–11 %** | **committed** — digest identical, ctest (strand-invariance) green; drift-immune alternating A/B, B faster every round |
 
-Best-known after F5 (median-of-9, Mskmer/s): chr21 k31 **3.63** · cel k31 **3.66** · chr21 k63 **1.33** · cel k63 **1.27**.
-Cumulative vs baseline b8f2780: chr21 k31 **+37.5 %**, cel k31 **+38.1 %**, chr21 k63 **+44.6 %**, cel k63 **+47.7 %**.
+Best-known after F6 (drift-immune alternating A/B medians, Mskmer/s): chr21 k31 ~**3.65** · cel k31 ~**3.72** · chr21 k63 ~**1.36** · cel k63 ~**1.38**.
+Cumulative vs baseline b8f2780: ~+38 % (k31) and ~+48–55 % (k63) — see the refreshed capstone table below.
 
 **Definitive end-to-end (baseline b8f2780 vs HEAD, back-to-back, same machine state, median-of-9):**
 
@@ -267,10 +268,10 @@ shifts), and why removing already-predicted branches (B11, E3, and likely a deco
 3. **Decode split** in `minimizer_is_ambiguous` / `decode_to_nucleotides`: replace the per-element
    `b < W ? w_lo : w_hi` select with word-boundary-split sub-loops. Pure instruction trim; expected
    small (the branch is well-predicted) but it is throughput, not mispredict — worth a measured try.
-4. **Ambiguous-path frequency** at k=63: `choose_kmer_minimizer` rebuilds k-m+1 framings per k-mer and
-   canonicalizes each. Adjacent k-mers share most framings — memoizing across the super-k-mer could
-   cut the O(nk·(k-m)) rebuilds. Higher value at k=63 but correctness-critical (strand-invariance,
-   issue #7) — treat carefully.
+4. ~~**Ambiguous-path memoization**~~ → **done as F6** (+3–4 % chr21 k63, +8–11 % celegans k63,
+   +2–4 % k31): the per-position canonical-minimizer rank is window-independent, so it is computed once
+   per position and full framings are built only for minimal-rank candidates. Remaining headroom in the
+   ambiguous path is small (the rank table + the few tie-break builds); not pursued further.
 5. **SIMD / wider** the decode+roll, or `add_nucleotide` across the 4 buffers — speculative, portable
    only via compiler auto-vec; unmeasured.
 

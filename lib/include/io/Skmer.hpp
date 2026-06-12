@@ -1076,47 +1076,59 @@ public:
         return mmer_repeats<kuint>(S, L, pref);
     }
 
+    /** Canonical-minimizer rank of the m-mer at absolute position `p` in S: phi of the smaller of the
+     * m-mer's two interleaved orientations. The minimizer occupies the top interleaved bits, so the
+     * canonical orientation's minimizer (and thus this rank) is decided by the m-mer alone, independent
+     * of any surrounding k-mer window's flanks -- identical to the rank the full-framing path computes
+     * (phi(minimizer(canonicalize(framing)))), but a function of the m-mer only, so it memoizes per
+     * position. Uses a flank-less framing (prefix=suffix=0) so only the central m nucleotides matter. **/
+    kuint mmer_canonical_rank(const std::vector<kuint>& S, uint64_t p) const
+    {
+        Skmer<kuint> f {build_skmer_from_nucleotides(S, p, p + m - 1, p)};
+        canonicalize(f);
+        return phi(minimizer(f));
+    }
+
     /** Strand-invariant minimizer occurrence for the k-mer S[start..start+k-1]: (1) minimal
      * phi(canonical m-mer) rank; (2) tie -> most central position (|2j-(k-m)| minimal, mirror-
      * symmetric); (3) tie (mirror pair) -> smaller full canonical interleaved value. Writes the
-     * absolute occurrence index and the canonical orientation of that frame. **/
+     * absolute occurrence index and the canonical orientation of that frame. `rank_table[p]` is the
+     * memoized per-position rank (mmer_canonical_rank); only the minimal-rank candidates need a full
+     * build+canonicalize (a non-minimal position can never win the selection), so the per-(k-mer,
+     * candidate) full builds drop from k-m+1 to the few repeated-minimizer occurrences. **/
     void choose_kmer_minimizer(const std::vector<kuint>& S, uint64_t start,
+                               const std::vector<kuint>& rank_table,
                                uint64_t& occ_abs, orientation_t& orient) const
     {
         const uint64_t span {k - m};                                   // last minimizer position in the k-mer
-        // Build every candidate framing once. The rank is phi(canonical central m-mer) read with
-        // the SAME interleaved packing as the sliding window's minimizer_rank (via minimizer() on
-        // the canonicalized piece), so the ambiguous path and the fast path select identically — a
-        // non-ambiguous k-mer then gets the same frame whichever path handles it.
-        std::vector<Skmer<kuint>> fwd(span + 1);
-        std::vector<Skmer<kuint>> canon(span + 1);
-        std::vector<kuint> rank(span + 1);
-        for (uint64_t j {0}; j <= span; j++)
-        {
-            fwd[j] = build_skmer_from_nucleotides(S, start, start + k - 1, start + j);
-            canon[j] = fwd[j];
-            canonicalize(canon[j]);
-            rank[j] = phi(minimizer(canon[j]));
-        }
-        kuint best_rank {rank[0]};
-        for (uint64_t j {1}; j <= span; j++) best_rank = std::min(best_rank, rank[j]);
-        // (2) most central among minimal-rank positions, then (3) smaller full canonical value.
+        kuint best_rank {rank_table[start]};
+        for (uint64_t j {1}; j <= span; j++) best_rank = std::min(best_rank, rank_table[start + j]);
+        // (2) most central among minimal-rank positions, then (3) smaller full canonical value. Build
+        // the full framing only for minimal-rank positions; the canonical value (with flanks) and the
+        // orientation are window-dependent, so those still need the build -- but only here, rarely.
         uint64_t best_j {span + 1};
         uint64_t best_central {~uint64_t{0}};
+        Skmer<kuint> best_canon {};
+        Skmer<kuint> best_fwd {};
         for (uint64_t j {0}; j <= span; j++)
         {
-            if (rank[j] != best_rank) continue;
+            if (rank_table[start + j] != best_rank) continue;
             const int64_t sd {static_cast<int64_t>(2 * j) - static_cast<int64_t>(span)};
             const uint64_t d {static_cast<uint64_t>(sd < 0 ? -sd : sd)};
+            Skmer<kuint> f {build_skmer_from_nucleotides(S, start, start + k - 1, start + j)};
+            Skmer<kuint> c {f};
+            canonicalize(c);
             if (best_j > span || d < best_central
-                || (d == best_central && canon[j].m_pair < canon[best_j].m_pair))
+                || (d == best_central && c.m_pair < best_canon.m_pair))
             {
                 best_central = d;
                 best_j = j;
+                best_canon = c;
+                best_fwd = f;
             }
         }
         occ_abs = start + best_j;
-        orient = (reverse_complement(fwd[best_j]).m_pair < fwd[best_j].m_pair) ? reverse_c : forward_c;
+        orient = (reverse_complement(best_fwd).m_pair < best_fwd.m_pair) ? reverse_c : forward_c;
     }
 
     /** Re-derive the strand-invariant canonical frame of every k-mer in `sk`, then regroup
@@ -1129,12 +1141,18 @@ public:
         const uint64_t L {S.size()};
         if (L < k) return;
         const uint64_t nk {L - k + 1};
+        // Memoize the per-position canonical-minimizer rank once (it depends only on the m-mer at each
+        // position, not on the k-mer window), so choose_kmer_minimizer reads it instead of rebuilding +
+        // canonicalizing a full framing for every (k-mer, candidate) pair.
+        const uint64_t npos {L - m + 1};
+        std::vector<kuint> rank_table(npos);
+        for (uint64_t p {0}; p < npos; p++) rank_table[p] = mmer_canonical_rank(S, p);
         std::vector<uint64_t> occ(nk);
         std::vector<uint8_t> orient(nk);                               // not vector<bool> (proxy refs)
         for (uint64_t i {0}; i < nk; i++)
         {
             orientation_t o;
-            choose_kmer_minimizer(S, i, occ[i], o);
+            choose_kmer_minimizer(S, i, rank_table, occ[i], o);
             orient[i] = static_cast<uint8_t>(o);
         }
         uint64_t g0 {0};
