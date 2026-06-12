@@ -8,6 +8,9 @@
 #include <cstring>
 #include <stdexcept>
 #include <unistd.h>
+#include <chrono>   // SKLIB_TIMING: env-gated phase-1/phase-2 split
+#include <cstdio>
+#include <cstdlib>
 
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
@@ -253,6 +256,11 @@ template<typename gen, typename store = gen>
 void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits = 0) {
     namespace fs = std::filesystem;
 
+    // SKLIB_TIMING: env-gated phase split. Only a handful of steady_clock::now() calls (never
+    // per-iteration), so it is free when unset and non-distorting when set; no behaviour change.
+    const bool sklib_timing = std::getenv("SKLIB_TIMING") != nullptr;
+    using sklib_clk = std::chrono::steady_clock;
+
     const uint64_t k = params.k;
     const uint64_t m = params.m;
     const uint64_t b = quotient_bits;
@@ -302,6 +310,7 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
     // Kept in its own scope so the writer's per-bucket buffers and the sequence
     // reader are fully released before phase 2 allocates, bounding the peak to
     // max(phase-1 buffers, largest bucket) rather than their sum.
+    const auto sklib_t_p1_begin = sklib_clk::now();
     std::vector<uint64_t> counts(n_buckets, 0);
     {
         km::sortedlist::SkmerBucketWriter<gen> writer{tmp_dir, n_buckets, writer_budget};
@@ -323,6 +332,7 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         writer.close();
         for (uint64_t id{0}; id < n_buckets; id++) counts[id] = writer.bucket_count(id);
     }
+    const auto sklib_t_p1_end = sklib_clk::now();
 
     // ---- Phase 2: build + append each bucket's sorted sub-list ----
     {
@@ -369,6 +379,22 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         if (out.fail())
             throw std::runtime_error("Error patching header/directory in file: " + output_path);
         out.close();
+    }
+
+    if (sklib_timing) {
+        const auto sklib_t_end = sklib_clk::now();
+        uint64_t sklib_nonempty = 0;
+        for (uint64_t id{0}; id < n_buckets; id++) if (counts[id] > 0) ++sklib_nonempty;
+        const double sklib_p1 =
+            std::chrono::duration<double>(sklib_t_p1_end - sklib_t_p1_begin).count();
+        const double sklib_p2 =
+            std::chrono::duration<double>(sklib_t_end - sklib_t_p1_end).count();
+        std::fprintf(stderr,
+            "[sklib-timing] k=%llu m=%llu threads=%u buckets=%llu nonempty=%llu "
+            "phase1_s=%.4f phase2_s=%.4f\n",
+            (unsigned long long)k, (unsigned long long)m, params.n_threads,
+            (unsigned long long)n_buckets, (unsigned long long)sklib_nonempty,
+            sklib_p1, sklib_p2);
     }
 }
 
