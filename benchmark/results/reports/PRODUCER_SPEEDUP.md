@@ -205,6 +205,24 @@ rebuild + `producer_median.sh`, then restore HEAD.)
   loaded-value / poorly-predicted branches, not on freshly-computed, well-predicted ones — measure,
   don't assume "branchless = faster".
 
+- **G — buffer-layout rethink: drop the two reverse buffers, derive `m_rev = rc_pair(m_fwd)`**
+  (`add_nucleotide`). `add_nucleotide` maintained four sliding `pair` buffers (fwd/rev × prefix/suffix);
+  since the reverse strand is just the reverse complement of the forward, replace the two rev buffers
+  (their `>>=4`/`<<=4` cross-word shifts, central transfer, masks, merge) with a single
+  `m_rev = rc_pair(m_fwd)` (the word-parallel RC). `add_empty_nucleotide` reconstructs the rev buffers
+  from `m_rev`'s lanes (its `0b11` fillers are uncomplemented sentinels rc_pair can't make). **Correct**
+  (digest identical on chr21+celegans, ctest green) and it **cut instructions hard** —
+  `compute_new_candidate` 209→161 at k31 (−23 %), 402→257 at k63 (−36 %), k63 spills 4→2 — **but it
+  REGRESSED throughput** on a drift-immune alternating A/B (build both binaries once, interleave, no
+  rebuild): F5 beat it every round, k31 ~3.71 vs ~3.56 (−4–5 %), k63 ~1.35 vs ~1.30 (−3–4 %). **Reverted.**
+  Reason: the loop is **latency-bound, not instruction-throughput-bound**. The 4-buffer scheme computes
+  the forward and reverse strands on *independent* dependency chains (they run in parallel → ILP);
+  `m_rev = rc_pair(m_fwd)` *serializes* m_rev after m_fwd, lengthening the per-base critical path to the
+  `m_rev < m_fwd` compare + return. Fewer instructions, longer critical path → slower. **Lesson:** at
+  IPC 3.5–3.7 instruction count is not the objective — parallel dependency chains are; the existing
+  layout is already tuned for ILP, so lead #1 is closed. (This also exposed heavy run-to-run machine
+  drift; a single back-to-back A/B was misleading — only the interleaved, no-rebuild A/B was decisive.)
+
 - **D — defer the per-base `m_yielded_skmer` copy** (`operator++`): peek the slide-out slot's sizes,
   copy the full skmer only when it will be yielded (used ~1/9–1/17 of bases). Correct (digest
   identical) but **flat** on a back-to-back A/B (k31 3.58→3.61, k63 1.32→1.34 — within noise, ranges
@@ -234,11 +252,13 @@ shifts), and why removing already-predicted branches (B11, E3, and likely a deco
   is a real share because it fires often at m=31.
 
 **Unexplored leads (instruction-count reduction — the lever that still bites in this regime):**
-1. **`add_nucleotide` pair arithmetic** (the biggest per-base cost, ~29 % at k=31). The 4-buffer
-   scheme does ~10 full-`pair` ops/base (two `>>=4`, two `<<=4`, two `&= m_mask`, two merge `|`, one
-   `<`). The masks and cross-word shift-by-4 look irreducible in this layout; a different buffer
-   layout (e.g. maintaining `m_fwd`/`m_rev` directly, or a single rolling register when `2*sk_size`
-   fits one word — true for k≤15) might cut ops. Highest value but needs a real rethink.
+1. **`add_nucleotide` pair arithmetic** (the biggest per-base cost, ~29 % at k=31). ~~Derive `m_rev`
+   from `m_fwd`~~ → **tried as G, regressed (latency-bound; see Tried and rejected)** — the 4 buffers
+   run fwd/rev in parallel and that ILP is the point, so do NOT serialize the strands. The masks and
+   cross-word shift-by-4 are irreducible in this layout. The only remaining angle here is a *different
+   encoding* that keeps both strands parallel AND cuts the loop-carried latency (e.g. a single rolling
+   register when `2*sk_size ≤ word width`, i.e. small k) — narrow applicability, unproven. Treat lead
+   #1 as largely closed; the per-base floor is now the parallel fwd/rev buffer chains + the Skmer copy.
 2. **Per-base `Skmer` copies** — `compute_new_candidate` copies the manipulator result into the ring
    slot every base; `operator++` copies the slide-out slot into `m_yielded_skmer` every base but uses
    it ~1/9 (k31) – 1/17 (k63) of the time. Deferring the latter behind the yield test could save a
