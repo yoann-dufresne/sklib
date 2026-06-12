@@ -312,7 +312,7 @@ and those calls fed `generate_sorted_list_from_enumeration` **without** `col_off
 the (up to 4) per-bucket recompactions still did the `O(n·(k-m))` `has_valid_kmer` re-scan. It was
 therefore the *most* recompaction-starved set op.
 
-### #7 — column-offset fast-path for `multi_setop` — **COMMITTED** (`<hash7>`)
+### #7 — column-offset fast-path for `multi_setop` — **COMMITTED** (`b50346f`)
 
 **Mechanism.** Each output buffer in `multi_setop` is column-grouped + per-column sorted+distinct (the
 merge fans column-major into it), exactly like the single-op `col`. `MultiCollectSink` now keeps a
@@ -340,4 +340,4 @@ takes `--op multi` (bench mode; 4 outputs, summed throughput).
 
 | # | idea (file) | mechanism | result (k31 / k63) | status |
 |--:|---|---|---|---|
-| 7 | column-offset fast-path for `multi_setop` (`SetOperations.hpp`) | per-channel column counts → offsets to each output's recompaction | **−24 % / −55..−60 %** (byte-identical) | committed `<hash7>` |
+| 7 | column-offset fast-path for `multi_setop` (`SetOperations.hpp`) | per-channel column counts → offsets to each output's recompaction | **−24 % / −55..−60 %** (byte-identical) | committed `b50346f` |
