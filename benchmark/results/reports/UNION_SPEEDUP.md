@@ -158,7 +158,7 @@ k63 J0.5 7.40 → 2.83 s (**−62 %**).
 k31 (`uint64`) ~−46 %; k63 (`__uint128`) **~−63 to −68 %** — the union is now ~2× (k31) to ~3× (k63)
 faster than `135283b`.
 
-### #3 — skip the redundant chaining sort (`is_sorted` guard) — **COMMITTED** (`<hash3>`)
+### #3 — skip the redundant chaining sort (`is_sorted` guard) — **COMMITTED** (`2f379cc`)
 
 **Mechanism.** After #2 the colinear-chaining of each column pair was the top recompaction cost; its
 first step `std::sort`s the candidate overlaps by `(first asc, second desc)`. But #2's hash join
@@ -185,4 +185,4 @@ Cumulative vs `135283b`: chr21 k31 J0.5 4.72 → 2.25 s (**−52 %**), k63 J0.5 
 |--:|---|---|---|---|
 | 1 | column-offset fast-path for `sort_column` (`SetOperations.hpp`, `VirtualSkmer.hpp`) | skip the per-column `has_valid_kmer` full-scan; ids = contiguous block from merge's per-column counts | **−12.0 % / −27.6 %** (byte-identical) | committed `7cf06f3` |
 | 2 | hash join in `get_candidate_overlaps` (`VirtualSkmer.hpp`) | array-based chaining join, `O(R+L)` vs `O((R+L)·log R)`; drops the per-column sort + `lower_bound` | **−37.3 % / −46.7 %** (byte-identical) | committed `2ac3914` |
-| 3 | skip redundant chaining sort (`ColinearChaining.hpp/.cpp`) | hash join already emits `(first asc, second desc)`; `is_sorted` guard skips the `O(n log n)` sort | **−14.4 % / −14.7 %** (byte-identical) | committed `<hash3>` |
+| 3 | skip redundant chaining sort (`ColinearChaining.hpp/.cpp`) | hash join already emits `(first asc, second desc)`; `is_sorted` guard skips the `O(n log n)` sort | **−14.4 % / −14.7 %** (byte-identical) | committed `2f379cc` |
