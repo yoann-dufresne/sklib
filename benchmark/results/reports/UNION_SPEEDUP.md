@@ -279,3 +279,27 @@ merge-bound extremes); 213/213 unit tests; KMC cross-check PASS.
 Wins every op/width, no regressions — biggest on the merge-bound cases; even union gains (its merge is
 ~20–25 %). The merge phase's other half (`merge_columns`' `kmer_compare`: a masked wide-`pair` compare,
 ~60 % self at k63 intersection) is the next frontier but looks largely irreducible.
+
+### #6 — pre-masked contiguous keys in `merge_columns` — **REVERTED (regression + RAM)**
+
+**Idea.** `merge_columns`' compare reads each record through the `idx` indirection (random `A[idx]`)
+and re-masks it (`& kmer_masks[c]`) every comparison. Prototype: have `build_column_csr` also emit a
+**parallel pre-masked-key array** per column (the record's k-mer at `c`, byte-identical scatter order,
+so per-column order is conserved → byte-identical output), and let the merge compare those contiguous,
+already-masked keys directly — touching the record only for *kept* k-mers (the sink). Byte-identical
+(7 ops/widths), 213 tests.
+
+**Why it fails (measured).** The premise is wrong: `keys` holds one entry per **(record × column)**
+incidence (≈ total k-mers), so it is *larger* than the `A` bucket it linearises (one entry per record).
+At k63 (32 B/key) the "sequential" scan is over a bigger, cache-pressuring array than the small,
+cache-resident bucket the random `A[idx]` already hits. Interleaved A/B vs #5: intersection **−8.5 %**
+(k31) / −4.0 % (k63) but **diff +2.3 % / +13.2 %** and union +1.0 % / +1.2 % — regresses the op it
+targeted. Peak RSS (celegans k63): diff 62→111 MB (**+79 %**), union 111→160 MB (+44 %) — the same
+RAM blow-up the original code dropped its `unordered_map` to avoid. Net loss → reverted. Conclusion:
+the merge's random access into a small cache-resident bucket is already near-optimal; `kmer_compare` is
+at its floor.
+
+| # | idea (file) | mechanism | result | status |
+|--:|---|---|---|---|
+| 5 | difference-array `build_column_csr` (`SetOperations.hpp`) | range-update pass-1 count, `O(records)` not `O(total k-mers)` | diff −19/−11 %, inter −10/−5 %, union −6/−0.8 % (byte-identical) | committed `120a2c6` |
+| 6 | pre-masked contiguous keys in `merge_columns` | linearise + pre-mask the compare | inter −4..−9 % but **diff +2..+13 %**, union +1 %, **peak RAM +44..79 %** | reverted-regression |
