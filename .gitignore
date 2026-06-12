@@ -2,6 +2,8 @@ build/
 build-debug/
 build-profile/
 build-bench/
+build-timing/
+build-relg/
 .vscode/
 CLAUDE.md
 thirdparty/FlameGraph/
