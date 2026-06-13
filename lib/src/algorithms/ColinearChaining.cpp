@@ -43,16 +43,14 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     if (!std::is_sorted(begin, end, chain_less))
         std::sort(begin, end, chain_less);
 
-    // Coordinate-compress the second coordinates.
-    std::vector<uint64_t> ys;
-    ys.reserve(n);
-    for (size_t i = 0; i < n; i++) ys.push_back(begin[i].second);
-    std::sort(ys.begin(), ys.end());
-    ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
-    auto rank = [&ys](uint64_t y) -> size_t {
-        return static_cast<size_t>(std::lower_bound(ys.begin(), ys.end(), y) - ys.begin());
-    };
-    size_t const S = ys.size();
+    // Index the Fenwick directly by the second coordinate: an overlap's second is a dense column
+    // index in [0, R) (the right column's size), so no coordinate compression is needed. This drops
+    // the ys sort+unique and the per-overlap lower_bound rank(). Byte-identical: the prefix-max over
+    // "second < o.second" and the point update at "o.second" aggregate exactly the same overlaps
+    // whether the Fenwick is keyed by the value or by its compressed rank (both order-preserving).
+    uint64_t max_second = 0;
+    for (size_t i = 0; i < n; i++) max_second = std::max<uint64_t>(max_second, begin[i].second);
+    size_t const S = static_cast<size_t>(max_second) + 1;   // second values lie in [0, max_second]
 
     // Fenwick (1-indexed) prefix-maximum. A cell records the best chain ending at a
     // processed overlap, referenced by its index in the sorted range: longer wins;
@@ -88,11 +86,11 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
     std::vector<uint32_t> length(n, 0);
     for (size_t i = 0; i < n; i++)
     {
-        size_t const r = rank(begin[i].second);                   // ranks [0, r-1] have second < o.second
-        Cell const best = (r == 0) ? empty : bit_prefix_max(r);   // Fenwick positions [1, r]
+        size_t const s = static_cast<size_t>(begin[i].second);    // Fenwick position p covers second p-1
+        Cell const best = (s == 0) ? empty : bit_prefix_max(s);   // positions [1, s] = second < o.second
         length[i]   = best.length + 1;
         prev_idx[i] = (best.length == 0) ? int32_t{-1} : best.end_idx;
-        bit_update(r + 1, Cell {length[i], static_cast<int32_t>(i)});
+        bit_update(s + 1, Cell {length[i], static_cast<int32_t>(i)});  // position s+1 = second value s
     }
 
     // Chain end: the longest chain, ties broken by larger (first, second).
