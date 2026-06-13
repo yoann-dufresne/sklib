@@ -69,12 +69,15 @@ void sort_and_dedup(std::vector<km::Skmer<kuint>>& v) {
 template<typename gen, typename store = gen>
 struct BucketCompactor {
     uint64_t k, m, b;
-    std::filesystem::path tmp_dir;
+    // Directories holding this bucket's records. The sequential phase 1 writes a single file per
+    // bucket, so this is just {tmp_dir}; the parallel (sharded) phase 1 writes one file per bucket
+    // per worker, so this is {tmp_dir/shard_0, …}. compact() loads + concatenates them all.
+    std::vector<std::filesystem::path> shard_dirs;
     SortedVirtualSkmerList<gen> m_sub;
     std::vector<km::Skmer<store>> m_payload; // reused down-conversion buffer (no per-bucket alloc)
 
-    BucketCompactor(uint64_t k_, uint64_t m_, uint64_t b_, std::filesystem::path td)
-        : k(k_), m(m_), b(b_), tmp_dir(std::move(td)), m_sub(k_, m_) {}
+    BucketCompactor(uint64_t k_, uint64_t m_, uint64_t b_, std::vector<std::filesystem::path> dirs)
+        : k(k_), m(m_), b(b_), shard_dirs(std::move(dirs)), m_sub(k_, m_) {}
 
     // Compact bucket `id` to its storage-width payload, returned by reference into the reused
     // buffer (empty if the bucket holds no records). The returned reference is valid only until the
@@ -82,10 +85,18 @@ struct BucketCompactor {
     // owns its compactor and copies the bytes out before reusing it.
     const std::vector<km::Skmer<store>>& compact(uint64_t id) {
         namespace fs = std::filesystem;
-        const fs::path bpath = tmp_dir / km::sortedlist::SkmerBucketWriter<gen>::bucket_filename(id);
-        std::vector<km::Skmer<gen>> vec = km::sortedlist::SkmerBucketWriter<gen>::load_bucket(bpath);
-        std::error_code ec;
-        fs::remove(bpath, ec); // data is in RAM now; free disk as we go (matches the sequential path)
+        // Concatenate the bucket's shards (one file per shard dir). sort_and_dedup below makes the
+        // concatenation order irrelevant, so any shard order yields the byte-identical sub-list.
+        std::vector<km::Skmer<gen>> vec;
+        for (const fs::path& sd : shard_dirs) {
+            const fs::path bpath = sd / km::sortedlist::SkmerBucketWriter<gen>::bucket_filename(id);
+            std::vector<km::Skmer<gen>> part = km::sortedlist::SkmerBucketWriter<gen>::load_bucket(bpath);
+            std::error_code ec;
+            fs::remove(bpath, ec); // data is in RAM now; free disk as we go (matches the sequential path)
+            if (part.empty()) continue;
+            if (vec.empty()) vec = std::move(part);
+            else vec.insert(vec.end(), part.begin(), part.end());
+        }
         if (vec.empty()) { m_payload.clear(); return m_payload; }
 
         sort_and_dedup(vec);
@@ -307,12 +318,24 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
     TmpDirGuard guard{tmp_dir};
 
     // ---- Phase 1: stream super-k-mers into buckets ----
-    // Kept in its own scope so the writer's per-bucket buffers and the sequence
-    // reader are fully released before phase 2 allocates, bounding the peak to
-    // max(phase-1 buffers, largest bucket) rather than their sum.
+    // Each branch scopes its own writer(s) so the per-bucket buffers and the sequence reader are
+    // fully released before phase 2 allocates, bounding the peak to max(phase-1 buffers, largest
+    // bucket) rather than their sum.
+    //
+    // With n_threads >= 2 on the fixed (power-of-two) bucketing, phase 1 runs sharded across worker
+    // threads (parallel_build_phase1): each worker writes its own per-bucket shard files under
+    // tmp_dir/shard_<tid>, and phase 2 loads every shard of a bucket. The on-disk index stays
+    // byte-identical (the per-bucket sort_and_dedup is order-independent, sha256-verified across -t).
+    // --max-ram (adaptive, low-memory) and -t1 keep the single-producer path below.
     const auto sklib_t_p1_begin = sklib_clk::now();
     std::vector<uint64_t> counts(n_buckets, 0);
-    {
+    std::vector<fs::path> shard_dirs;
+    const bool parallel_phase1 = (params.n_threads >= 2) && !use_adaptive;
+    if (parallel_phase1) {
+        km::sortedlist::parallel_build_phase1<gen>(
+            input_path, k, m, n_buckets, bucket_of, params.n_threads,
+            writer_budget, tmp_dir, shard_dirs, counts);
+    } else {
         km::sortedlist::SkmerBucketWriter<gen> writer{tmp_dir, n_buckets, writer_budget};
         km::FileSkmerator<gen> file_skmerator{manip, input_path};
         // B(2): collapse runs of identical consecutive super-k-mers (tandem repeats
@@ -331,6 +354,7 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         }
         writer.close();
         for (uint64_t id{0}; id < n_buckets; id++) counts[id] = writer.bucket_count(id);
+        shard_dirs = { tmp_dir };
     }
     const auto sklib_t_p1_end = sklib_clk::now();
 
@@ -358,11 +382,11 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         if (params.n_threads >= 2) {
             total = km::sortedlist::parallel_build_phase2<store>(
                 out, dir, counts, n_buckets, params.n_threads,
-                [&]{ return BucketCompactor<gen, store>(k, m, b, tmp_dir); });
+                [&]{ return BucketCompactor<gen, store>(k, m, b, shard_dirs); });
             if (out.fail())
                 throw std::runtime_error("Error writing skmers to file: " + output_path);
         } else {
-            BucketCompactor<gen, store> comp(k, m, b, tmp_dir);
+            BucketCompactor<gen, store> comp(k, m, b, shard_dirs);
             for (uint64_t id{0}; id < n_buckets; id++) {
                 if (counts[id] == 0) continue;
                 const std::vector<km::Skmer<store>>& payload = comp.compact(id);

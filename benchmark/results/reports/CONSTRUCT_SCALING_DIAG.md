@@ -145,6 +145,28 @@ The single-writer Phase 2 needs **no** change — perf found zero lock contentio
 inefficiency is hardware bandwidth, addressable only by doing less memory traffic (narrower records /
 cache-friendlier compaction), not by more threads.
 
+## Update — sharded multi-producer implemented (Axis A, stage 1)
+
+The recommendation above is now implemented: Phase 1 is parallel for `n_threads >= 2` on the fixed
+(power-of-two) bucketing. A reader thread streams whole FASTA sequences onto a bounded (byte-capped)
+queue; `n_threads` workers each own a `SkmerManipulator` + a `SkmerBucketWriter` shard
+(`tmp_dir/shard_<tid>`); Phase 2 loads + concatenates a bucket's shards before `sort_and_dedup`, which
+makes the index **byte-identical** to the sequential build and across thread counts (sha256-verified
+at k21/uint32, k31/uint64, k63/__uint128; ctest 213/213). `parallel_build_phase1` in
+`ParallelConstruct.hpp`; `-t1` and `--max-ram` keep the single-producer path.
+
+Measured (clang-18 Release+LTO, k31/m15, median-of-3, this 22-thread host):
+
+| genome (seqs) | phase1 `-t1`→`-t8` | total `-t1` | total `-t8` before | total `-t8` after | speedup vs `-t1` |
+|---|--:|--:|--:|--:|--:|
+| chr21 (51) | 1.17 → 0.63 s | 4.47 s | ~1.69 s | **1.18 s** | **3.8×** |
+| celegans (7) | 2.96 → 0.78 s | 12.16 s | ~4.49 s | **2.35 s** | **5.2×** |
+
+The old Phase-1 Amdahl floor is gone: `-t8` now reaches ~3.8× (chr21) / ~5.2× (celegans) vs `-t1`,
+up from the ~2.1–2.6× the sequential-Phase-1 build topped out at. celegans Phase 1 scales ~3.8×;
+**chr21 caps ~1.85× because one scaffold dominates its 51 sequences** — the per-sequence (stage-1)
+granularity limit, which intra-sequence byte-offset chunking (stage 2) would lift.
+
 ## Reproduce
 
 ```bash
