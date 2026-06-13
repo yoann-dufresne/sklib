@@ -239,11 +239,15 @@ inline void search_kmers_in_span_into(
     int64_t mean {0};
 
     // USING SMALL STACK ALLOCATED ARRAYS FOR FAST QUERY
-    uint8_t result[km::sortedlist::util::MAX_POSSIBLE_KMERS] = {0};//'bool' to be returned
+    uint8_t result[km::sortedlist::util::MAX_POSSIBLE_KMERS];//'bool' to be returned
     uint8_t keep_searching[km::sortedlist::util::MAX_POSSIBLE_KMERS]; // keep track of which k-mers have been searched yet
     std::pair<int64_t,int64_t> binary_search_boundaries[km::sortedlist::util::MAX_POSSIBLE_KMERS];
     uint64_t positions_to_search[km::sortedlist::util::MAX_POSSIBLE_KMERS];
-    // ARRAYS INITIALIZATION
+    // ARRAYS INITIALIZATION — only the tot_num_kmers_to_search used prefix, not all MAX_POSSIBLE_KMERS.
+    // (The old `result[...] = {0}` zeroed the whole 128-entry array every query; the search reads only
+    // result[0, tot) — `out.assign(result, result+tot)` below — so this is byte-identical and removes a
+    // per-query 128-byte memset that showed at ~3% of stream-query time.)
+    std::fill_n(result, tot_num_kmers_to_search, uint8_t{0});
     std::fill_n(keep_searching, tot_num_kmers_to_search, 1);
     std::fill_n(binary_search_boundaries, tot_num_kmers_to_search,
         std::make_pair(0LL, static_cast<int64_t>(list_size - 1)));
