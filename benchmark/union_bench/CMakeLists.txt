@@ -13,5 +13,6 @@ target_link_libraries(${EXEC_NAME} PUBLIC
 )
 
 if (ipo_supported)
-  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  # Release only (matches sklib; libsk.a is LTO bitcode in Release — consumers need the plugin).
+  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 endif()

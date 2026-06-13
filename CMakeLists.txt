@@ -37,6 +37,22 @@ if(NOT SKLIB_HAS_BITINT256)
     "`apt install clang-18` then -DCMAKE_CXX_COMPILER=clang++-18.")
 endif()
 
+# Interprocedural optimization (LTO). The lib/app targets carry `if (ipo_supported)`
+# INTERPROCEDURAL_OPTIMIZATION_RELEASE blocks, but `ipo_supported` was never defined — so LTO never
+# fired. Probe it here, once, after the compiler is known; the targets enable it (Release only) so
+# cross-TU calls — notably km::chaining::colinear_chaining (lib/src/algorithms/ColinearChaining.cpp),
+# invoked per column in the phase-2 compaction hotspot — can inline. Scoped to our targets (not a
+# global CMAKE_INTERPROCEDURAL_OPTIMIZATION) so the third-party deps with an older policy (CMP0069)
+# are untouched, and Debug/Profile stay LTO-free/fast. Measured: ~+3% end-to-end construct at -t8
+# (chr21/celegans, k31), byte-identical output across all widths (k21/k31/k63).
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error LANGUAGES CXX)
+if(ipo_supported)
+  message(STATUS "sklib: IPO/LTO available — enabled for Release targets")
+else()
+  message(STATUS "sklib: IPO/LTO not supported by toolchain: ${ipo_error}")
+endif()
+
 add_library(build_type_flags INTERFACE)
 target_compile_options(build_type_flags INTERFACE
   $<$<CONFIG:Debug>:-O -g>

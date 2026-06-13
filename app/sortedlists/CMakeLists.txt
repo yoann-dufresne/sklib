@@ -23,7 +23,8 @@ else()
 endif()
 
 if (ipo_supported)
-  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  # Release only: keep Debug/Profile builds LTO-free (fast to compile, friendly to ASan + perf).
+  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 endif()
 
 if (STATIC_BUILD AND NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug")

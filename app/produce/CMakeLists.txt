@@ -12,7 +12,8 @@ target_link_libraries(${EXEC_NAME} PUBLIC
 target_link_libraries(${EXEC_NAME} PUBLIC pthread)
 
 if (ipo_supported)
-  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  # Release only (see app/sortedlists/CMakeLists.txt).
+  set_property(TARGET ${EXEC_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 endif()
 
 install (TARGETS ${EXEC_NAME}

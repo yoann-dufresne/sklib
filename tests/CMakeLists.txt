@@ -13,6 +13,13 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0.0)
     target_link_libraries(sklib-tests PUBLIC stdc++fs)
 endif()
 
+# Release only: sklib carries INTERPROCEDURAL_OPTIMIZATION_RELEASE, so libsk.a is an LTO-bitcode
+# archive in Release and must be linked through the LTO plugin — i.e. its consumers need IPO too,
+# or the link fails with "file format not recognized". Match it here. Debug stays LTO-free.
+if (ipo_supported)
+  set_property(TARGET sklib-tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+endif()
+
 
 add_test(
     NAME sklib:all

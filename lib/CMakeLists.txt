@@ -32,3 +32,10 @@ set_target_properties(${SKLIB_LIB} PROPERTIES
   SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
   VERSION ${CMAKE_PROJECT_VERSION}
 )
+
+# LTO (Release only): emit ColinearChaining.cpp as LTO bitcode so colinear_chaining (called per
+# column in the phase-2 compaction hotspot) can inline into the apps that link sklib. `ipo_supported`
+# is set in the root CMakeLists after probing the toolchain. Release-gated so Debug/Profile stay fast.
+if (ipo_supported)
+  set_property(TARGET ${SKLIB_LIB} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+endif()
