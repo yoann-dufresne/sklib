@@ -24,7 +24,13 @@ class FileSkmerator;
 
 // ----------------------- SEQ ITERATOR ---------------------------
 
-template <typename kuint>
+// TrackPos (default false): when true, the iterator records the absolute sequence index at which
+// each yielded super-k-mer's buffer slot was created and exposes it via yielded_position(). This is
+// used by the parallel-construction intra-sequence chunking (ParallelConstruct.hpp) to emit each
+// super-k-mer in exactly one chunk. It is **observation only** — gated by `if constexpr (TrackPos)`,
+// so the default (false) instantiation used by FileSkmerator / the query path has bit-for-bit
+// identical codegen and zero cost (verified: producer digest + construct index sha256 unchanged).
+template <typename kuint, bool TrackPos = false>
 class SeqSkmerator
 {
 protected:
@@ -63,7 +69,7 @@ public:
     private:
         std::string empty_str{};
         // Sequence file related attributes
-        SeqSkmerator<kuint>& m_rator;
+        SeqSkmerator& m_rator;   // injected-class-name: SeqSkmerator<kuint, TrackPos>
         std::string& m_seq;
         int64_t m_remaining_nucleotides;
         bool m_consumed;
@@ -106,12 +112,23 @@ public:
         std::vector<Skmer<kuint> > m_split_pending;
         uint64_t m_split_idx {0};
 
+        // Position tracking (only when TrackPos). m_slot_creation[slot] = the absolute sequence index
+        // m_ptr_current had when that ring-buffer slot was last written; m_yield_pos = the creation
+        // index of the currently-yielded super-k-mer (carried unchanged across its drained split
+        // pieces). Unused/empty when TrackPos is false.
+        std::vector<int64_t> m_slot_creation;
+        int64_t m_yield_pos {-1};
+
     public:
 
         bool consumed() const
         {
             return m_isend;
         }
+
+        // Absolute index (in the bound sequence) of the currently-yielded super-k-mer. Only meaningful
+        // when TrackPos; used by the chunked parallel producer to assign each super-k-mer to one chunk.
+        int64_t yielded_position() const { return m_yield_pos; }
 
     protected:
         // Construct an iterator without control on the file stream
@@ -129,6 +146,8 @@ public:
             , m_ptr_min(0) // minimizer_position
             , m_ptr_last_round(0)
         {
+            if constexpr (TrackPos)
+                m_slot_creation.assign(m_buffer_capacity, int64_t{0});
             if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
             {
                 m_consumed = true;
@@ -209,6 +228,10 @@ public:
             m_ptr_last_round = 0;
             m_split_pending.clear();
             m_split_idx = 0;
+            if constexpr (TrackPos) {
+                m_yield_pos = -1;
+                std::fill(m_slot_creation.begin(), m_slot_creation.end(), int64_t{0});
+            }
             // Buffers keep their capacity (size 2k-m, constant for a given manipulator); clearing
             // them reproduces a fresh value-initialized construction exactly.
             std::fill(m_skmer_buffer_array.begin(), m_skmer_buffer_array.end(), Skmer<kuint>{});
@@ -304,6 +327,8 @@ public:
 
                     // Get yielding candidate
                     Skmer<kuint>& skmer {m_skmer_buffer_array[m_ptr_last_round & m_buffer_mask]};
+                    if constexpr (TrackPos)
+                        m_yield_pos = m_slot_creation[m_ptr_last_round & m_buffer_mask];
 
                     // Yield if needed
                     if (skmer.m_pref_size + skmer.m_suff_size >= k - m)
@@ -333,6 +358,8 @@ public:
             {
                 // -- Save the skmer to eventually yield
                 m_rator.m_yielded_skmer = m_skmer_buffer_array[(m_ptr_current + 1) & m_buffer_mask];
+                if constexpr (TrackPos)
+                    m_yield_pos = m_slot_creation[(m_ptr_current + 1) & m_buffer_mask];
                 // pp << m_rator.m_yielded_skmer;
                 // cout << pp << " " << ((m_ptr_current + 1) & m_buffer_mask);
                 // cout << " remaining " << m_remaining_nucleotides << endl;
@@ -449,6 +476,8 @@ public:
 
             m_skmer_buffer_array[ m_ptr_current & m_buffer_mask ] = (m_remaining_nucleotides >= 0) ? m_manip.add_nucleotide(nucl) : m_manip.add_empty_nucleotide();
             m_skmer_orientation[ m_ptr_current & m_buffer_mask ] = m_manip.is_forward();
+            if constexpr (TrackPos)
+                m_slot_creation[ m_ptr_current & m_buffer_mask ] = static_cast<int64_t>(m_ptr_current);
 
             Skmer<kuint> & skmer = m_skmer_buffer_array[ m_ptr_current & m_buffer_mask ];
             orientation_t const orient = m_skmer_orientation[ m_ptr_current & m_buffer_mask ];

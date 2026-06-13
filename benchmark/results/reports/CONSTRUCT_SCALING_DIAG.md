@@ -162,10 +162,36 @@ Measured (clang-18 Release+LTO, k31/m15, median-of-3, this 22-thread host):
 | chr21 (51) | 1.17 → 0.63 s | 4.47 s | ~1.69 s | **1.18 s** | **3.8×** |
 | celegans (7) | 2.96 → 0.78 s | 12.16 s | ~4.49 s | **2.35 s** | **5.2×** |
 
-The old Phase-1 Amdahl floor is gone: `-t8` now reaches ~3.8× (chr21) / ~5.2× (celegans) vs `-t1`,
-up from the ~2.1–2.6× the sequential-Phase-1 build topped out at. celegans Phase 1 scales ~3.8×;
-**chr21 caps ~1.85× because one scaffold dominates its 51 sequences** — the per-sequence (stage-1)
-granularity limit, which intra-sequence byte-offset chunking (stage 2) would lift.
+The old Phase-1 Amdahl floor is gone: `-t8` reached ~3.8× (chr21) / ~5.2× (celegans) vs `-t1`,
+up from the ~2.1–2.6× the sequential-Phase-1 build topped out at. But stage 1's per-sequence
+granularity still capped chr21 Phase 1 at ~1.85× (one scaffold dominates its 51 sequences) and gave a
+single-sequence input (ecoli) **no** Phase-1 parallelism at all.
+
+### Stage 2 — intra-sequence chunking (implemented)
+
+`parallel_build_phase1` now splits each sequence into ~1 Mbp core ranges `[a,b)`; a worker processes
+`[a-margin, b+margin]` (margin `4*(2k-m)` ≥ one super-k-mer span + the iterator warm-up) and emits only
+the super-k-mers whose **creation index** lands in `[a,b)`. The creation index is exposed by a
+compile-time-gated `TrackPos` `SeqSkmerator` template param (observation only — the default/query path
+is bit-for-bit unchanged); it maps to the same original position whichever chunk computes it, so the
+`[a,b)` tiling assigns each super-k-mer to exactly one chunk and reproduces the sequential super-k-mer
+set → **byte-identical** (k21/k31/k63, every `-t`; ctest 213/213). The last chunk (`b==L`) also claims
+the end-of-sequence super-k-mers (their creation index lands in the empty-nucleotide flush past `L`).
+Each worker reuses one iterator via `reset()` (a fresh iterator per chunk made the per-chunk
+allocations contend on the glibc malloc arenas — perf ~7% in malloc, *degrading* Phase 1 past `-t8`;
+the reuse removed it).
+
+Phase-1 scaling now (no per-sequence cap, monotone to `-t16`; median-of-3 phase1_s):
+
+| genome | `-t1` | `-t4` | `-t8` (stage 1 → stage 2) | `-t16` |
+|---|--:|--:|--:|--:|
+| ecoli (1 seq) | 0.16 | 0.07 | 0.18(serial) → **0.07** | 0.07 |
+| chr21 | 1.25 | 0.38 | 0.57 → **0.27** (2.1×) | 0.23 |
+| celegans | 3.09 | 0.90 | 0.90 → **0.62** | 0.50 |
+
+End-to-end `-t8` total: **chr21 1.18 → 0.87 s (−26%)**; celegans ~2.34 s (Phase-1 saving is real but its
+`-t8` is now Phase-2-bound, so the total is ~flat there — stage 2 helps more at higher `-t` and on
+single/dominant-sequence inputs). `-t1` unchanged (interleaved A/B vs baseline: within noise).
 
 ## Reproduce
 

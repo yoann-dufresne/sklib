@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -54,24 +55,31 @@ namespace sortedlist
 {
 
 // ---------------------------------------------------------------------------
-// Phase 1 (the producer) parallel driver — sharded multi-producer.
+// Phase 1 (the producer) parallel driver — sharded multi-producer with intra-sequence chunking.
 //
 // build_bucketed's phase 1 (FASTA -> rolling minimizer -> super-k-mer -> per-minimizer disk bucket)
 // is otherwise single-threaded and ~73-78% of construct wall at -t8 (CONSTRUCT_SCALING_DIAG.md). Each
-// super-k-mer is independent, so this fans the per-sequence work across `nw` workers: the caller
-// (reader) streams whole FASTA sequences onto a bounded queue, and each worker owns its own
-// SkmerManipulator and SkmerBucketWriter, routing into a private shard directory
-// (tmp_dir/shard_<tid>). Phase 2 loads + concatenates a bucket's shards before sort_and_dedup, which
-// makes the result independent of routing order, so the final index is byte-identical to the
-// sequential build and across thread counts (sha256-verified).
+// super-k-mer is independent, so this fans the work across `nw` workers, each owning its own
+// SkmerManipulator and SkmerBucketWriter shard (tmp_dir/shard_<tid>). Phase 2 loads + concatenates a
+// bucket's shards before sort_and_dedup, which makes the result independent of routing order, so the
+// final index is byte-identical to the sequential build and across thread counts (sha256-verified).
 //
-// A super-k-mer depends only on its own sequence's nucleotides (sequence ends are handled by the
-// prefix/suffix-size tracking + mask_absent_nucleotides), so partitioning sequences across workers'
-// manipulators yields the same (bucket, skmer) multiset the single-manip sequential path does; only
-// the within-shard order differs, which sort_and_dedup normalizes. B(2) (skip consecutive-duplicate
-// skmers) stays per-worker; B(1) (the phase-2 sort+unique) drops every remaining duplicate, so the
-// output set is unchanged. Caller restricts this to the fixed power-of-two bucketing; --max-ram
-// (adaptive, low-memory) keeps the sequential phase 1.
+// Work unit = a chunk: a core range [a,b) of a sequence (~target_chunk bases). A sequence shorter
+// than a chunk is one work unit (stage 1, per-sequence); a long sequence is split into many
+// (stage 2), so a single dominant chromosome no longer caps the speedup. The reader streams one
+// sequence at a time (shared_ptr, so the chunks of one sequence share its single copy and peak RAM
+// stays ~the largest sequence) and emits chunk items onto a bounded queue.
+//
+// Byte-identical across the chunk seams: a worker processes the slice [a-margin, b+margin] (clamped
+// to the sequence), so every super-k-mer whose creation index (the SeqSkmerator slot-write position,
+// exposed via yielded_position() when TrackPos=true) lands in [a,b) is formed with full left/right
+// context — a super-k-mer spans <= 2k-m, and margin = 4*(2k-m) also covers the iterator warm-up, so
+// the warm-up's partial super-k-mers all map to orig < a and are filtered out. The creation index is
+// the same original-sequence position whichever chunk computes it, so the [a,b) tiling assigns each
+// super-k-mer to exactly one chunk (no dup, no drop) and reproduces the sequential super-k-mer set.
+// B(2) (skip consecutive-duplicate skmers) is applied per chunk on the emitted stream; B(1) (the
+// phase-2 sort+unique) drops the rest, so the output set is unchanged. Caller restricts this to the
+// fixed power-of-two bucketing; --max-ram (adaptive, low-memory) keeps the sequential phase 1.
 //
 // Fills `out_shard_dirs` (one per worker) and aggregates per-bucket `counts`. Rethrows the first
 // worker/reader exception after joining.
@@ -94,19 +102,23 @@ void parallel_build_phase1(const std::string& input_path,
         out_shard_dirs.push_back(sd);
     }
 
+    // margin: full context for any super-k-mer with creation index in [a,b). A super-k-mer spans
+    // <= 2k-m and the iterator warm-up is ~2k-m; 4*(2k-m) is comfortably safe and the redundant
+    // per-chunk work (a few hundred bases) is negligible vs a ~1 Mbp chunk core.
+    const int64_t margin {static_cast<int64_t>(4 * (2 * k - m))};
+    const int64_t target_chunk {int64_t{1} << 20};   // ~1 Mbp cores: good load balance, ~0.02% overhead
+
+    struct WorkItem { std::shared_ptr<const std::string> seq; int64_t a, b; };
+
     std::mutex mtx;
-    std::condition_variable cv_item;   // a sequence (or end-of-input) is available to consume
+    std::condition_variable cv_item;   // a chunk (or end-of-input) is available to consume
     std::condition_variable cv_space;  // a queue slot freed
-    std::deque<std::string> queue;
+    std::deque<WorkItem> queue;
     bool done_reading {false};
     std::exception_ptr first_err;
-    // Bound the in-flight sequence bytes so peak RAM stays O(budget) — not the whole genome — even
-    // on a huge multi-chromosome input (a count-only cap could hold several GB of chromosomes at
-    // once). The reader always enqueues at least one sequence when the queue is empty, so a single
-    // sequence larger than the budget still makes progress (bounding peak to ~budget + one sequence).
-    const size_t max_queue {std::max<size_t>(2ull * nw, 8)};
-    const size_t byte_budget {std::max<size_t>(size_t{64} << 20, writer_budget)};
-    size_t queued_bytes {0};
+    // Item-count cap; combined with reading one sequence at a time this bounds peak RAM to roughly
+    // the largest sequence (a big sequence's chunks all share its single shared_ptr copy).
+    const size_t max_items {std::max<size_t>(4ull * nw, 16)};
 
     std::vector<std::vector<uint64_t>> worker_counts(nw);
     // Spread the phase-1 write budget across the workers; keep a sane floor for tiny budgets.
@@ -116,27 +128,45 @@ void parallel_build_phase1(const std::string& input_path,
         try {
             km::SkmerManipulator<gen> manip{k, m};                 // per-worker mutable encoder state
             km::sortedlist::SkmerBucketWriter<gen> writer{out_shard_dirs[tid], n_buckets, per_worker_budget};
-            std::string seq;
+            // One SeqSkmerator + iterator per worker, bound to a reused `slice` buffer and re-primed
+            // per chunk via reset() — exactly the FileSkmerator pattern. This keeps the iterator's
+            // ring buffers (and the slice string) allocated once: constructing a fresh iterator per
+            // chunk made the per-chunk allocations contend on the glibc malloc arenas at high -t
+            // (perf: ~7% in malloc, growing with thread count), which dragged phase-1 scaling down.
+            std::string slice;
+            km::SeqSkmerator<gen, true> rator{manip, slice};
+            auto it = rator.begin();
             for (;;) {
+                WorkItem item;
                 {
                     std::unique_lock<std::mutex> lk(mtx);
                     cv_item.wait(lk, [&]{ return !queue.empty() || done_reading || first_err; });
                     if (first_err) return;
                     if (queue.empty()) break;                      // done_reading && drained
-                    seq = std::move(queue.front());
+                    item = std::move(queue.front());
                     queue.pop_front();
-                    queued_bytes -= seq.size();
                 }
                 cv_space.notify_one();
 
-                // Fresh SeqSkmerator per sequence (its buffers are value-initialized == the
-                // FileSkmerator reset() the sequential path uses); the manipulator is reused across
-                // this worker's sequences exactly as the sequential path reuses one across the file.
-                km::SeqSkmerator<gen> rator{manip, seq};
+                const int64_t L {static_cast<int64_t>(item.seq->size())};
+                const int64_t slice_start {std::max<int64_t>(0, item.a - margin)};
+                const int64_t slice_end   {std::min<int64_t>(L, item.b + margin)};
+                slice.assign(*item.seq, static_cast<size_t>(slice_start),
+                             static_cast<size_t>(slice_end - slice_start));
+                it.reset();   // re-prime over the new slice contents, reusing the ring buffers
+
+                // TrackPos=true: yielded_position() gives the super-k-mer's creation index within the
+                // slice; + slice_start makes it the original-sequence position used for the [a,b) tiling.
                 km::Skmer<gen> prev{};
                 bool have_prev {false};
-                for (const km::Skmer<gen> sk : rator) {
-                    if (have_prev && sk == prev) continue;          // B(2), per-worker
+                for (; !it.consumed(); ++it) {
+                    const int64_t orig {slice_start + it.yielded_position()};
+                    // [a,b) tiling on the creation index. The last chunk (b==L) also claims the
+                    // end-of-sequence super-k-mers, whose creation index lands in the empty-nucleotide
+                    // flush *past* L (so an upper bound of L would drop them — a real k-mer loss).
+                    if (orig < item.a || (item.b != L && orig >= item.b)) continue; // another chunk / warm-up
+                    const km::Skmer<gen> sk {*it};
+                    if (have_prev && sk == prev) continue;          // B(2), on the emitted stream
                     const gen mini = manip.minimizer(sk);
                     writer.append(bucket_of(mini), sk);
                     prev = sk;
@@ -159,23 +189,24 @@ void parallel_build_phase1(const std::string& input_path,
     workers.reserve(nw);
     for (unsigned t {0}; t < nw; ++t) workers.emplace_back(worker, t);
 
-    // Reader (this thread): stream sequences onto the bounded queue. kseq reuses rec.seq across
-    // records, so each sequence is copied into the queue.
+    // Reader (this thread): one sequence at a time, split into chunk items. kseq reuses rec.seq, so
+    // each sequence is copied once into a shared_ptr the chunks reference.
     try {
         klibpp::SeqStreamIn ksi(input_path.c_str());
         klibpp::KSeq rec;
         while (ksi >> rec) {
             if (rec.seq.length() < k) continue;                    // matches FileSkmerator::init_record
-            std::unique_lock<std::mutex> lk(mtx);
-            // Enqueue when under both caps, or unconditionally when the queue is empty (guarantees
-            // progress for a single sequence larger than the byte budget).
-            cv_space.wait(lk, [&]{ return queue.empty() ||
-                                          (queue.size() < max_queue && queued_bytes < byte_budget) ||
-                                          first_err; });
+            auto seq = std::make_shared<const std::string>(rec.seq);
+            const int64_t L {static_cast<int64_t>(seq->size())};
+            for (int64_t a {0}; a < L; a += target_chunk) {
+                const int64_t b {std::min<int64_t>(L, a + target_chunk)};
+                std::unique_lock<std::mutex> lk(mtx);
+                cv_space.wait(lk, [&]{ return queue.size() < max_items || first_err; });
+                if (first_err) break;
+                queue.push_back(WorkItem{seq, a, b});
+                cv_item.notify_one();
+            }
             if (first_err) break;
-            queued_bytes += rec.seq.size();
-            queue.emplace_back(rec.seq);
-            cv_item.notify_one();
         }
     } catch (...) {
         std::lock_guard<std::mutex> lk(mtx);
