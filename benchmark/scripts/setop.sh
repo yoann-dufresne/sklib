@@ -20,7 +20,7 @@ need_tools kmc kmc_tools "$TIME_BIN" python3
 [[ -x "$SSKM_BIN" ]] || die "sskm not found at $SSKM_BIN"
 
 CSV="${CSV:-$RESULTS/setop.csv}"
-csv_init "$CSV" "timestamp,host,cpu,tool,tool_version,dataset,k,m,threads,op,mode,joint,jaccard_target,jaccard_measured,result_kmers,time_s,peak_rss_kb,throughput_Mkmer_s"
+csv_init "$CSV" "timestamp,host,cpu,tool,tool_version,dataset,k,m,threads,op,mode,joint,jaccard_target,jaccard_measured,result_kmers,time_s,peak_rss_mb,throughput_Mkmer_s"
 load_done "$CSV" tool tool_version host dataset k m threads op mode jaccard_target
 SCR="$SETOP_SCRATCH"; mkdir -p "$SCR"
 
