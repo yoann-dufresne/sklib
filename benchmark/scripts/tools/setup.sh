@@ -28,7 +28,10 @@ clone() {  # clone <dir> <url>
     run git -C "$TOOLS_SRC" clone --recursive --depth 1 --shallow-submodules -j"$JOBS" "$url" "$dir"
 }
 
-record() { echo "$1=\"$2\"" >> "$ENV_FILE"; say "  -> $1=$2"; }
+record() {  # idempotent: drop any prior line for this key so a targeted re-run can't dup it
+    [[ -f "$ENV_FILE" ]] && sed -i "/^$1=/d" "$ENV_FILE" 2>/dev/null || true
+    echo "$1=\"$2\"" >> "$ENV_FILE"; say "  -> $1=$2"
+}
 
 # ---------------------------------------------------------------- bcalm
 setup_bcalm() {
@@ -60,6 +63,17 @@ setup_sshash() {
     fi
     bin="$(find "$bdir" -maxdepth 2 -type f -name sshash -perm -u+x 2>/dev/null | head -1)"
     [[ -n "$bin" ]] && record SSHASH_BIN "$bin" || say "sshash: BUILD FAILED (see log)"
+}
+
+# ---------------------------------------------------------------- sbwt-rs (Rust, set-op capable)
+setup_sbwtrs() {
+    clone sbwt-rs-cli https://github.com/jnalanko/sbwt-rs-cli || return 1
+    local d="$TOOLS_SRC/sbwt-rs-cli" bin="$TOOLS_SRC/sbwt-rs-cli/target/release/sbwt"
+    if [[ ! -x "$bin" ]]; then
+        say "sbwtrs: building (cargo build --release; needs Rust >= 1.77)"
+        ( cd "$d" && run cargo build --release )
+    fi
+    [[ -x "$bin" ]] && record SBWTRS_BIN "$bin" || say "sbwtrs: BUILD FAILED (see log)"
 }
 
 # ---------------------------------------------------------------- sbwt
@@ -118,8 +132,11 @@ setup_fmsi() {
         || say "kmercamel: BUILD FAILED -- install GLPK ('apt install libglpk-dev'), then re-run; see log"
 }
 
-TOOLS=("$@"); [[ ${#TOOLS[@]} -eq 0 ]] && TOOLS=(bcalm sshash sbwt bqf cbl fmsi)
-: > "$ENV_FILE"
+TOOLS=("$@")
+# Full (no-arg) run rebuilds every tool from scratch -> truncate tools.env. A targeted run
+# (explicit tool args, e.g. `setup.sh sbwtrs`) APPENDS via the idempotent record() above, so
+# it can add one tool without wiping the others' resolved paths.
+if [[ ${#TOOLS[@]} -eq 0 ]]; then TOOLS=(bcalm sshash sbwt bqf cbl fmsi sbwtrs); : > "$ENV_FILE"; fi
 for t in "${TOOLS[@]}"; do
     say "=== $t ==="
     "setup_$t" || say "$t: setup error"
