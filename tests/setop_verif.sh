@@ -53,6 +53,9 @@ dump "$WORK/kmcI"   > "$WORK/I.txt"
 dump "$WORK/kmcU"   > "$WORK/U.txt"
 dump "$WORK/kmcDab" > "$WORK/Dab.txt"
 dump "$WORK/kmcDba" > "$WORK/Dba.txt"
+# Symmetric difference A △ B = (A\B) ∪ (B\A). KMC's `simple` has no symdiff op, so merge the two
+# subtract dumps — disjoint and already sorted, so `sort -m` is the union.
+LC_ALL=C sort -m "$WORK/Dab.txt" "$WORK/Dba.txt" > "$WORK/Sym.txt"
 
 check_size() {  # label  sklib_value  truth_file
     local truth; truth=$(wc -l < "$3")
@@ -65,6 +68,7 @@ check_size "intersection" "$("$SSKM" setop --op intersection_size -a "$WORK/A.ss
 check_size "union"        "$("$SSKM" setop --op union_size        -a "$WORK/A.sskm" -b "$WORK/B.sskm")" "$WORK/U.txt"
 check_size "diff_AB"      "$("$SSKM" setop --op diff_size         -a "$WORK/A.sskm" -b "$WORK/B.sskm")" "$WORK/Dab.txt"
 check_size "diff_BA"      "$("$SSKM" setop --op diff_size         -a "$WORK/B.sskm" -b "$WORK/A.sskm")" "$WORK/Dba.txt"
+check_size "xor"          "$("$SSKM" setop --op xor_size          -a "$WORK/A.sskm" -b "$WORK/B.sskm")" "$WORK/Sym.txt"
 check_size "|A|"          "$("$SSKM" setop --op intersection_size -a "$WORK/A.sskm" -b "$WORK/A.sskm")" "$WORK/A.txt"
 check_size "|B|"          "$("$SSKM" setop --op intersection_size -a "$WORK/B.sskm" -b "$WORK/B.sskm")" "$WORK/B.txt"
 
@@ -95,5 +99,6 @@ check_content "intersection" "intersection" "$WORK/A.sskm" "$WORK/B.sskm" "$WORK
 check_content "union"        "union"        "$WORK/A.sskm" "$WORK/B.sskm" "$WORK/U.txt"
 check_content "diff_AB"      "diff"         "$WORK/A.sskm" "$WORK/B.sskm" "$WORK/Dab.txt"
 check_content "diff_BA"      "diff"         "$WORK/B.sskm" "$WORK/A.sskm" "$WORK/Dba.txt"
+check_content "xor"          "xor"          "$WORK/A.sskm" "$WORK/B.sskm" "$WORK/Sym.txt"
 
 if [ "$fail" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "SOME CHECKS FAILED"; exit 1; fi

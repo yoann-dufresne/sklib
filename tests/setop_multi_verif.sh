@@ -5,7 +5,7 @@
 #   tests/setop_multi_verif.sh <A.fa> <B.fa> [k] [m]
 #
 # Unlike setop_verif.sh (one sskm call per operation), this exercises the single-pass combined path:
-# ONE `sskm setop` invocation produces all four result lists (A∩B, A∪B, A\B, B\A) plus --sizes. We
+# ONE `sskm setop` invocation produces all five result lists (A∩B, A∪B, A\B, B\A, A△B) plus --sizes. We
 # then check, against KMC's k-mer set operations:
 #   * cardinalities, from BOTH the --sizes stdout block AND the per-file "wrote N" stderr lines;
 #   * content: every k-mer KMC puts in a result set is reported present when the corresponding sklib
@@ -52,12 +52,15 @@ dump "$WORK/kmcI"   > "$WORK/I.txt"
 dump "$WORK/kmcU"   > "$WORK/U.txt"
 dump "$WORK/kmcDab" > "$WORK/Dab.txt"
 dump "$WORK/kmcDba" > "$WORK/Dba.txt"
+# Symmetric difference A △ B = (A\B) ∪ (B\A): merge the two (disjoint, sorted) subtract dumps.
+LC_ALL=C sort -m "$WORK/Dab.txt" "$WORK/Dba.txt" > "$WORK/Sym.txt"
 
-echo "== ONE combined sskm call: all four results + --sizes =="
+echo "== ONE combined sskm call: all five results + --sizes =="
 # stdout = key<TAB>value sizes block; stderr = "<rel>: wrote N k-mers to <path>" per output.
 "$SSKM" setop -a "$WORK/A.sskm" -b "$WORK/B.sskm" \
     --inter-out "$WORK/resI.sskm" --union-out "$WORK/resU.sskm" \
     --diff-ab-out "$WORK/resDab.sskm" --diff-ba-out "$WORK/resDba.sskm" \
+    --xor-out "$WORK/resXor.sskm" \
     --sizes >"$WORK/sizes.txt" 2>"$WORK/wrote.txt"
 
 size_of()  { awk -v k="$1" '$1==k{print $2}' "$WORK/sizes.txt"; }     # from --sizes stdout
@@ -74,12 +77,14 @@ check_size "intersection" "$(size_of intersection)" "$WORK/I.txt"
 check_size "union"        "$(size_of union)"        "$WORK/U.txt"
 check_size "diff_ab"      "$(size_of diff_ab)"      "$WORK/Dab.txt"
 check_size "diff_ba"      "$(size_of diff_ba)"      "$WORK/Dba.txt"
+check_size "xor"          "$(size_of xor)"          "$WORK/Sym.txt"
 
 echo "== cardinalities: combined per-file 'wrote N' vs KMC =="
 check_size "wrote_inter"  "$(wrote_of intersection)" "$WORK/I.txt"
 check_size "wrote_union"  "$(wrote_of union)"         "$WORK/U.txt"
 check_size "wrote_dab"    "$(wrote_of diff_ab)"       "$WORK/Dab.txt"
 check_size "wrote_dba"    "$(wrote_of diff_ba)"       "$WORK/Dba.txt"
+check_size "wrote_xor"    "$(wrote_of xor)"           "$WORK/Sym.txt"
 
 # Content: materialized result equals KMC's set (|result| == |truth| and every truth k-mer present).
 check_content() {  # label  result_list  truth_file
@@ -103,5 +108,6 @@ check_content "intersection" "$WORK/resI.sskm"   "$WORK/I.txt"
 check_content "union"        "$WORK/resU.sskm"   "$WORK/U.txt"
 check_content "diff_ab"      "$WORK/resDab.sskm" "$WORK/Dab.txt"
 check_content "diff_ba"      "$WORK/resDba.sskm" "$WORK/Dba.txt"
+check_content "xor"          "$WORK/resXor.sskm" "$WORK/Sym.txt"
 
 if [ "$fail" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "SOME CHECKS FAILED"; exit 1; fi

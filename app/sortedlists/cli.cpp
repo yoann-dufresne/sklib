@@ -120,19 +120,20 @@ CLIResult parse_cli(int argc, char** argv) {
     // -----------------------
     auto setop = app.add_subcommand("setop",
         "Set operations between two sorted skmer lists A and B. Both must be built with the same k, m "
-        "and --buckets. diff is asymmetric: A \\ B.\n"
+        "and --buckets. diff is asymmetric: A \\ B; xor is the symmetric difference A △ B.\n"
         "Single-op mode: --op <operation> (+ -o for the materializing ops).\n"
-        "Combined mode: any subset of --inter-out/--union-out/--diff-ab-out/--diff-ba-out and/or "
-        "--sizes, all computed in ONE pass.");
+        "Combined mode: any subset of --inter-out/--union-out/--diff-ab-out/--diff-ba-out/--xor-out "
+        "and/or --sizes, all computed in ONE pass.");
 
     SetOpOptions setop_opts;
 
     setop->add_option("--op", setop_opts.op,
-        "Single-op mode: intersection | union | diff | intersection_size | union_size | diff_size. "
+        "Single-op mode: intersection | union | diff | xor | intersection_size | union_size | "
+        "diff_size | xor_size. diff is asymmetric (A \\ B); xor is the symmetric difference (A △ B). "
         "The *_size variants print only the cardinality and never materialize a list. "
         "Mutually exclusive with the combined-mode options.")
-        ->check(CLI::IsMember({"intersection", "union", "diff",
-                               "intersection_size", "union_size", "diff_size"}));
+        ->check(CLI::IsMember({"intersection", "union", "diff", "xor",
+                               "intersection_size", "union_size", "diff_size", "xor_size"}));
 
     setop->add_option("-a,--list-a", setop_opts.list_a,
         "First sorted skmer list (A).")->required();
@@ -141,7 +142,7 @@ CLIResult parse_cli(int argc, char** argv) {
         "Second sorted skmer list (B).")->required();
 
     setop->add_option("-o,--output", setop_opts.output_file,
-        "Single-op output sorted skmer list (required for intersection/union/diff; "
+        "Single-op output sorted skmer list (required for intersection/union/diff/xor; "
         "ignored by the *_size variants, which print a count to stdout).");
 
     setop->add_flag("--no-compact", setop_opts.no_compact,
@@ -164,14 +165,17 @@ CLIResult parse_cli(int argc, char** argv) {
         "Combined mode: write A \\ B to this list.");
     setop->add_option("--diff-ba-out", setop_opts.diff_ba_out,
         "Combined mode: write B \\ A to this list.");
+    setop->add_option("--xor-out", setop_opts.xor_out,
+        "Combined mode: write A △ B (symmetric difference) to this list.");
     setop->add_flag("--sizes", setop_opts.sizes,
-        "Combined mode: print all four cardinalities (intersection / union / diff_ab / diff_ba, plus "
+        "Combined mode: print all cardinalities (intersection / union / diff_ab / diff_ba / xor, plus "
         "|A| and |B|) computed in a single pass. On its own it materializes nothing; it can be paired "
         "with the --*-out options at no extra pass.");
 
     setop->footer(
         "Examples:\n"
         "  sskm setop --op intersection -a a.sskm -b b.sskm -o inter.sskm\n"
+        "  sskm setop --op xor -a a.sskm -b b.sskm -o xor.sskm\n"
         "  sskm setop --op diff_size -a a.sskm -b b.sskm\n"
         "  sskm setop -a a.sskm -b b.sskm --inter-out i.sskm --union-out u.sskm --diff-ab-out dab.sskm\n"
         "  sskm setop -a a.sskm -b b.sskm --sizes\n"
@@ -206,17 +210,18 @@ CLIResult parse_cli(int argc, char** argv) {
     // -----------------------
     if (result.setop) {
         const bool combined = setop_opts.inter_out || setop_opts.union_out ||
-                              setop_opts.diff_ab_out || setop_opts.diff_ba_out || setop_opts.sizes;
+                              setop_opts.diff_ab_out || setop_opts.diff_ba_out ||
+                              setop_opts.xor_out || setop_opts.sizes;
         const bool single = !setop_opts.op.empty();
         if (combined && single) {
             throw CLI::ValidationError(
                 "setop: --op (single-op mode) is mutually exclusive with the combined-mode options "
-                "(--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--sizes); use one or the other");
+                "(--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--xor-out/--sizes); use one or the other");
         }
         if (!combined && !single) {
             throw CLI::ValidationError(
                 "setop: provide --op <operation>, or one or more of "
-                "--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--sizes");
+                "--inter-out/--union-out/--diff-ab-out/--diff-ba-out/--xor-out/--sizes");
         }
         if (single) {
             const bool is_size = setop_opts.op.size() > 5 &&

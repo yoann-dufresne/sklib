@@ -1,6 +1,6 @@
 # sklib — compact sorted k-mer library
 
-A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed, **bucketed** sorted skmer list (`VirtualSkmer`), answers membership queries — each routed to a single minimizer bucket — and computes **set operations** (intersection / union / difference, and their cardinalities) between two lists, all through the `sskm` CLI.
+A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed, **bucketed** sorted skmer list (`VirtualSkmer`), answers membership queries — each routed to a single minimizer bucket — and computes **set operations** (intersection / union / difference / symmetric difference, and their cardinalities) between two lists, all through the `sskm` CLI.
 
 ## Documentation
 
@@ -120,12 +120,14 @@ Internally, each query super-k-mer is **routed to the single bucket** its minimi
 
 Set operations between two sorted skmer lists **A** and **B**. The atomic element is a *k-mer*: the operation decomposes per minimizer bucket and per minimizer-position column, and a single two-cursor merge over the two sorted lists yields all three relations (`A∩B`, `A\B`, `B\A`) in one pass. There are two modes:
 
-* **Single-op** (`--op <name>`): `intersection`, `union`, and `diff` (asymmetric, `A \ B`), plus `intersection_size`, `union_size`, and `diff_size` variants that report only the result **cardinality**.
-* **Combined / single-pass** (any subset of `--inter-out`/`--union-out`/`--diff-ab-out`/`--diff-ba-out` and/or `--sizes`): materialize several relations — including **`B \ A`** — and/or report every cardinality in **one** merge pass. See below.
+* **Single-op** (`--op <name>`): `intersection`, `union`, `diff` (asymmetric, `A \ B`), and `xor` (symmetric difference, `A △ B`), plus `intersection_size`, `union_size`, `diff_size`, and `xor_size` variants that report only the result **cardinality**.
+* **Combined / single-pass** (any subset of `--inter-out`/`--union-out`/`--diff-ab-out`/`--diff-ba-out`/`--xor-out` and/or `--sizes`): materialize several relations — including **`B \ A`** — and/or report every cardinality in **one** merge pass. See below.
 
 ```bash
 # materialize A ∩ B into a new list
 ./bin/sskm setop --op intersection -a A.sskm -b B.sskm -o inter.sskm
+# materialize A △ B (symmetric difference: k-mers in exactly one list) into a new list
+./bin/sskm setop --op xor -a A.sskm -b B.sskm -o xor.sskm
 # just the cardinality (nothing written) — e.g. the numerator/denominator of a Jaccard index
 ./bin/sskm setop --op union_size -a A.sskm -b B.sskm
 # fast materialization when a larger output is acceptable (skip super-k-mer re-compaction)
@@ -134,21 +136,22 @@ Set operations between two sorted skmer lists **A** and **B**. The atomic elemen
 ./bin/sskm setop --op intersection -a A.sskm -b B.sskm -o inter.sskm -t 16
 # combined mode: several relations (incl. B \ A) in a single merge pass
 ./bin/sskm setop -a A.sskm -b B.sskm --inter-out i.sskm --union-out u.sskm --diff-ab-out dab.sskm
-# combined mode: every cardinality (|A∩B|, |A∪B|, |A\B|, |B\A|, |A|, |B|) in one pass, nothing written
+# combined mode: every cardinality (|A∩B|, |A∪B|, |A\B|, |B\A|, |A△B|, |A|, |B|) in one pass, nothing written
 ./bin/sskm setop -a A.sskm -b B.sskm --sizes
 ```
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--op <name>` | single-op mode | — | One of `intersection`, `union`, `diff`, `intersection_size`, `union_size`, `diff_size`. `diff` is asymmetric: `A \ B` (k-mers of A absent from B). Mutually exclusive with the combined-mode options. |
+| `--op <name>` | single-op mode | — | One of `intersection`, `union`, `diff`, `xor`, `intersection_size`, `union_size`, `diff_size`, `xor_size`. `diff` is asymmetric: `A \ B` (k-mers of A absent from B); `xor` is the symmetric difference `A △ B` (k-mers in exactly one list). Mutually exclusive with the combined-mode options. |
 | `-a, --list-a <path>` | yes | — | First sorted skmer list. |
 | `-b, --list-b <path>` | yes | — | Second sorted skmer list. |
-| `-o, --output <path>` | for `intersection`/`union`/`diff` | — | Single-op output list; ignored by the `*_size` variants, which print a count to stdout. |
+| `-o, --output <path>` | for `intersection`/`union`/`diff`/`xor` | — | Single-op output list; ignored by the `*_size` variants, which print a count to stdout. |
 | `--inter-out <path>` | combined mode | — | Write `A ∩ B` to this list. |
 | `--union-out <path>` | combined mode | — | Write `A ∪ B` to this list. |
 | `--diff-ab-out <path>` | combined mode | — | Write `A \ B` to this list. |
 | `--diff-ba-out <path>` | combined mode | — | Write `B \ A` to this list. |
-| `--sizes` | combined mode | off | Print all four cardinalities (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`) plus `|A|` and `|B|` to stdout, computed in the same pass. On its own it materializes nothing. |
+| `--xor-out <path>` | combined mode | — | Write `A △ B` (symmetric difference) to this list. |
+| `--sizes` | combined mode | off | Print all five cardinalities (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`, `|A△B|`) plus `|A|` and `|B|` to stdout, computed in the same pass. On its own it materializes nothing. |
 | `--no-compact` | no | off | Emit **one record per result k-mer** instead of re-compacting the result back into super-k-mers — much faster (it skips the dominant cost) at the price of a larger output file (~3–5×). The result is still a valid, queryable sorted list. Ignored by the `*_size` variants; applies to every combined-mode output. |
 | `-t, --threads <N>` | no | 8 | Worker threads for the per-bucket merge — the independent minimizer buckets are processed in parallel. Every output is **byte-identical** regardless of `N`. |
 
@@ -157,10 +160,10 @@ Set operations between two sorted skmer lists **A** and **B**. The atomic elemen
 Two cost regimes:
 
 * **Cardinality (`*_size`)** counts the three relations in one merge pass **without writing anything** — the fast path for a Jaccard index, containment, or de-duplication, and the right choice when the result *set* is not needed.
-* **Materialized (`intersection`/`union`/`diff`)** additionally re-compacts the kept k-mers back into super-k-mers and writes a new list. That re-compaction dominates the time; `--no-compact` skips it (one record per k-mer, ~3–5× larger output, ~3× faster) while keeping the output a valid queryable list.
+* **Materialized (`intersection`/`union`/`diff`/`xor`)** additionally re-compacts the kept k-mers back into super-k-mers and writes a new list. That re-compaction dominates the time; `--no-compact` skips it (one record per k-mer, ~3–5× larger output, ~3× faster) while keeping the output a valid queryable list.
 
 #### Combined mode (single pass)
 
-Instead of `--op`, pass any subset of `--inter-out`, `--union-out`, `--diff-ab-out`, `--diff-ba-out` (one result list each — note `B \ A` is only reachable here) and/or `--sizes`, and the single merge pass produces them all at once: the bucket read and the two-cursor merge are shared, so only the per-output re-compaction is paid per output, and all six counts (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`, `|A|`, `|B|`) come for free with `--sizes`. Combined mode is **mutually exclusive** with `--op`, and two outputs pointing at the same path are rejected. Each materialized file is **byte-identical** to the matching single-op materialization (for any `-t`). Combined counting costs about one merge pass (≈4× a single `*_size` run, since the merge is the whole cost), while combined materialization is only ≈1.1–1.3× a single materialization (re-compaction is per-output and cannot be shared). Cross-validated against KMC by `tests/setop_multi_verif.sh`.
+Instead of `--op`, pass any subset of `--inter-out`, `--union-out`, `--diff-ab-out`, `--diff-ba-out`, `--xor-out` (one result list each — note `B \ A` is only reachable here) and/or `--sizes`, and the single merge pass produces them all at once: the bucket read and the two-cursor merge are shared, so only the per-output re-compaction is paid per output, and all seven counts (`|A∩B|`, `|A∪B|`, `|A\B|`, `|B\A|`, `|A△B|`, `|A|`, `|B|`) come for free with `--sizes`. Combined mode is **mutually exclusive** with `--op`, and two outputs pointing at the same path are rejected. Each materialized file is **byte-identical** to the matching single-op materialization (for any `-t`). Combined counting costs about one merge pass (≈4× a single `*_size` run, since the merge is the whole cost), while combined materialization is only ≈1.1–1.3× a single materialization (re-compaction is per-output and cannot be shared). Cross-validated against KMC by `tests/setop_multi_verif.sh`.
 
 Set operations scale ~×6–9 with `-t` (near-linear to 8 cores), which makes sklib the fastest set-op tool from a few cores up — including the high-overlap materialized intersection where KMC led single-core (chr1 ∩: 2.6 s vs KMC 2.7 s at 22 cores). Three benchmark reports accompany this feature: [`benchmark/results/reports/SETOPS_REPORT.md`](benchmark/results/reports/SETOPS_REPORT.md) compares sklib against KMC, CBL and FMSI (single- and multi-core), [`benchmark/results/reports/SETOPS_BOTTLENECKS.md`](benchmark/results/reports/SETOPS_BOTTLENECKS.md) breaks down where the time goes and documents the implemented speedups, and [`benchmark/results/reports/SETOPS_MULTI_REPORT.md`](benchmark/results/reports/SETOPS_MULTI_REPORT.md) covers combined single-pass mode vs the sequential single-op runs. See also the wiki's *Set operations* and *Benchmark · Set operations* pages.

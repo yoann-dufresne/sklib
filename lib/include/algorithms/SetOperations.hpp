@@ -82,7 +82,8 @@ struct SetSizes {
     uint64_t inter {0};   // |A ∩ B|
     uint64_t only_a {0};  // |A \ B|
     uint64_t only_b {0};  // |B \ A|
-    uint64_t uni() const { return inter + only_a + only_b; } // |A ∪ B|
+    uint64_t uni() const { return inter + only_a + only_b; }      // |A ∪ B|
+    uint64_t sym_diff() const { return only_a + only_b; }         // |A △ B| = |A∪B| - |A∩B|
 };
 
 // Advance `i` to the first index >= i whose record carries a valid k-mer at column `c` (or `n`).
@@ -485,6 +486,12 @@ template<typename store>
 inline uint64_t difference(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out, bool no_compact = false, unsigned nthreads = 8) {
     return materialize_setop<store>(A, B, out, false, true, false, no_compact, nthreads);
 }
+// symmetric_difference(A, B) = A △ B = (A \ B) ∪ (B \ A): keep the k-mers present in exactly one of
+// the two lists (in the union but not the intersection). Symmetric — the A/B order is irrelevant.
+template<typename store>
+inline uint64_t symmetric_difference(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, const std::string& out, bool no_compact = false, unsigned nthreads = 8) {
+    return materialize_setop<store>(A, B, out, /*inter*/ false, /*only_a*/ true, /*only_b*/ true, no_compact, nthreads);
+}
 
 // ---- size-only variants (no materialization) ----
 template<typename store>
@@ -499,16 +506,21 @@ template<typename store>
 inline uint64_t diff_size(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, unsigned nthreads = 8) {
     return set_sizes<store>(A, B, nthreads).only_a;
 }
+template<typename store>
+inline uint64_t sym_diff_size(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B, unsigned nthreads = 8) {
+    return set_sizes<store>(A, B, nthreads).sym_diff();
+}
 
 // ======================= combined (single-pass) set operations =======================
 //
 // One merge pass over both lists yields the three DISJOINT relations (both / only_a / only_b), and
 // every set operation is a union of a subset of them (intersection={both}, union={both,only_a,only_b},
-// A\B={only_a}, B\A={only_b}). So any requested subset of {A∩B, A∪B, A\B, B\A} — materialized and/or
-// merely counted — can be produced in ONE pass instead of one pass per operation: the per-bucket read,
-// the per-column CSR build and the merge are shared; only the per-output re-compaction is per-output.
-// The four cardinalities always come for free (three counters), so the combined call also reports all
-// sizes. This is the multi-operation analogue of materialize_setop, built from the same pieces
+// A\B={only_a}, B\A={only_b}, A△B={only_a,only_b}). So any requested subset of {A∩B, A∪B, A\B, B\A,
+// A△B} — materialized and/or merely counted — can be produced in ONE pass instead of one pass per
+// operation: the per-bucket read, the per-column CSR build and the merge are shared; only the
+// per-output re-compaction is per-output. The cardinalities always come for free (three counters), so
+// the combined call also reports all sizes. This is the multi-operation analogue of materialize_setop,
+// built from the same pieces
 // (merge_columns, read_bucket_into, generate_sorted_list_from_enumeration, parallel_for_dynamic) and
 // carrying the same byte-identical-for-any-thread-count guarantee, per output file.
 
@@ -519,8 +531,9 @@ struct MultiSetOpRequest {
     std::optional<std::string> union_out;     // A ∪ B
     std::optional<std::string> diff_ab_out;   // A \ B
     std::optional<std::string> diff_ba_out;   // B \ A
+    std::optional<std::string> sym_diff_out;  // A △ B = (A\B) ∪ (B\A)
     bool no_compact {false};
-    bool any_output() const { return inter_out || union_out || diff_ab_out || diff_ba_out; }
+    bool any_output() const { return inter_out || union_out || diff_ab_out || diff_ba_out || sym_diff_out; }
 };
 
 // All four cardinalities (always filled) plus the materialized result k-mer counts. Each *_kmers
@@ -528,14 +541,15 @@ struct MultiSetOpRequest {
 // or not that relation was materialized.
 struct MultiSetOpResult {
     SetSizes sizes;
-    uint64_t inter_kmers {0}, union_kmers {0}, diff_ab_kmers {0}, diff_ba_kmers {0};
+    uint64_t inter_kmers {0}, union_kmers {0}, diff_ab_kmers {0}, diff_ba_kmers {0}, sym_diff_kmers {0};
 };
 
 // Sink that fans each emitted k-mer out to every requested relation's buffer in one pass. A null
 // target means that relation is not materialized (its count is still kept). The single-k-mer skmer is
 // built once via get_skmer_of_kmer (a pure read of the manipulator's masks — verified side-effect
 // free, takes its argument by value) and copied into each target, so requesting union alongside a
-// partition costs one extract, not two.
+// partition costs one extract, not two. The symmetric difference A△B={only_a,only_b} is fed by the
+// same two emissions as A\B and B\A (it just receives both), exactly as the union is.
 template<typename store>
 struct MultiCollectSink {
     km::SkmerManipulator<store>& manip;
@@ -543,6 +557,7 @@ struct MultiCollectSink {
     std::vector<km::Skmer<store>>* uni;       // nullable: A∪B
     std::vector<km::Skmer<store>>* diff_ab;   // nullable: A\B
     std::vector<km::Skmer<store>>* diff_ba;   // nullable: B\A
+    std::vector<km::Skmer<store>>* sym;       // nullable: A△B (fed by both only_a and only_b)
     // Per-column kept counts, one per buffer (non-null iff the buffer is). Each buffer is filled in
     // column-major, k-mer-ascending order (merge_columns visits columns in order), so its prefix sum
     // gives the contiguous per-column blocks the re-compaction needs (the idea-#1 fast-path).
@@ -550,6 +565,7 @@ struct MultiCollectSink {
     std::vector<uint64_t>* cnt_uni {nullptr};
     std::vector<uint64_t>* cnt_ab {nullptr};
     std::vector<uint64_t>* cnt_ba {nullptr};
+    std::vector<uint64_t>* cnt_sym {nullptr};
     uint64_t n_inter {0}, n_only_a {0}, n_only_b {0};
 
     void both(const km::Skmer<store>& r, uint64_t c) {
@@ -562,18 +578,20 @@ struct MultiCollectSink {
     }
     void only_a(const km::Skmer<store>& r, uint64_t c) {
         ++n_only_a;
-        if (diff_ab || uni) {
+        if (diff_ab || uni || sym) {
             const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
             if (diff_ab) { diff_ab->push_back(s); ++(*cnt_ab)[c]; }
             if (uni)     { uni->push_back(s);     ++(*cnt_uni)[c]; }
+            if (sym)     { sym->push_back(s);     ++(*cnt_sym)[c]; }
         }
     }
     void only_b(const km::Skmer<store>& r, uint64_t c) {
         ++n_only_b;
-        if (diff_ba || uni) {
+        if (diff_ba || uni || sym) {
             const km::Skmer<store> s {manip.get_skmer_of_kmer(r, c)};
             if (diff_ba) { diff_ba->push_back(s); ++(*cnt_ba)[c]; }
             if (uni)     { uni->push_back(s);     ++(*cnt_uni)[c]; }
+            if (sym)     { sym->push_back(s);     ++(*cnt_sym)[c]; }
         }
     }
 };
@@ -637,7 +655,7 @@ struct MultiOrderedPayloadWriter {
     }
 };
 
-// Compute any requested subset of {A∩B, A∪B, A\B, B\A} in a single pass and return all four sizes.
+// Compute any requested subset of {A∩B, A∪B, A\B, B\A, A△B} in a single pass and return all sizes.
 // With no output requested this is a pure count (set_sizes, nothing materialized). Otherwise each
 // requested relation is written to its own VSKMER_4 file reusing the inputs' bucket layout; per
 // output the file is byte-identical for any thread count. Buckets run in parallel across `nthreads`
@@ -655,10 +673,11 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
     // single-pass counter; reuse it and touch no files.
     if (!req.any_output()) {
         result.sizes = set_sizes<store>(A, B, nthreads);
-        result.inter_kmers   = result.sizes.inter;
-        result.union_kmers   = result.sizes.uni();
-        result.diff_ab_kmers = result.sizes.only_a;
-        result.diff_ba_kmers = result.sizes.only_b;
+        result.inter_kmers    = result.sizes.inter;
+        result.union_kmers    = result.sizes.uni();
+        result.diff_ab_kmers  = result.sizes.only_a;
+        result.diff_ba_kmers  = result.sizes.only_b;
+        result.sym_diff_kmers = result.sizes.sym_diff();
         return result;
     }
 
@@ -667,13 +686,14 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
 
     // Stable channel list (fixes bundle-slot ↔ file mapping). Per-relation channel index, -1 if that
     // relation is not requested; the sink routes by these.
-    enum Rel { R_INTER, R_UNION, R_DIFF_AB, R_DIFF_BA };
+    enum Rel { R_INTER, R_UNION, R_DIFF_AB, R_DIFF_BA, R_SYM };
     struct OutSpec { Rel rel; const std::string* path; };
     std::vector<OutSpec> specs;
-    if (req.inter_out)   specs.push_back({R_INTER,   &*req.inter_out});
-    if (req.union_out)   specs.push_back({R_UNION,   &*req.union_out});
-    if (req.diff_ab_out) specs.push_back({R_DIFF_AB, &*req.diff_ab_out});
-    if (req.diff_ba_out) specs.push_back({R_DIFF_BA, &*req.diff_ba_out});
+    if (req.inter_out)    specs.push_back({R_INTER,   &*req.inter_out});
+    if (req.union_out)    specs.push_back({R_UNION,   &*req.union_out});
+    if (req.diff_ab_out)  specs.push_back({R_DIFF_AB, &*req.diff_ab_out});
+    if (req.diff_ba_out)  specs.push_back({R_DIFF_BA, &*req.diff_ba_out});
+    if (req.sym_diff_out) specs.push_back({R_SYM,     &*req.sym_diff_out});
     const size_t nout {specs.size()};
 
     // Reject two outputs writing to the same path (they would interleave and corrupt each other).
@@ -682,13 +702,14 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
             if (*specs[i].path == *specs[j].path)
                 throw std::runtime_error("set operation: two results target the same output path: " + *specs[i].path);
 
-    int ch_inter {-1}, ch_union {-1}, ch_ab {-1}, ch_ba {-1};
+    int ch_inter {-1}, ch_union {-1}, ch_ab {-1}, ch_ba {-1}, ch_sym {-1};
     for (size_t ci {0}; ci < nout; ++ci) {
         switch (specs[ci].rel) {
             case R_INTER:   ch_inter = static_cast<int>(ci); break;
             case R_UNION:   ch_union = static_cast<int>(ci); break;
             case R_DIFF_AB: ch_ab    = static_cast<int>(ci); break;
             case R_DIFF_BA: ch_ba    = static_cast<int>(ci); break;
+            case R_SYM:     ch_sym   = static_cast<int>(ci); break;
         }
     }
 
@@ -765,10 +786,12 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
                 ch_union >= 0 ? &col[ch_union] : nullptr,
                 ch_ab    >= 0 ? &col[ch_ab]    : nullptr,
                 ch_ba    >= 0 ? &col[ch_ba]    : nullptr,
+                ch_sym   >= 0 ? &col[ch_sym]   : nullptr,
                 ch_inter >= 0 ? &cc[ch_inter] : nullptr,
                 ch_union >= 0 ? &cc[ch_union] : nullptr,
                 ch_ab    >= 0 ? &cc[ch_ab]    : nullptr,
-                ch_ba    >= 0 ? &cc[ch_ba]    : nullptr};
+                ch_ba    >= 0 ? &cc[ch_ba]    : nullptr,
+                ch_sym   >= 0 ? &cc[ch_sym]   : nullptr};
             merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
                                  bufB[tid].data(), bufB[tid].size(), sink);
             acc_inter[tid] += sink.n_inter;
@@ -822,10 +845,11 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
         total.only_b += acc_b[t];
     }
     result.sizes = total;
-    result.inter_kmers   = total.inter;
-    result.union_kmers   = total.uni();
-    result.diff_ab_kmers = total.only_a;
-    result.diff_ba_kmers = total.only_b;
+    result.inter_kmers    = total.inter;
+    result.union_kmers    = total.uni();
+    result.diff_ab_kmers  = total.only_a;
+    result.diff_ba_kmers  = total.only_b;
+    result.sym_diff_kmers = total.sym_diff();
     return result;
 }
 

@@ -138,7 +138,7 @@ int run_setop(const SetOpOptions& opts) {
         opts.op.compare(opts.op.size() - 5, 5, "_size") == 0;
     // Combined (single-pass) mode is selected by any of the per-relation outputs or --sizes.
     const bool combined = opts.inter_out || opts.union_out ||
-                          opts.diff_ab_out || opts.diff_ba_out || opts.sizes;
+                          opts.diff_ab_out || opts.diff_ba_out || opts.xor_out || opts.sizes;
 
     try {
         km::sortedlist::dispatch_width_bytes(store_w, [&]<typename store>() {
@@ -150,30 +150,34 @@ int run_setop(const SetOpOptions& opts) {
             // ---- combined mode: any subset of the four results + all sizes, in one pass ----
             if (combined) {
                 km::sortedlist::MultiSetOpRequest req;
-                req.inter_out   = opts.inter_out;
-                req.union_out   = opts.union_out;
-                req.diff_ab_out = opts.diff_ab_out;
-                req.diff_ba_out = opts.diff_ba_out;
-                req.no_compact  = opts.no_compact;
+                req.inter_out    = opts.inter_out;
+                req.union_out    = opts.union_out;
+                req.diff_ab_out  = opts.diff_ab_out;
+                req.diff_ba_out  = opts.diff_ba_out;
+                req.sym_diff_out = opts.xor_out;
+                req.no_compact   = opts.no_compact;
                 const km::sortedlist::MultiSetOpResult r =
                     km::sortedlist::multi_setop<store>(A, B, req, th);
                 if (opts.sizes) {
                     // key<TAB>value lines on stdout (machine-parseable; |A|,|B| derived for convenience).
-                    std::cout << "intersection\t" << r.sizes.inter << "\n"
-                              << "union\t"        << r.sizes.uni()  << "\n"
-                              << "diff_ab\t"      << r.sizes.only_a << "\n"
-                              << "diff_ba\t"      << r.sizes.only_b << "\n"
+                    std::cout << "intersection\t" << r.sizes.inter      << "\n"
+                              << "union\t"        << r.sizes.uni()      << "\n"
+                              << "diff_ab\t"      << r.sizes.only_a     << "\n"
+                              << "diff_ba\t"      << r.sizes.only_b     << "\n"
+                              << "xor\t"          << r.sizes.sym_diff() << "\n"
                               << "A\t"            << (r.sizes.inter + r.sizes.only_a) << "\n"
                               << "B\t"            << (r.sizes.inter + r.sizes.only_b) << std::endl;
                 }
                 if (opts.inter_out)
-                    std::cerr << "intersection: wrote " << r.inter_kmers   << " k-mers to " << *opts.inter_out   << std::endl;
+                    std::cerr << "intersection: wrote " << r.inter_kmers    << " k-mers to " << *opts.inter_out   << std::endl;
                 if (opts.union_out)
-                    std::cerr << "union: wrote "        << r.union_kmers   << " k-mers to " << *opts.union_out   << std::endl;
+                    std::cerr << "union: wrote "        << r.union_kmers    << " k-mers to " << *opts.union_out   << std::endl;
                 if (opts.diff_ab_out)
-                    std::cerr << "diff_ab: wrote "      << r.diff_ab_kmers << " k-mers to " << *opts.diff_ab_out << std::endl;
+                    std::cerr << "diff_ab: wrote "      << r.diff_ab_kmers  << " k-mers to " << *opts.diff_ab_out << std::endl;
                 if (opts.diff_ba_out)
-                    std::cerr << "diff_ba: wrote "      << r.diff_ba_kmers << " k-mers to " << *opts.diff_ba_out << std::endl;
+                    std::cerr << "diff_ba: wrote "      << r.diff_ba_kmers  << " k-mers to " << *opts.diff_ba_out << std::endl;
+                if (opts.xor_out)
+                    std::cerr << "xor: wrote "          << r.sym_diff_kmers << " k-mers to " << *opts.xor_out     << std::endl;
                 return;
             }
 
@@ -184,13 +188,16 @@ int run_setop(const SetOpOptions& opts) {
                 std::cout << km::sortedlist::union_size<store>(A, B, th) << std::endl;
             } else if (opts.op == "diff_size") {
                 std::cout << km::sortedlist::diff_size<store>(A, B, th) << std::endl;
+            } else if (opts.op == "xor_size") {
+                std::cout << km::sortedlist::sym_diff_size<store>(A, B, th) << std::endl;
             } else {
                 const std::string& out = *opts.output_file;
                 const bool nc = opts.no_compact;
                 uint64_t n {0};
                 if (opts.op == "intersection")      n = km::sortedlist::intersection<store>(A, B, out, nc, th);
                 else if (opts.op == "union")        n = km::sortedlist::set_union<store>(A, B, out, nc, th);
-                else /* diff */                     n = km::sortedlist::difference<store>(A, B, out, nc, th);
+                else if (opts.op == "diff")         n = km::sortedlist::difference<store>(A, B, out, nc, th);
+                else /* xor */                      n = km::sortedlist::symmetric_difference<store>(A, B, out, nc, th);
                 std::cerr << opts.op << ": wrote " << n << " k-mers to " << out << std::endl;
             }
         });

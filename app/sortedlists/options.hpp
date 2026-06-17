@@ -29,8 +29,9 @@ struct QueryOptions {
 };
 
 struct SetOpOptions {
-    // Single-op (legacy) mode: one of intersection, union, diff, intersection_size, union_size,
-    // diff_size. diff is asymmetric: A \ B (k-mers of A absent from B). Empty in combined mode.
+    // Single-op (legacy) mode: one of intersection, union, diff, xor, intersection_size, union_size,
+    // diff_size, xor_size. diff is asymmetric: A \ B (k-mers of A absent from B); xor is the symmetric
+    // difference A △ B (k-mers in exactly one list). Empty in combined mode.
     std::string op;
     std::string list_a;                      // -a/--list-a
     std::string list_b;                      // -b/--list-b
@@ -44,5 +45,6 @@ struct SetOpOptions {
     std::optional<std::string> union_out;    // --union-out   (A ∪ B)
     std::optional<std::string> diff_ab_out;  // --diff-ab-out (A \ B)
     std::optional<std::string> diff_ba_out;  // --diff-ba-out (B \ A)
-    bool sizes = false;                      // --sizes: print all four cardinalities (single pass)
+    std::optional<std::string> xor_out;      // --xor-out     (A △ B)
+    bool sizes = false;                      // --sizes: print all cardinalities (single pass)
 };
