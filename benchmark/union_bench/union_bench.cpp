@@ -81,7 +81,8 @@ Args parse(int argc, char** argv) {
         else usage(argv[0], "unknown argument: " + k);
     }
     if (a.a.empty() || a.b.empty()) usage(argv[0], "--a and --b are required");
-    if (a.op != "union" && a.op != "intersection" && a.op != "diff" && a.op != "xor" && a.op != "multi") usage(argv[0], "--op must be union|intersection|diff|xor|multi");
+    if (a.op != "union" && a.op != "intersection" && a.op != "diff" && a.op != "xor" && a.op != "multi" && a.op != "count") usage(argv[0], "--op must be union|intersection|diff|xor|multi|count");
+    if (a.op == "count" && a.mode == "verify") usage(argv[0], "--op count supports --mode bench only (counts are cross-checked by KMC / value compare)");
     if (a.mode != "bench" && a.mode != "verify") usage(argv[0], "--mode must be bench or verify");
     if (a.op == "multi" && a.mode == "verify") usage(argv[0], "--op multi supports --mode bench only (verify multi via the sskm CLI + sha256)");
     if (a.mode == "verify" && a.ref.empty()) usage(argv[0], "--mode verify requires --ref");
@@ -147,9 +148,40 @@ int run_multi_bench(const Args& a) {
     return 0;
 }
 
+// Bench the combined-count path (set_sizes — what `--sizes` / every *_size variant calls). The merge
+// is the whole cost here (no materialization), so this is the case the identical-record skip helps most.
+template<typename store>
+int run_count_bench(const Args& a) {
+    auto A = km::sortedlist::BucketedSkmerListReader<store>::open(a.a);
+    auto B = km::sortedlist::BucketedSkmerListReader<store>::open(a.b);
+    km::sortedlist::SetSizes s{};
+    for (unsigned w {0}; w < a.warmup; ++w) s = km::sortedlist::set_sizes<store>(A, B, 1);
+    std::vector<double> times; times.reserve(a.reps);
+    for (unsigned r {0}; r < a.reps; ++r) {
+        const auto t0 {std::chrono::steady_clock::now()};
+        s = km::sortedlist::set_sizes<store>(A, B, 1);
+        const auto t1 {std::chrono::steady_clock::now()};
+        times.push_back(std::chrono::duration<double>(t1 - t0).count());
+    }
+    const uint64_t kmers {s.uni()};
+    const Stats st {stats_of(times)};
+    const double mkmer_s {st.median > 0 ? static_cast<double>(kmers) / st.median / 1e6 : 0.0};
+    std::cerr << "[bench] COUNT store=" << sizeof(store) << "B  inter=" << s.inter
+              << " only_a=" << s.only_a << " only_b=" << s.only_b << " union=" << s.uni()
+              << " xor=" << s.sym_diff() << "  reps=" << a.reps << "\n"
+              << "[bench] median=" << st.median << "s  min=" << st.min << "s  stddev=" << st.stddev
+              << "s  MAD=" << st.mad << "s  " << mkmer_s << " Mkmer/s\n";
+    std::cout << "RESULT\tmedian_s=" << st.median << "\tmin_s=" << st.min << "\tstddev_s=" << st.stddev
+              << "\tmad_s=" << st.mad << "\tkmers=" << kmers << "\trecords=0"
+              << "\tinter=" << s.inter << "\tonly_a=" << s.only_a << "\tonly_b=" << s.only_b
+              << "\tmkmer_s=" << mkmer_s << "\tstore=" << sizeof(store) << std::endl;
+    return 0;
+}
+
 template<typename store>
 int run_bench(const Args& a) {
     if (a.op == "multi") return run_multi_bench<store>(a);
+    if (a.op == "count") return run_count_bench<store>(a);
     auto A = km::sortedlist::BucketedSkmerListReader<store>::open(a.a);
     auto B = km::sortedlist::BucketedSkmerListReader<store>::open(a.b);
 
