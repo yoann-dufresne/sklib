@@ -26,14 +26,14 @@ SHM="${SHM:-/dev/shm}"
 mkdir -p "$S"
 
 DATASETS="${DATASETS:-chr21 celegans}"
-KS="${KS:-31 63}"
+KS="${KS:-21 31 63}"             # 21->uint32(4B) 31->uint64(8B) 63->__uint128(16B), via m=k/2
 JS="${JS:-0.1 0.5 0.9}"
 SEED="${SEED:-1234}"
 WARMUP="${WARMUP:-2}"
 REPS="${REPS:-9}"
 PIN="${PIN:-5}"
 TAG="${TAG:-cur}"
-OP="${OP:-union}"                 # union | intersection | diff (all share materialize_setop)
+OP="${OP:-union}"                 # union | intersection | diff | xor (all share materialize_setop)
 OUT_TSV="${OUT_TSV:-$ROOT/benchmark/results/union_bench/last.tsv}"
 MODE="${1:-all}"
 

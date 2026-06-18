@@ -33,7 +33,7 @@ namespace {
 struct Args {
     std::string a, b, ref, out {"/dev/shm/union_bench_out.sskm"};
     std::string mode {"bench"};
-    std::string op {"union"};   // union | intersection | diff — all share materialize_setop
+    std::string op {"union"};   // union | intersection | diff | xor — all share materialize_setop
     unsigned warmup {2}, reps {9};
 };
 
@@ -43,6 +43,7 @@ uint64_t run_setop(const std::string& op, km::sortedlist::BucketedSkmerListReade
                    km::sortedlist::BucketedSkmerListReader<store>& B, const std::string& out) {
     if (op == "intersection") return km::sortedlist::intersection<store>(A, B, out, /*no_compact*/ false, 1);
     if (op == "diff")         return km::sortedlist::difference<store>(A, B, out, false, 1);
+    if (op == "xor")          return km::sortedlist::symmetric_difference<store>(A, B, out, false, 1);
     return km::sortedlist::set_union<store>(A, B, out, false, 1);
 }
 template<typename store>
@@ -50,6 +51,7 @@ uint64_t setop_size(const std::string& op, km::sortedlist::BucketedSkmerListRead
                     km::sortedlist::BucketedSkmerListReader<store>& B) {
     if (op == "intersection") return km::sortedlist::intersection_size<store>(A, B, 1);
     if (op == "diff")         return km::sortedlist::diff_size<store>(A, B, 1);
+    if (op == "xor")          return km::sortedlist::sym_diff_size<store>(A, B, 1);
     return km::sortedlist::union_size<store>(A, B, 1);
 }
 
@@ -79,7 +81,7 @@ Args parse(int argc, char** argv) {
         else usage(argv[0], "unknown argument: " + k);
     }
     if (a.a.empty() || a.b.empty()) usage(argv[0], "--a and --b are required");
-    if (a.op != "union" && a.op != "intersection" && a.op != "diff" && a.op != "multi") usage(argv[0], "--op must be union|intersection|diff|multi");
+    if (a.op != "union" && a.op != "intersection" && a.op != "diff" && a.op != "xor" && a.op != "multi") usage(argv[0], "--op must be union|intersection|diff|xor|multi");
     if (a.mode != "bench" && a.mode != "verify") usage(argv[0], "--mode must be bench or verify");
     if (a.op == "multi" && a.mode == "verify") usage(argv[0], "--op multi supports --mode bench only (verify multi via the sskm CLI + sha256)");
     if (a.mode == "verify" && a.ref.empty()) usage(argv[0], "--mode verify requires --ref");
