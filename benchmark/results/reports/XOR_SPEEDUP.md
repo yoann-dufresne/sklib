@@ -110,11 +110,30 @@ greedy pass without growing the record count (which the content-equivalence bar 
 the XOR/diff-specific win (the high-overlap merge that union could not touch); the low-overlap regime is
 bounded by that shared, already-optimised recompaction.
 
+### #B — skip redundant `get_skmer_of_kmer` on the set-op recompaction — **REVERTED (construction regression)**
+
+**Idea.** On the set-op path the recompaction's enumeration already holds single-k-mer skmers framed at
+their column, so `get_skmer_of_kmer(enum[id], col)` is the identity (union #4's observation, never tried
+at uint32). Skip it in `merge_LList_column` + the column-0 init. To keep construction untouched it was
+templated on a compile-time `SetopFrame` flag (`if constexpr`, default false = construction), enabled
+only for narrow stores (uint32/uint64; `__uint128` keeps the original path where union #4 regressed).
+
+**Why it fails (measured).** The skip itself is **byte-identical** (213 gtest incl. construction golden
+digests; xor/union/intersection/diff sha256 match) and gives a small **xor** win — k21 −1.2/−1.4 %,
+k31 ~−1 %, k63 neutral (gate off), no setop regression. **But templating the shared `merge_LList_column`
+regressed *construction* +2.4 %** (yeast k31 −t1, band ±0.60 %; same on ecoli): the `SetopFrame=false`
+instantiation, though logically identical, does not reproduce the original non-template codegen — exactly
+the shared-hot-loop fragility union #4 hit. Trading a ~1 % xor gain for a ~2.4 % construction regression
+fails the no-regression rule. The only regression-free implementation — fully **duplicating** the
+~120-line `merge_LList_column`/recompaction into a set-op-only copy — is disproportionate maintenance
+debt for ~1 %. Reverted (`git checkout`).
+
 **Assessed, not pursued:**
 - *Fused streaming recompaction (A1).* Re-confirmed infeasible as a maximality-preserving single pass
   (LIS needed even in the 1:1 case — adjacent columns' overlap (k-1)-mer is not monotone in either
   k-mer order, so matches cross); the union journal's contained variant gained 0 %.
-- *Skip redundant `get_skmer_of_kmer` on the set-op recompaction (union #4, never tried at uint32).*
-  Targets the now-dominant recompaction but is codegen-fragile on `__uint128` (union #4 reverted for a
-  k63 regression); would need a fully separate set-op `merge_LList_column` to isolate, for a modest
-  (~3 %) gain. Candidate for a future, carefully-isolated pass.
+
+**Conclusion.** #E is the monothread XOR win (XOR/diff-specific, byte-identical, −15…−43 % at high
+overlap, every width, no regression). The residual cost is the shared recompaction, which the union
+journal already optimised and whose remaining levers are either infeasible (A1) or not worth the cost/risk
+(#B). Monothread XOR is at its practical floor.
