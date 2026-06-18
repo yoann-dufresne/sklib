@@ -98,10 +98,17 @@ inline size_t set_next_valid(const km::SkmerManipulator<store>& cmp,
 // idx[off[c] .. off[c+1]) in ascending index order (== ascending k-mer order at column c, the sorted
 // invariant). Replaces re-scanning the whole span from 0 for each column (the former set_next_valid
 // hole-scan, (k-m+1)x over the span) with one O(span) bucketing pass + direct per-column walks.
-template<typename store>
+// `Filtered` (compile-time): when true, records with drop[i]!=0 are excluded entirely — the xor/diff
+// identical-record fast-path (mark_identical_records) marks the record pairs whose every k-mer is in the
+// intersection, which symmetric_difference/difference discard; skipping them keeps the surviving
+// only_a/only_b k-mers (and hence the result) byte-identical. `Filtered=false` (the default for union,
+// intersection and every existing caller) compiles to the ORIGINAL loop with no per-record test and no
+// `drop` access — same codegen as before this fast-path existed, so those paths cannot regress.
+template<bool Filtered = false, typename store>
 inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
                              const km::Skmer<store>* L, size_t n, uint64_t ncols,
-                             std::vector<uint32_t>& idx, std::vector<uint32_t>& off) {
+                             std::vector<uint32_t>& idx, std::vector<uint32_t>& off,
+                             const char* drop = nullptr) {
     // Pass 1 — per-column counts via a difference array. A record valid at columns [s, hi] contributes
     // +1 to each; instead of the old per-column loop (O(hi-s+1), i.e. O(total k-mers) since A/B records
     // are full super-k-mers spanning many columns) apply it in O(1) as +1 at s and -1 at hi+1, then a
@@ -109,6 +116,7 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
     thread_local std::vector<int64_t> col_diff;
     col_diff.assign(ncols + 1, 0);
     for (size_t i {0}; i < n; ++i) {
+        if constexpr (Filtered) { if (drop[i]) continue; }   // xor/diff fast-path: excluded both-k-mers
         const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
         if (e < s) continue;                       // no valid k-mer (unsigned: a wrapped s>e is skipped)
         const uint64_t hi {e < ncols ? e : ncols - 1};
@@ -121,10 +129,42 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
     idx.resize(off[ncols]);
     std::vector<uint32_t> cur(off.begin(), off.end() - 1);
     for (size_t i {0}; i < n; ++i) {
+        if constexpr (Filtered) { if (drop[i]) continue; }
         const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
         if (e < s) continue;
         for (uint64_t c {s}; c <= e && c < ncols; ++c) idx[cur[c]++] = static_cast<uint32_t>(i);
     }
+}
+
+// XOR/diff fast-path: a record present byte-identically in BOTH A and B contributes only k-mers that
+// are in both lists (the intersection) — which symmetric_difference and difference discard. Such record
+// PAIRS can therefore be dropped before the column merge without changing the only_a/only_b emissions
+// (so the materialized result and every count stay byte-identical). Both bucket payloads are globally
+// sorted by Skmer::operator< (== m_pair order), so a two-cursor walk locates the equal-m_pair runs;
+// within each (almost always length-1) run we match byte-identical records (operator==, which also
+// compares the prefix/suffix sizes) 1:1. Marks dropA[i]/dropB[j]=1 for the matched pairs; returns the
+// number of pairs dropped (0 ⇒ caller can pass nullptr and skip the indirection). O(nA+nB), one
+// sequential pass over each already-cache-warm bucket.
+template<typename store>
+inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
+                                     const km::Skmer<store>* B, size_t nB,
+                                     std::vector<char>& dropA, std::vector<char>& dropB) {
+    dropA.assign(nA, 0);
+    dropB.assign(nB, 0);
+    size_t i {0}, j {0}, dropped {0};
+    while (i < nA && j < nB) {
+        if (A[i].m_pair < B[j].m_pair) { ++i; continue; }
+        if (B[j].m_pair < A[i].m_pair) { ++j; continue; }
+        // Equal m_pair on both sides — gather the (tiny) run on each side and match byte-identical pairs.
+        const auto mp {A[i].m_pair};
+        size_t i2 {i}; while (i2 < nA && A[i2].m_pair == mp) ++i2;
+        size_t j2 {j}; while (j2 < nB && B[j2].m_pair == mp) ++j2;
+        for (size_t a {i}; a < i2; ++a)
+            for (size_t b {j}; b < j2; ++b)
+                if (!dropB[b] && A[a] == B[b]) { dropA[a] = 1; dropB[b] = 1; ++dropped; break; }
+        i = i2; j = j2;
+    }
+    return dropped;
 }
 
 // Per-column two-cursor merge of two sorted spans. Works on any contiguous skmer range — an in-RAM
@@ -136,13 +176,20 @@ template<typename store, typename Sink>
 inline void merge_columns(const km::SkmerManipulator<store>& cmp,
                           const km::Skmer<store>* A, size_t nA,
                           const km::Skmer<store>* B, size_t nB,
-                          Sink& sink) {
+                          Sink& sink,
+                          const char* dropA = nullptr, const char* dropB = nullptr) {
     const uint64_t k_minus_m {cmp.k - cmp.m};
     const uint64_t ncols {k_minus_m + 1};
     // Reused across buckets/calls (set-ops are sequential) to avoid re-allocating the index arrays.
+    // dropA/dropB (optional): exclude the xor/diff identical-record pairs from the CSR (see
+    // mark_identical_records); nullptr keeps every record (union/intersection, unchanged). Dispatch on
+    // nullness ONCE per bucket to the compile-time-specialized CSR builder, so the no-drop case keeps the
+    // original codegen (the 2-cursor merge below is untouched either way).
     thread_local std::vector<uint32_t> idxA, offA, idxB, offB;
-    build_column_csr<store>(cmp, A, nA, ncols, idxA, offA);
-    build_column_csr<store>(cmp, B, nB, ncols, idxB, offB);
+    if (dropA) build_column_csr<true>(cmp, A, nA, ncols, idxA, offA, dropA);
+    else       build_column_csr<false>(cmp, A, nA, ncols, idxA, offA);
+    if (dropB) build_column_csr<true>(cmp, B, nB, ncols, idxB, offB, dropB);
+    else       build_column_csr<false>(cmp, B, nB, ncols, idxB, offB);
     for (uint64_t c {0}; c <= k_minus_m; ++c) {
         const uint32_t* ra {idxA.data() + offA[c]}; size_t na {offA[c + 1] - offA[c]};
         const uint32_t* rb {idxB.data() + offB[c]}; size_t nb {offB[c + 1] - offB[c]};
@@ -379,6 +426,11 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     // it skips re-scanning the enumeration for each column. k-m+1 columns.
     const uint64_t kmm {k - m};
     std::vector<std::vector<uint64_t>> col_count(nthr), col_off(nthr);
+    // Per-worker drop masks for the xor/diff identical-record fast-path (used only when keep_inter is
+    // false). Reused across this worker's buckets like the other scratch.
+    const bool drop_both {!keep_inter};
+    std::vector<std::vector<char>> dropA(nthr), dropB(nthr);
+    std::vector<uint64_t> drop_dropped(nthr, 0), drop_records(nthr, 0);   // identical-record stats (telemetry)
     std::vector<std::ifstream> fhA, fhB;
     manips.reserve(nthr); subs.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
     for (unsigned t {0}; t < nthr; ++t) {
@@ -395,6 +447,24 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     // cap bounds the buffered payloads, so peak extra RAM is ~cap × one bucket payload. 2×nthreads is
     // ample headroom over the nthreads buckets in flight without holding many big payloads at once.
     OrderedPayloadWriter<store> writer(out, dir, out_path, static_cast<size_t>(nthr) * 2 + 1);
+
+    // Adaptive gate for the identical-record fast-path (drop_both = xor/diff only). The pass costs
+    // ~O(records) but only saves ~O(dropped × (k-m)) of column-merge work, so it pays only above an
+    // overlap threshold. Sample the first buckets, estimate the record drop fraction f, and keep
+    // deduping iff f·(k-m) ≥ DEDUP_GAMMA. This avoids the low-overlap regression at narrow widths (most
+    // records, cheapest per-column merge) while keeping the high-overlap win at every width. Dropping is
+    // always correctness-safe (it removes only intersection k-mers, which xor/diff discard), so the gate
+    // decision — and any monothread/parallel difference in it — changes only speed, never the output.
+    std::atomic<int> dedup_state {drop_both ? 0 : 2};      // 0=sampling, 1=on, 2=off
+    std::atomic<uint64_t> samp_rec {0}, samp_drop {0};
+    uint64_t total_rec {0};
+    if (drop_both) for (uint64_t bi {0}; bi < nb; ++bi) total_rec += A.bucket_count(bi) + B.bucket_count(bi);
+    // Sample a small prefix to estimate the drop fraction. The record drop fraction is a global property
+    // of the (A,B) pair (stable across buckets), so a tiny sample suffices; keeping it small bounds the
+    // dedup work spent before a low-overlap pair turns the fast-path OFF (no config sits near the gate
+    // threshold, so misclassification is not a risk). ~0.4% of records, floored for tiny inputs.
+    const uint64_t sample_target {std::max<uint64_t>(uint64_t{1} << 14, total_rec / 256)};
+    constexpr double DEDUP_GAMMA {5.0};
 
     std::atomic<bool> failed {false};
     std::exception_ptr eptr;
@@ -414,8 +484,33 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
             cc.assign(kmm + 1, 0);
             CollectSink<store> sink{*manips[tid], col, keep_inter, keep_only_a, keep_only_b, &cc};
             const phase_clock::time_point t1 {timing ? phase_clock::now() : t0};
+            // xor/diff only: drop record pairs identical in A and B (all-intersection k-mers) before the
+            // merge. Output stays byte-identical (those k-mers are never emitted to col); the win is a
+            // smaller column merge, biggest when A and B overlap heavily (the merge-bound high-J regime).
+            // Timed inside the merge phase (it is merge work).
+            const char* dpa {nullptr};
+            const char* dpb {nullptr};
+            if (drop_both && dedup_state.load(std::memory_order_relaxed) != 2) {   // sampling or on
+                const size_t nrec {bufA[tid].size() + bufB[tid].size()};
+                const size_t nd {mark_identical_records<store>(bufA[tid].data(), bufA[tid].size(),
+                                                              bufB[tid].data(), bufB[tid].size(),
+                                                              dropA[tid], dropB[tid])};
+                if (nd) { dpa = dropA[tid].data(); dpb = dropB[tid].data(); }
+                drop_dropped[tid] += nd;
+                drop_records[tid] += nrec;
+                if (dedup_state.load(std::memory_order_relaxed) == 0) {            // still sampling: decide once
+                    const uint64_t r {samp_rec.fetch_add(nrec, std::memory_order_relaxed) + nrec};
+                    const uint64_t d {samp_drop.fetch_add(nd, std::memory_order_relaxed) + nd};
+                    if (r >= sample_target) {
+                        const int decision {2.0 * static_cast<double>(d) * static_cast<double>(kmm)
+                                            >= DEDUP_GAMMA * static_cast<double>(r) ? 1 : 2};
+                        int expected {0};
+                        dedup_state.compare_exchange_strong(expected, decision, std::memory_order_relaxed);
+                    }
+                }
+            }
             merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
-                                 bufB[tid].data(), bufB[tid].size(), sink);
+                                 bufB[tid].data(), bufB[tid].size(), sink, dpa, dpb);
             kmers[tid] += col.size();
             const phase_clock::time_point t2 {timing ? phase_clock::now() : t0};
 
@@ -469,6 +564,14 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
 
     uint64_t total_kmers {0};
     for (unsigned t {0}; t < nthr; ++t) total_kmers += kmers[t];
+
+    if (drop_both && std::getenv("SKLIB_SETOP_DROP_STATS")) {
+        uint64_t nd {0}, nr {0};
+        for (unsigned t {0}; t < nthr; ++t) { nd += drop_dropped[t]; nr += drop_records[t]; }
+        std::cerr << "[setop-drop] dropped_records=" << nd << "  scanned_records=" << nr
+                  << "  drop_frac=" << (nr ? 2.0 * static_cast<double>(nd) / static_cast<double>(nr) : 0.0)
+                  << "  (k-m)=" << (k - m) << "\n";
+    }
     return total_kmers;
 }
 
