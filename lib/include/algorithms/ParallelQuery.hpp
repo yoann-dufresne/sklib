@@ -197,7 +197,7 @@ void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& f
         uint64_t seq {0};
 
         for (const km::Skmer<gen> skmer : file_skmerator) {
-            const uint64_t bid {reader.bucket_of_phi_min(static_cast<uint64_t>(manip.minimizer(skmer)))};
+            const uint64_t bid {reader.route_minimizer(manip.minimizer(skmer))};
             batch.emplace_back(bid, km::truncate_skmer<gen, store>(k, m, b, skmer));
             if (batch.size() >= batch_size) {
                 queue.push(WorkBatch<store>{seq++, std::move(batch)});
@@ -254,7 +254,7 @@ void sequential_query(BucketedSkmerListReader<store>& reader, const std::string&
     constexpr uint64_t FLUSH {4096};
     uint64_t since_flush {0};
     for (const km::Skmer<gen> skmer : file_skmerator) {
-        const uint64_t bid {reader.bucket_of_phi_min(static_cast<uint64_t>(manip.minimizer(skmer)))};
+        const uint64_t bid {reader.route_minimizer(manip.minimizer(skmer))};
         const km::Skmer<store> trunc {km::truncate_skmer<gen, store>(k, m, b, skmer)};
         reader.query_into(bid, trunc, buf);
         append_result(text, buf);

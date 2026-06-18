@@ -58,7 +58,9 @@ TEST(MinimizerHash, PermuteSlotRoundTrip) {
         Skmer<uint64_t> sk{typename Skmer<uint64_t>::pair((mv << shift) | fv)};
         manip.permute_minimizer_slot(sk);
         const uint64_t got = static_cast<uint64_t>(sk.m_pair);
-        EXPECT_EQ((got >> shift) & mmask, manip.phi(mv));
+        // The stored slot is ψ(mv) = reverse_2m(φ(mv)) (the bit-reversal that moves φ's uniform low
+        // bits into the high-order bucket-prefix positions), not φ(mv) directly.
+        EXPECT_EQ((got >> shift) & mmask, manip.reverse_2m(manip.phi(mv)));
         EXPECT_EQ(got & fmask, fv) << "flanks must be untouched";
         manip.unpermute_minimizer_slot(sk);
         EXPECT_EQ(static_cast<uint64_t>(sk.m_pair), (mv << shift) | fv);

@@ -299,6 +299,15 @@ public:
             return static_cast<uint64_t>(m_value[0]);
         }
 
+        // Full-width low word, WITHOUT the 64-bit narrowing of operator uint64_t(). Use this
+        // wherever a value that may span more than 64 bits (e.g. a 2m-bit minimizer with m >= 33)
+        // is extracted from the low word: static_cast<kuint>(pair) would otherwise route through
+        // operator uint64_t() and silently truncate to 64 bits (the m>=33 single-bucket bug).
+        kuint to_kuint() const
+        {
+            return m_value[0];
+        }
+
 
         friend std::ostream& operator<<(std::ostream& os, const typename Skmer<kuint>::pair& p)
         {
@@ -732,14 +741,14 @@ public:
     kuint minimizer() const
     {
         return std::min(
-            static_cast<kuint>(m_fwd.m_pair >> (4*(k-m))),
-            static_cast<kuint>(m_rev.m_pair >> (4*(k-m)))
+            (m_fwd.m_pair >> (4*(k-m))).to_kuint(),
+            (m_rev.m_pair >> (4*(k-m))).to_kuint()
         );
     }
 
     kuint minimizer(const Skmer<kuint>& skmer) const
     {
-        return static_cast<kuint>(skmer.m_pair >> (4*(k-m)));
+        return (skmer.m_pair >> (4*(k-m))).to_kuint();
     }
 
     // Order key of a skmer's (raw) minimizer: φ of the raw-canonical m-mer. The window
@@ -815,20 +824,49 @@ public:
         return x & mask;
     }
 
-    // Replace the raw minimizer in the top 2m bits of m_pair by φ(minimizer) (flanks
-    // untouched), so a plain m_pair compare orders the list by φ-minimizer.
+    // Bit-reversal of the low 2m bits (bit i ↔ bit 2m-1-i), right-aligned in the 2m window.
+    // Its own inverse on the 2m-bit space. Composed with φ to spread the *low* (uniform) bits of
+    // φ(min) into the high-order positions the bucketing reads: φ(min) is a window-minimum, so its
+    // high bits are biased to 0 and bucketing on them under-fills the buckets; reversing puts the
+    // uniform low bits on top, restoring a balanced AND still sort-prefix-contiguous bucketing.
+    // Runs once per finalized skmer (permute) / per query (routing), never per base, so the simple
+    // O(2m)<=126 bit loop on the wide path is cheap; 2m<=64 takes a uint64 fast path like phi().
+    kuint reverse_2m(kuint x) const
+    {
+        const uint64_t w {m_phi_w};
+        if (sizeof(kuint) > 8 && w <= 64)
+        {
+            uint64_t u {static_cast<uint64_t>(x)};
+            uint64_t r {0};
+            for (uint64_t i {0}; i < w; ++i)
+                r |= ((u >> i) & 1ULL) << (w - 1 - i);
+            return static_cast<kuint>(r);
+        }
+        kuint r {static_cast<kuint>(0)};
+        for (uint64_t i {0}; i < w; ++i)
+            r |= static_cast<kuint>((x >> i) & static_cast<kuint>(1)) << (w - 1 - i);
+        return r;
+    }
+
+    // Replace the raw minimizer in the top 2m bits of m_pair by ψ(minimizer) = reverse_2m(φ(min))
+    // (flanks untouched), so a plain m_pair compare orders the list by ψ-minimizer and the bucket
+    // prefix (top b bits) carries φ(min)'s uniform low bits. The minimizer SELECTION stays φ-ranked
+    // (minimizer_rank, unchanged); only the STORED representation is ψ. No site compares the stored
+    // slot against a bare φ value (sort = slot vs slot; bucket = high bits of slot; the only φ_inv
+    // consumer is unpermute below), so the φ→ψ change is self-contained.
     void permute_minimizer_slot(Skmer<kuint>& skmer) const
     {
-        const kuint raw {static_cast<kuint>(skmer.m_pair >> (4 * (k - m)))};
-        const kpair pm {phi(raw)};
+        const kuint raw {(skmer.m_pair >> (4 * (k - m))).to_kuint()};
+        const kpair pm {reverse_2m(phi(raw))};
         skmer.m_pair = (skmer.m_pair & (~m_minimizer_mask)) | (pm << (4 * (k - m)));
     }
 
     // Inverse of permute_minimizer_slot: recover the raw nucleotide minimizer (decode).
+    // ψ⁻¹ = φ⁻¹ ∘ reverse_2m (reverse_2m is self-inverse).
     void unpermute_minimizer_slot(Skmer<kuint>& skmer) const
     {
-        const kuint pm {static_cast<kuint>(skmer.m_pair >> (4 * (k - m)))};
-        const kpair raw {phi_inv(pm)};
+        const kuint pm {(skmer.m_pair >> (4 * (k - m))).to_kuint()};
+        const kpair raw {phi_inv(reverse_2m(pm))};
         skmer.m_pair = (skmer.m_pair & (~m_minimizer_mask)) | (raw << (4 * (k - m)));
     }
 

@@ -176,6 +176,7 @@ def binheadersize(path):
     V2 = 0x56534B4D45525F32  # "VSKMER_2"
     V3 = 0x56534B4D45525F33  # "VSKMER_3"
     V4 = 0x56534B4D45525F34  # "VSKMER_4"
+    V5 = 0x56534B4D45525F35  # "VSKMER_5" (ψ layout; same header bytes as V4)
     with open(path, "rb") as f:
         hdr = f.read(40)
     if len(hdr) < 32:
@@ -183,7 +184,7 @@ def binheadersize(path):
     magic = struct.unpack("<Q", hdr[:8])[0]
     if magic == V2:
         print(32)
-    elif magic in (V3, V4):
+    elif magic in (V3, V4, V5):
         if len(hdr) < 40:
             sys.exit("file too short to hold a bucketed VirtualSkmer header: " + path)
         n_buckets = struct.unpack("<Q", hdr[32:40])[0]

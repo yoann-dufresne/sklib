@@ -117,35 +117,26 @@ TEST(BucketedSkmerList, AbsentKmersMatchGlobalAndReportNotFound) {
 
 // A legacy VSKMER_2 file (no bucket directory) must be read as a single bucket spanning the
 // whole list, by both load() and the bucketed reader.
-TEST(BucketedSkmerList, ReadsLegacyV2AsSingleBucket) {
+// Legacy VSKMER_2 files carry a φ-only minimizer slot; the ψ-permuted reader (VSKMER_5) MUST
+// reject them (rebuild required) rather than silently mis-route/mis-decode. (Pre-V5 this read the
+// V2 file as a single bucket.)
+TEST(BucketedSkmerList, RejectsLegacyV2) {
     constexpr uint64_t k{15}, m{5};
-    const std::string seq = random_dna(400, 7);
 
-    // Ground-truth list (built via the normal path, loaded into RAM).
-    auto truth = km::sortedlist::VirtualSkmerSerializer<kuint>::load(build_list(k, m, seq, 8, "v2src"));
-
-    // Hand-write the legacy format: magic(VSKMER_2) + k + m + count + raw payload.
+    // Hand-write the legacy format: magic(VSKMER_2) + k + m + count(0) + no payload.
     const std::string v2_path = ::testing::TempDir() + "legacy_v2.bin";
     {
         std::ofstream out(v2_path, std::ios::binary);
         const uint64_t magic = km::sortedlist::util::ENDIANNESS_SANITY_INTEGER; // "VSKMER_2"
-        const uint64_t kk = k, mm = m, count = truth.size();
+        const uint64_t kk = k, mm = m, count = 0;
         out.write(reinterpret_cast<const char*>(&magic), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&kk), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&mm), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
-        out.write(reinterpret_cast<const char*>(truth.get_list().data()),
-                  static_cast<std::streamsize>(count * sizeof(km::Skmer<kuint>)));
     }
 
-    auto v2_loaded = km::sortedlist::VirtualSkmerSerializer<kuint>::load(v2_path);
-    ASSERT_EQ(v2_loaded.size(), truth.size());
-
-    auto reader = km::sortedlist::BucketedSkmerListReader<kuint>::open(v2_path);
-    ASSERT_EQ(reader.n_buckets(), 1u);
-
-    for (const auto& q : enumerate_skmers(k, m, seq))
-        ASSERT_EQ(reader.query_skmer(q), truth.query_skmer(q));
+    EXPECT_THROW(km::sortedlist::VirtualSkmerSerializer<kuint>::load(v2_path), std::runtime_error);
+    EXPECT_THROW(km::sortedlist::BucketedSkmerListReader<kuint>::open(v2_path), std::runtime_error);
 }
 
 // parallel_query() must produce byte-identical output to the sequential reader.query(), in input

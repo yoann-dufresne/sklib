@@ -263,7 +263,7 @@ int run_query(const QueryOptions& opts) {
                     std::vector<std::vector<uint8_t>> results;
                     std::vector<uint8_t> buf;
                     for (const km::Skmer<gen>& s : seq_skmerator) {
-                        const uint64_t bid {reader.bucket_of_phi_min(static_cast<uint64_t>(manip.minimizer(s)))};
+                        const uint64_t bid {reader.route_minimizer(manip.minimizer(s))};
                         const km::Skmer<store> trunc {km::truncate_skmer<gen, store>(k, m, b, s)};
                         reader.query_into(bid, trunc, buf);
                         results.push_back(buf);

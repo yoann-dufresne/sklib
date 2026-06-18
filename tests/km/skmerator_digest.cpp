@@ -90,14 +90,16 @@ struct Case { uint64_t k, m; std::size_t len; uint64_t seed; uint64_t golden; };
 
 // (k, m, length, seed, golden digest). Widths exercised: 4B (k21m11, k15m4, k11m2),
 // 8B (k21m7, k31m15), 16B (k63m31). Small-m cases hit the palindrome/ambiguous framing path often.
-// Golden values are bootstrapped from the reference (pre-optimization) producer; see file header.
+// Golden values regenerated for the ψ-permuted slot (VSKMER_5): the stored minimizer is now
+// reverse_2m(φ(min)) instead of φ(min), so the producer stream's bytes (and order) change while the
+// underlying k-mer content is unchanged (the query-equivalence tests guard that).
 const Case kCases[] = {
-    {21, 11, 300000, 0xC0FFEEu,    0xc15f192ce818c0e6ULL},
-    {21,  7, 200000, 0x1234567u,   0xf9ebdcc942af56f5ULL},
-    {15,  4, 200000, 0xABCDEFu,    0xf4224abcdf6a75b0ULL},
-    {11,  2, 100000, 0x55AA55AAu,  0x5bfbdf0cefa9cb9eULL},
-    {31, 15, 150000, 0xDEADBEEFu,  0xd2fec771d94ab549ULL},
-    {63, 31,  80000, 0x99887766u,  0x02a22d64bfc14d49ULL},
+    {21, 11, 300000, 0xC0FFEEu,    0x6fded3230087a10bULL},
+    {21,  7, 200000, 0x1234567u,   0xa7e7701c4ff3a5d6ULL},
+    {15,  4, 200000, 0xABCDEFu,    0x0c59b67225cc1049ULL},
+    {11,  2, 100000, 0x55AA55AAu,  0x620c546e4cf8005eULL},
+    {31, 15, 150000, 0xDEADBEEFu,  0x099c054d5a7a9bbfULL},
+    {63, 31,  80000, 0x99887766u,  0x44e91f0d9174adc1ULL},
 };
 
 } // namespace

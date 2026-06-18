@@ -191,10 +191,14 @@ Bucketing<kuint> make_prefix_bucketing(uint64_t m, uint64_t requested_buckets) {
             if (n_buckets == 1) return 0;
             return static_cast<uint64_t>(mini >> shift);
         },
-        // Bucket b covers the minimizer interval [b << shift, (b+1) << shift); its lower bound
-        // is b << shift (0 for b == 0, so every minimizer routes into some bucket).
+        // Bucket b covers the ψ-minimizer interval [b << shift, (b+1) << shift); its lower bound is
+        // b << shift. That is the real routing key used by the directory upper_bound path (the
+        // non-fixed-prefix fallback: a b==0-but-multi-bucket list, where shift = 2m < 64). For a
+        // fixed-prefix list (b>0) the reader routes by formula (mini >> shift) and ignores the bound,
+        // so when `id << shift` would overflow the uint64 directory field (shift >= 64, i.e. 2m>64)
+        // we store the monotone bucket id instead — informational only, kept well-defined.
         [shift](uint64_t id) -> uint64_t {
-            return static_cast<uint64_t>(id) << shift;
+            return shift < 64 ? (static_cast<uint64_t>(id) << shift) : id;
         }};
 }
 
@@ -209,6 +213,13 @@ Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
                                          uint64_t m, uint64_t max_ram_bytes) {
     constexpr uint64_t H = 22;                       // 2^22 * 4 B = 16 MB histogram
     const uint64_t mini_bits = 2 * m;
+    // Adaptive bucketing still routes its boundaries through 64-bit minimizer arithmetic
+    // (cell = mini >> low, starts[id] << low, both uint64), which collapses for 2m > 64 (m >= 33)
+    // exactly like the fixed path did before the ψ/full-width fix. The ψ-space + full-width port of
+    // the adaptive path is deferred; until then, fail loudly rather than emit a single-bucket index.
+    if (mini_bits > 64)
+        throw std::runtime_error("--max-ram (adaptive bucketing) is not yet supported for 2m > 64 "
+                                 "(m >= 33); use the default fixed --buckets bucketing for large m.");
     const uint64_t hist_bits = std::min<uint64_t>(mini_bits, H);
     const uint64_t low = mini_bits - hist_bits;      // minimizers per cell = 2^low
     const uint64_t cells = uint64_t{1} << hist_bits;

@@ -278,23 +278,17 @@ TEST(QuotientEquivalence, AllSourceKmersPresentU256) {
 
 // ---- backward compatibility: a hand-written VSKMER_3 file still reads as 64-bit, b=0 ----------
 
-TEST(QuotientWidth, ReadsLegacyV3) {
+// Legacy VSKMER_3 files carry a φ-only minimizer slot; the ψ-permuted reader (VSKMER_5) MUST
+// reject them (rebuild required). (Pre-V5 this read the V3 file as a single bucket.)
+TEST(QuotientWidth, RejectsLegacyV3) {
     constexpr uint64_t k = 15, m = 5;
-    const std::string seq = random_dna(800, 123);
-    const std::string qfa = ::testing::TempDir() + "qw_v3_q.fa";
-    write_fasta(qfa, seq);
 
-    // Build a full-width u64 list, load its records, then re-emit them under the legacy V3 layout
-    // (magic, k, m, count, n_buckets, directory, payload) — no store_width / quotient_bits fields.
-    const std::string v4 = build_list<uint64_t, uint64_t>(k, m, seq, 1, 0, "v3src");
-    auto loaded = km::sortedlist::VirtualSkmerSerializer<uint64_t>::load(v4);
-    const auto& recs = loaded.get_list();
-
+    // Hand-write the legacy V3 layout: magic, k, m, count(0), n_buckets, directory — no payload.
     const std::string v3_path = ::testing::TempDir() + "legacy_v3.bin";
     {
         std::ofstream out(v3_path, std::ios::binary);
         const uint64_t magic = km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V3;
-        const uint64_t kk = k, mm = m, count = recs.size(), n_buckets = 1;
+        const uint64_t kk = k, mm = m, count = 0, n_buckets = 1;
         const km::sortedlist::BucketDirEntry dir{0, count};
         out.write(reinterpret_cast<const char*>(&magic), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&kk), sizeof(uint64_t));
@@ -302,16 +296,8 @@ TEST(QuotientWidth, ReadsLegacyV3) {
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&dir), sizeof(km::sortedlist::BucketDirEntry));
-        out.write(reinterpret_cast<const char*>(recs.data()),
-                  static_cast<std::streamsize>(count * sizeof(km::Skmer<uint64_t>)));
     }
 
-    const km::sortedlist::ListHeaderInfo hdr = km::sortedlist::read_list_header(v3_path);
-    EXPECT_EQ(hdr.store_width_bytes, 8u);
-    EXPECT_EQ(hdr.quotient_bits, 0u);
-
-    auto reader = km::sortedlist::BucketedSkmerListReader<uint64_t>::open(v3_path);
-    EXPECT_EQ(reader.n_buckets(), 1u);
-    EXPECT_EQ((query_all<uint64_t, uint64_t>(v3_path, qfa)),
-              (query_all<uint64_t, uint64_t>(v4, qfa)));
+    EXPECT_THROW(km::sortedlist::read_list_header(v3_path), std::runtime_error);
+    EXPECT_THROW(km::sortedlist::BucketedSkmerListReader<uint64_t>::open(v3_path), std::runtime_error);
 }
