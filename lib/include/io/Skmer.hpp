@@ -824,23 +824,37 @@ public:
         return x & mask;
     }
 
+    // Branch-free reversal of all 64 bits of a uint64_t (classic parallel swap network, ~12 ops).
+    static uint64_t reverse_bits64(uint64_t x)
+    {
+        x = ((x >> 1)  & 0x5555555555555555ULL) | ((x & 0x5555555555555555ULL) << 1);
+        x = ((x >> 2)  & 0x3333333333333333ULL) | ((x & 0x3333333333333333ULL) << 2);
+        x = ((x >> 4)  & 0x0F0F0F0F0F0F0F0FULL) | ((x & 0x0F0F0F0F0F0F0F0FULL) << 4);
+        x = ((x >> 8)  & 0x00FF00FF00FF00FFULL) | ((x & 0x00FF00FF00FF00FFULL) << 8);
+        x = ((x >> 16) & 0x0000FFFF0000FFFFULL) | ((x & 0x0000FFFF0000FFFFULL) << 16);
+        x = (x >> 32) | (x << 32);
+        return x;
+    }
+
     // Bit-reversal of the low 2m bits (bit i ↔ bit 2m-1-i), right-aligned in the 2m window.
     // Its own inverse on the 2m-bit space. Composed with φ to spread the *low* (uniform) bits of
     // φ(min) into the high-order positions the bucketing reads: φ(min) is a window-minimum, so its
     // high bits are biased to 0 and bucketing on them under-fills the buckets; reversing puts the
     // uniform low bits on top, restoring a balanced AND still sort-prefix-contiguous bucketing.
-    // Runs once per finalized skmer (permute) / per query (routing), never per base, so the simple
-    // O(2m)<=126 bit loop on the wide path is cheap; 2m<=64 takes a uint64 fast path like phi().
+    // Runs once per finalized skmer (permute) / per query (routing), never per base.
+    // 2m<=64 (every backend up to k~=64, i.e. the whole common range): one 64-bit swap-network
+    // reversal then a right-shift to align the window — O(1), replacing the old O(2m) bit loop that
+    // dominated phase-1 construction. 2m>64 (k>~64, kuint256) keeps the simple O(2m)<=126 loop; that
+    // path is rare and its construction is already a couple of seconds. Output is bit-identical to
+    // the loop either way, so stored records (and on-disk indexes) are unchanged.
     kuint reverse_2m(kuint x) const
     {
         const uint64_t w {m_phi_w};
-        if (sizeof(kuint) > 8 && w <= 64)
+        if (w <= 64)
         {
-            uint64_t u {static_cast<uint64_t>(x)};
-            uint64_t r {0};
-            for (uint64_t i {0}; i < w; ++i)
-                r |= ((u >> i) & 1ULL) << (w - 1 - i);
-            return static_cast<kuint>(r);
+            // x is φ(min), masked to the low w<=64 bits, so its value lives entirely in the low word.
+            const uint64_t u {reverse_bits64(static_cast<uint64_t>(x)) >> (64 - w)};
+            return static_cast<kuint>(u);
         }
         kuint r {static_cast<kuint>(0)};
         for (uint64_t i {0}; i < w; ++i)
