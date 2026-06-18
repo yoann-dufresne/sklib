@@ -505,8 +505,8 @@ class SortedVirtualSkmerList {
             //     cout << x << ",";
             // cout << endl;
 
-            // 2 - compute candidate overlaps for a pair of columns
-            candidate_overlaps = get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right());
+            // 2 - compute candidate overlaps for a pair of columns (into the reused buffer)
+            get_candidate_overlaps(skmer_enumeration, left_column_position, window.left(), window.right(), candidate_overlaps);
             // cout << "candidate overlaps for " << right_column_position << "\t";
             // for (const auto& o : candidate_overlaps)
             //     cout << "(" << o.first << ";" << o.second << ") , ";
@@ -743,13 +743,17 @@ class SortedVirtualSkmerList {
      * @param right_column the list of skmer_ids that have a valid kmer at the left position + 1 (contigous one)
      * @return a vector of pairs of candidate overlaps between the two columns
      **/
-    std::vector<overlap> get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column){
+    // Fills `candidate_overlaps` (cleared first; its capacity is reused across the k-m columns of a
+    // bucket, so this per-column join no longer reallocates a fresh result vector each call — the
+    // recompaction is the set-op/construction hotspot). Content is byte-identical to the previous
+    // return-by-value form.
+    void get_candidate_overlaps(std::vector<Skmer<kuint> > const & skmer_enumeration, uint64_t left_position, std::vector<uint64_t> const & left_column, std::vector<uint64_t> const & right_column, std::vector<overlap>& candidate_overlaps){
         using kpair = typename Skmer<kuint>::pair;
 
-        std::vector<overlap> candidate_overlaps;
+        candidate_overlaps.clear();
         const size_t R {right_column.size()};
         const size_t L {left_column.size()};
-        if (R == 0 || L == 0) return candidate_overlaps;
+        if (R == 0 || L == 0) return;
 
         // Join the two columns on their shared overlap (k-1)-mer (key = extract_prefix_suffix at
         // left_position+1) with an array-based chaining hash instead of a sort + per-left binary
@@ -782,7 +786,6 @@ class SortedVirtualSkmerList {
                 if (m_gco_keys[static_cast<size_t>(j)] == key)
                     candidate_overlaps.emplace_back(suffix_pos, static_cast<uint64_t>(j));
         }
-        return candidate_overlaps;
     }
 
     // Thin wrapper over the shared span helper, kept for the in-RAM list and its tests.
