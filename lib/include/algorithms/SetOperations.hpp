@@ -145,10 +145,16 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
 // compares the prefix/suffix sizes) 1:1. Marks dropA[i]/dropB[j]=1 for the matched pairs; returns the
 // number of pairs dropped (0 ⇒ caller can pass nullptr and skip the indirection). O(nA+nB), one
 // sequential pass over each already-cache-warm bucket.
+// `cmp`/`ncols`/`dropped_kmers` (optional, together): when given, add each matched A-record's k-mer
+// count (its valid columns, all in the intersection) into *dropped_kmers — so a counting caller
+// (set_sizes) can drop the pair yet keep |A∩B| exact by adding these back. Counted off A only (the pair
+// is identical), inline at the match, so it is O(dropped) not O(records). Materialize callers pass none.
 template<typename store>
 inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
                                      const km::Skmer<store>* B, size_t nB,
-                                     std::vector<char>& dropA, std::vector<char>& dropB) {
+                                     std::vector<char>& dropA, std::vector<char>& dropB,
+                                     const km::SkmerManipulator<store>* cmp = nullptr,
+                                     uint64_t ncols = 0, uint64_t* dropped_kmers = nullptr) {
     dropA.assign(nA, 0);
     dropB.assign(nB, 0);
     size_t i {0}, j {0}, dropped {0};
@@ -161,7 +167,14 @@ inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
         size_t j2 {j}; while (j2 < nB && B[j2].m_pair == mp) ++j2;
         for (size_t a {i}; a < i2; ++a)
             for (size_t b {j}; b < j2; ++b)
-                if (!dropB[b] && A[a] == B[b]) { dropA[a] = 1; dropB[b] = 1; ++dropped; break; }
+                if (!dropB[b] && A[a] == B[b]) {
+                    dropA[a] = 1; dropB[b] = 1; ++dropped;
+                    if (dropped_kmers) {
+                        const auto [s, e] {cmp->get_valid_kmer_bounds(A[a])};
+                        if (e >= s) { const uint64_t hi {e < ncols ? e : ncols - 1}; *dropped_kmers += hi - s + 1; }
+                    }
+                    break;
+                }
         i = i2; j = j2;
     }
     return dropped;
@@ -331,13 +344,17 @@ inline void check_compatible(const BucketedSkmerListReader<store>& A,
 // through its own file handles into reused buffers freed at the end, so peak RAM stays at ~nthreads
 // bucket pairs rather than the whole lists. Per-worker counts are summed after the join — order does
 // not matter for a count, so the result is identical to the sequential pass for any thread count.
-template<typename store>
-inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
-                          unsigned nthreads = 8) {
-    check_compatible(A, B);
-    const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
-    const unsigned nthr {std::max(1u, nthreads)};
+//
+// Two implementations behind one entry point: `set_sizes_plain` (the original drop-free merge) and
+// `set_sizes_dedup` (the identical-record fast-path). They are SEPARATE functions, not one parametrized
+// loop, because counting is so cheap that folding both into one body measurably slows the no-drop path
+// (bigger function, worse codegen). `set_sizes` probes the overlap once and dispatches.
 
+// Original drop-free counting merge.
+template<typename store>
+inline SetSizes set_sizes_plain(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
+                                unsigned nthr) {
+    const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
     std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;   // owns raw masks: not movable
     std::vector<CountSink<store>> sinks(nthr);
     std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
@@ -350,7 +367,6 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
         if (fhA[t].fail() || fhB[t].fail())
             throw std::runtime_error("set operation: cannot open input list for parallel read");
     }
-
     std::atomic<bool> failed {false};
     std::exception_ptr eptr;
     std::mutex err_mtx;
@@ -368,7 +384,6 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
         }
     });
     if (eptr) std::rethrow_exception(eptr);
-
     SetSizes total;
     for (unsigned t {0}; t < nthr; ++t) {
         total.inter  += sinks[t].n_inter;
@@ -376,6 +391,93 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
         total.only_b += sinks[t].n_only_b;
     }
     return total;
+}
+
+// Identical-record fast-path counting merge (caller probed the overlap and chose this). Drops the
+// record pairs byte-identical in A and B (their k-mers are all intersection) and adds their k-mer count
+// straight into `inter`, so the three counts — and every derived cardinality — are unchanged.
+template<typename store>
+inline SetSizes set_sizes_dedup(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
+                                unsigned nthr) {
+    const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
+    const uint64_t ncols {k - m + 1};
+    std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;
+    std::vector<CountSink<store>> sinks(nthr);
+    std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
+    std::vector<std::vector<char>> dropA(nthr), dropB(nthr);
+    std::vector<uint64_t> dropped_inter(nthr, 0);   // intersection k-mers carried by dropped identical records
+    std::vector<std::ifstream> fhA, fhB;
+    manips.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
+    for (unsigned t {0}; t < nthr; ++t) {
+        manips.push_back(std::make_unique<km::SkmerManipulator<store>>(k, m, b));
+        fhA.emplace_back(A.path(), std::ios::binary);
+        fhB.emplace_back(B.path(), std::ios::binary);
+        if (fhA[t].fail() || fhB[t].fail())
+            throw std::runtime_error("set operation: cannot open input list for parallel read");
+    }
+    std::atomic<bool> failed {false};
+    std::exception_ptr eptr;
+    std::mutex err_mtx;
+    parallel_for_dynamic(nb, nthr, [&](uint64_t i, unsigned tid) {
+        if (failed.load(std::memory_order_relaxed)) return;
+        try {
+            read_bucket_into<store>(A, fhA[tid], i, bufA[tid]);
+            read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
+            const char* dpa {nullptr};
+            const char* dpb {nullptr};
+            if (mark_identical_records<store>(bufA[tid].data(), bufA[tid].size(),
+                    bufB[tid].data(), bufB[tid].size(), dropA[tid], dropB[tid],
+                    manips[tid].get(), ncols, &dropped_inter[tid]))
+            { dpa = dropA[tid].data(); dpb = dropB[tid].data(); }
+            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
+                                 bufB[tid].data(), bufB[tid].size(), sinks[tid], dpa, dpb);
+        } catch (...) {
+            std::lock_guard<std::mutex> lk(err_mtx);
+            if (!eptr) eptr = std::current_exception();
+            failed.store(true, std::memory_order_relaxed);
+        }
+    });
+    if (eptr) std::rethrow_exception(eptr);
+    SetSizes total;
+    for (unsigned t {0}; t < nthr; ++t) {
+        total.inter  += sinks[t].n_inter + dropped_inter[t];   // merged both-k-mers + dropped pairs' k-mers
+        total.only_a += sinks[t].n_only_a;
+        total.only_b += sinks[t].n_only_b;
+    }
+    return total;
+}
+
+// Count entry point: probe the overlap once on a small cache-warm bucket prefix, then dispatch. The
+// identical-record skip only pays above an overlap threshold (f·(k-m) ≥ DEDUP_GAMMA, worst at narrow
+// widths, where records are many and the merge is cheapest); below it, run the original lean path. The
+// drop fraction is a global property of the pair (stable across buckets) and no realistic config sits
+// near the threshold, so a tiny prefix decides reliably; the probe is wasted only when off (negligible).
+template<typename store>
+inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
+                          unsigned nthreads = 8) {
+    check_compatible(A, B);
+    const unsigned nthr {std::max(1u, nthreads)};
+    const uint64_t k {A.k()}, m {A.m()}, nb {A.n_buckets()};
+
+    uint64_t total_rec {0};
+    for (uint64_t bi {0}; bi < nb; ++bi) total_rec += A.bucket_count(bi) + B.bucket_count(bi);
+    const uint64_t sample_target {std::max<uint64_t>(uint64_t{1} << 12, total_rec / 2048)};
+    constexpr double DEDUP_GAMMA {5.0};
+    std::ifstream pa(A.path(), std::ios::binary), pb(B.path(), std::ios::binary);
+    if (pa.fail() || pb.fail())
+        throw std::runtime_error("set operation: cannot open input list for parallel read");
+    uint64_t pr {0}, pd {0};
+    std::vector<km::Skmer<store>> pba, pbb;
+    std::vector<char> pda, pdb;
+    for (uint64_t i {0}; i < nb && pr < sample_target; ++i) {
+        read_bucket_into<store>(A, pa, i, pba);
+        read_bucket_into<store>(B, pb, i, pbb);
+        pd += mark_identical_records<store>(pba.data(), pba.size(), pbb.data(), pbb.size(), pda, pdb);
+        pr += pba.size() + pbb.size();
+    }
+    const bool do_dedup {pr != 0 && (2.0 * static_cast<double>(pd) * static_cast<double>(k - m)
+                                     >= DEDUP_GAMMA * static_cast<double>(pr))};
+    return do_dedup ? set_sizes_dedup<store>(A, B, nthr) : set_sizes_plain<store>(A, B, nthr);
 }
 
 // Materialize the selected relation(s) into a VSKMER_4 file reusing the inputs' bucket layout, and
