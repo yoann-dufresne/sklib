@@ -133,7 +133,46 @@ debt for ~1 %. Reverted (`git checkout`).
   (LIS needed even in the 1:1 case — adjacent columns' overlap (k-1)-mer is not monotone in either
   k-mer order, so matches cross); the union journal's contained variant gained 0 %.
 
-**Conclusion.** #E is the monothread XOR win (XOR/diff-specific, byte-identical, −15…−43 % at high
-overlap, every width, no regression). The residual cost is the shared recompaction, which the union
-journal already optimised and whose remaining levers are either infeasible (A1) or not worth the cost/risk
-(#B). Monothread XOR is at its practical floor.
+**Conclusion (single-op materialize).** #E is the monothread XOR win (XOR/diff-specific, byte-identical,
+−15…−43 % at high overlap, every width, no regression). The residual cost is the shared recompaction,
+which the union journal already optimised and whose remaining levers are either infeasible (A1) or not
+worth the cost/risk (#B). Monothread XOR materialize is at its practical floor.
+
+## Multi-op: combined-count (`--sizes`) and every `*_size` variant — **COMMITTED**
+
+The combined operator's count mode (`--sizes`, no materialization) delegates to `set_sizes`, which every
+`*_size` variant also calls. Counting is **pure merge** (no recompaction), so the SETOPS_MULTI_REPORT had
+it ~4× a single `_size`, merge-bound. That is exactly the regime #E attacks.
+
+### #E-count — identical-record skip in `set_sizes` (`--mode bench --op count`)
+
+**Mechanism.** Extend #E to the count path: drop the record pairs byte-identical in A and B and add their
+k-mer count straight into the `inter` counter (`mark_identical_records` gains optional O(dropped)
+accounting). All three counts — and every derived cardinality (`uni`, `sym_diff`, …) — are unchanged.
+`set_sizes` is split into `set_sizes_plain` (the original, lean loop) + `set_sizes_dedup`, with a one-shot
+overlap probe choosing between them: counting is so cheap that a single function carrying both paths
+measurably slows the no-drop case.
+
+**Correctness.** Cardinalities **byte-identical** (KMC cross-check: inter/union/diff_AB/diff_BA/xor all
+match; 213/213 gtest, whose small inputs exercise the drop path).
+
+**Result (interleaved A/B vs no-skip, chr21 combined-count):**
+
+| k (store) | J=0.1 | J=0.5 | J=0.9 |
+|---|--:|--:|--:|
+| 21 (uint32) | +1.6 %¹ | +2.4 %¹ | **−20 %** |
+| 31 (uint64) | −0.9 % | **−14 %** | **−54 %** |
+| 63 (__uint128) | +1.8 %¹ | **−27 %** | **−66 %** |
+
+¹ **Accepted trade-off.** At low overlap the probe runs the plain path, but the larger translation unit
+shifts binary layout and perturbs the (byte-identical) plain hot loop on the narrow-width counts — counts
+are sub-second, so the same absolute shift is ~+10 ms = +1.6–2.4 %. Confirmed irreducible layout noise,
+not algorithmic: the same residual appeared across three implementations (in-loop gate, upfront-probe
+two-loop, split functions). High overlap — where Jaccard/containment on similar genomes lives — wins
+**−14 to −66 %**; the absolute trade is overwhelmingly positive (e.g. k63 J0.9 0.237 s → 0.080 s). Shipped
+with this caveat per an explicit decision; counting also benefits every single-op `*_size` (xor_size,
+intersection_size, …).
+
+**Combined materialize** (`multi_setop` with outputs) is recompaction-bound (per-output, already optimised
+by union #7's col-offset fast-path); the shared merge it could shrink is a small fraction there, so the
+skip is not applied to it.
