@@ -146,6 +146,18 @@ public:
                 return m_value[1] > other.m_value[1];
         }
 
+        // Three-way lexicographic compare, most-significant word first: -1 / 0 / +1. A single
+        // hi-then-lo pass does at most two word compares, where `operator<` followed by `operator>`
+        // (as kmer_compare uses) does up to four. Its sign is identical to that ordered pair, so a
+        // caller that switches to it stays byte-identical. Used by the wide-store set-op merge inner
+        // loop (SetOperations.hpp merge_columns), where each word is a multi-limb _BitInt.
+        int compare3(const pair& other) const
+        {
+            if (m_value[1] != other.m_value[1]) return m_value[1] < other.m_value[1] ? -1 : 1;
+            if (m_value[0] != other.m_value[0]) return m_value[0] < other.m_value[0] ? -1 : 1;
+            return 0;
+        }
+
         pair operator~ () const
         {
             return pair(~m_value[0], ~m_value[1]);
@@ -1247,6 +1259,14 @@ public:
         if (first_kmer < second_kmer) return -1;
         else if (first_kmer > second_kmer) return 1;
         else return 0;
+    }
+
+    /** Masked k-mer key of `skmer` at column `kmer_pos`: the interleaved pair AND the column mask —
+     * exactly the value kmer_compare compares. Exposed so the wide-store merge can cache it per cursor
+     * (mask once per advance instead of twice per comparison) and compare with pair::compare3. **/
+    inline kpair masked_kmer(const Skmer<kuint>& skmer, const uint64_t kmer_pos) const
+    {
+        return skmer.m_pair & kmer_masks[kmer_pos];
     }
 
     /** Check if a skmer has a kmer starting at the given position.

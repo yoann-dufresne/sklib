@@ -203,15 +203,44 @@ inline void merge_columns(const km::SkmerManipulator<store>& cmp,
     else       build_column_csr<false>(cmp, A, nA, ncols, idxA, offA);
     if (dropB) build_column_csr<true>(cmp, B, nB, ncols, idxB, offB, dropB);
     else       build_column_csr<false>(cmp, B, nB, ncols, idxB, offB);
+    // Wide stores (__uint128 / kuint256 pair) make the per-comparison _BitInt ALU the merge's cost:
+    // kmer_compare masks BOTH operands every call and compares with `<` then `>`. For sizeof(store) >=
+    // WIDE_MERGE_MIN_STORE_BYTES the inner loop caches each cursor's masked k-mer (mask once per advance,
+    // not twice per compare) and uses a single 3-way compare (pair::compare3). Narrow stores keep the
+    // original loop verbatim — its codegen is already at the floor (SETOPS_BOTTLENECKS C1, UNION #6), so
+    // touching it risks a regression. Output is byte-identical at every width: same emission order (the
+    // tail loops are shared) and same compare semantics (compare3 == sign(kmer_compare), masked_kmer ==
+    // kmer_compare's masked operand). The gate is a compile-time constant tuned by the benchmark.
+    constexpr size_t WIDE_MERGE_MIN_STORE_BYTES {16};
     for (uint64_t c {0}; c <= k_minus_m; ++c) {
         const uint32_t* ra {idxA.data() + offA[c]}; size_t na {offA[c + 1] - offA[c]};
         const uint32_t* rb {idxB.data() + offB[c]}; size_t nb {offB[c + 1] - offB[c]};
         size_t ia {0}, ib {0};
-        while (ia < na && ib < nb) {
-            const int r {cmp.kmer_compare(A[ra[ia]], B[rb[ib]], c)};
-            if (r < 0)      { sink.only_a(A[ra[ia]], c); ++ia; }
-            else if (r > 0) { sink.only_b(B[rb[ib]], c); ++ib; }
-            else            { sink.both  (A[ra[ia]], c); ++ia; ++ib; }
+        if constexpr (sizeof(store) >= WIDE_MERGE_MIN_STORE_BYTES) {
+            if (na && nb) {
+                auto ka {cmp.masked_kmer(A[ra[ia]], c)};   // re-masked only when ia advances
+                auto kb {cmp.masked_kmer(B[rb[ib]], c)};   // re-masked only when ib advances
+                while (true) {
+                    const int r {ka.compare3(kb)};
+                    if (r < 0)      { sink.only_a(A[ra[ia]], c); if (++ia >= na) break; ka = cmp.masked_kmer(A[ra[ia]], c); }
+                    else if (r > 0) { sink.only_b(B[rb[ib]], c); if (++ib >= nb) break; kb = cmp.masked_kmer(B[rb[ib]], c); }
+                    else {
+                        sink.both(A[ra[ia]], c);
+                        const bool a_end {++ia >= na};         // advance BOTH (no short-circuit)
+                        const bool b_end {++ib >= nb};
+                        if (a_end || b_end) break;
+                        ka = cmp.masked_kmer(A[ra[ia]], c);
+                        kb = cmp.masked_kmer(B[rb[ib]], c);
+                    }
+                }
+            }
+        } else {
+            while (ia < na && ib < nb) {
+                const int r {cmp.kmer_compare(A[ra[ia]], B[rb[ib]], c)};
+                if (r < 0)      { sink.only_a(A[ra[ia]], c); ++ia; }
+                else if (r > 0) { sink.only_b(B[rb[ib]], c); ++ib; }
+                else            { sink.both  (A[ra[ia]], c); ++ia; ++ib; }
+            }
         }
         for (; ia < na; ++ia) sink.only_a(A[ra[ia]], c);
         for (; ib < nb; ++ib) sink.only_b(B[rb[ib]], c);
