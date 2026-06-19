@@ -238,13 +238,18 @@ void parallel_build_phase1(const std::string& input_path,
 // Sets `dir[id].count` for every non-empty bucket (untouched for empty ones — distinct id per
 // worker, so the writes are race-free) and returns the total record count. Rethrows the first
 // worker exception (if any) after joining. The caller checks `out`'s error state.
-template<typename store, typename MakeCompactor>
+// `serialize(job_id, payload, dir, bytes, scratch)` turns a compacted (coarse) bucket payload into the
+// on-disk byte blob for that job and patches the affected dir counts: the identity for a non-decoupled
+// build (one fine bucket == the job), or the per-fine-sub-bucket split+re-truncation when the build
+// decouples a coarse compaction layout from a finer query layout. `bytes`/`scratch` are per-worker.
+template<typename store, typename MakeCompactor, typename Serialize>
 uint64_t parallel_build_phase2(std::ofstream& out,
                                std::vector<BucketDirEntry>& dir,
                                const std::vector<uint64_t>& counts,
                                uint64_t n_buckets,
                                unsigned n_threads,
-                               MakeCompactor make_compactor)
+                               MakeCompactor make_compactor,
+                               Serialize serialize)
 {
     // Non-empty bucket ids in increasing order; the index into this list is the write-order `seq`.
     std::vector<uint64_t> jobs;
@@ -272,6 +277,8 @@ uint64_t parallel_build_phase2(std::ofstream& out,
     auto worker = [&]() {
         try {
             auto comp = make_compactor();
+            std::string bytes;                     // reused: the serialized blob for one job
+            std::vector<Skmer<store>> scratch;     // reused: repartition's fine-payload buffer
             for (;;) {
                 const uint64_t seq = next_claim.fetch_add(1, std::memory_order_relaxed);
                 if (seq >= n_jobs) break;
@@ -288,13 +295,10 @@ uint64_t parallel_build_phase2(std::ofstream& out,
                 // `compact` returns a reference into the worker's own reused buffer, valid until the
                 // next compact() call; we copy the bytes into `bytes` right here, before reusing it.
                 const std::vector<Skmer<store>>& payload = comp.compact(id);
-                dir[id].count = payload.size();                       // unique id per seq => race-free
                 total.fetch_add(payload.size(), std::memory_order_relaxed);
-
-                std::string bytes;
-                if (!payload.empty())
-                    bytes.assign(reinterpret_cast<const char*>(payload.data()),
-                                 payload.size() * sizeof(Skmer<store>));
+                // Serialize this coarse bucket into `bytes` and patch its fine dir counts. Coarse ids
+                // are disjoint per seq and map to disjoint fine-id ranges, so the dir writes race-free.
+                serialize(id, payload, dir, bytes, scratch);
 
                 std::lock_guard<std::mutex> lk(mtx);
                 ready.emplace(seq, std::move(bytes));

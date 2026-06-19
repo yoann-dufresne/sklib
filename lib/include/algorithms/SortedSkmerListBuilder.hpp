@@ -282,6 +282,53 @@ Bucketing<kuint> make_adaptive_bucketing(km::SkmerManipulator<kuint>& manip,
 // by a monotone prefix/interval of the minimizer, so concatenating them in
 // increasing id order reproduces the global sorted list. Peak RAM is bounded by
 // the largest bucket rather than by the whole genome.
+// ---- bucketing decouple (construct coarse, store fine) -------------------------------------------
+// The per-bucket recompaction (phase 2) carries a fixed cost per bucket; with the default 4096 fine
+// buckets that overhead is what made parallel construction (and set ops) slower than necessary at the
+// many-bucket layout query prefers. Decouple the two: COMPACT at a coarser b_c = b_f - DECOUPLE_BITS
+// (4x fewer, larger buckets -> 4x fewer recompaction calls), then re-partition each coarse bucket into
+// its 2^DECOUPLE_BITS fine sub-buckets at b_f before it hits disk. Because every super-k-mer's k-mers
+// share one minimizer (hence one fine bucket), each compacted record maps to exactly one fine bucket
+// and the (psi-sorted) payload splits into contiguous fine slices, so the on-disk index is byte-
+// identical to a direct b_f build (query unchanged). Gated to keep the same store width (below).
+constexpr uint64_t DECOUPLE_BITS = 2;
+
+inline uint64_t decouple_coarse_bits(uint64_t b_f, uint64_t k, uint64_t m) {
+    if (std::getenv("SKLIB_NO_DECOUPLE") != nullptr) return b_f;      // escape hatch / verification
+    if (b_f < DECOUPLE_BITS) return b_f;                              // too few buckets to coarsen
+    const uint64_t b_c = b_f - DECOUPLE_BITS;
+    const uint64_t eff = 2 * (2 * k - m);
+    if (select_width_bytes(eff - b_c) != select_width_bytes(eff - b_f)) return b_f; // would widen store
+    return b_c;
+}
+
+// Split a coarse bucket's compacted payload (records quotiented at b_c, psi-sorted) into its fine
+// sub-buckets at b_f and re-truncate each record to b_f, calling emit(fine_global_id, fine_payload)
+// for every non-empty fine sub-bucket in increasing fine-id order. `scratch` is the reused fine
+// payload buffer. d==0 (no decouple) emits the whole payload unchanged for bucket coarse_id.
+template<typename store, typename Emit>
+inline void repartition_coarse_payload(const std::vector<km::Skmer<store>>& payload_bc,
+                                       uint64_t coarse_id, uint64_t b_c, uint64_t b_f,
+                                       uint64_t k, uint64_t m,
+                                       std::vector<km::Skmer<store>>& scratch, Emit&& emit) {
+    const uint64_t d {b_f - b_c};
+    if (d == 0) { if (!payload_bc.empty()) emit(coarse_id, payload_bc); return; }
+    const uint64_t eff_f {2 * (2 * k - m) - b_f};
+    const uint64_t base {coarse_id << d};
+    const uint64_t mask_d {(uint64_t{1} << d) - 1};
+    scratch.clear();
+    uint64_t cur_sub {0};
+    bool have {false};
+    for (const km::Skmer<store>& rec : payload_bc) {
+        const uint64_t sub {static_cast<uint64_t>(rec.m_pair >> eff_f) & mask_d}; // top d bits of R_c
+        if (have && sub != cur_sub) { emit(base + cur_sub, scratch); scratch.clear(); }
+        cur_sub = sub;
+        have = true;
+        scratch.push_back(km::truncate_skmer<store, store>(k, m, b_f, rec));
+    }
+    if (have) emit(base + cur_sub, scratch);
+}
+
 template<typename gen, typename store = gen>
 void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits = 0) {
     namespace fs = std::filesystem;
@@ -307,19 +354,34 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
     // max_ram_bytes > 0 when that is possible (a real input file). Otherwise we
     // fall back to the fixed prefix bucketing (A v1).
     const bool use_adaptive = params.max_ram_bytes > 0;
-    Bucketing<gen> bucketing = use_adaptive
+    // Decouple: COMPACT at coarse b_c (fewer, larger buckets => fewer recompaction calls), STORE/ROUTE
+    // at fine b_f (= the passed quotient_bits). Adaptive bucketing has no single b, so never decoupled.
+    const uint64_t b_f = b;
+    // Decouple only helps the PARALLEL phase 2 (it trades a small extra re-truncation pass for far
+    // fewer per-bucket recompaction calls); at -t1 there is no per-bucket parallel overhead to save,
+    // so the coarse compaction would only cost the repartition pass. Gate it on n_threads>=2.
+    const uint64_t b_c = (use_adaptive || params.n_threads < 2) ? b_f : decouple_coarse_bits(b_f, k, m);
+    const bool decouple = (b_c != b_f);
+    // Fine bucketing = the queryable on-disk layout (directory lower bounds, n_buckets_f, header b_f).
+    Bucketing<gen> bucketing_fine = use_adaptive
         ? make_adaptive_bucketing<gen>(manip, input_path, m, params.max_ram_bytes)
         : make_prefix_bucketing<gen>(m, params.buckets);
-    const uint64_t n_buckets = bucketing.n_buckets;
-    const auto& bucket_of = bucketing.bucket_of;
+    const uint64_t n_buckets_f = bucketing_fine.n_buckets;
+    // Coarse bucketing = phase-1 / compaction layout (fewer buckets when decoupling, else the fine one).
+    Bucketing<gen> bucketing_coarse = decouple
+        ? make_prefix_bucketing<gen>(m, uint64_t{1} << b_c)
+        : bucketing_fine;
+    const uint64_t n_buckets = bucketing_coarse.n_buckets;   // phase 1 / counts / phase-2 job key
+    const auto& bucket_of = bucketing_coarse.bucket_of;
 
     // Quotienting (b>0) drops the top b φ-minimizer bits of each record; those bits must be exactly
     // the uniform b-bit prefix that defines the bucket (power-of-two prefix bucketing). Adaptive
-    // buckets have no single b, so they stay full-width (b==0). The retained 2*(2k-m)-b bits must
-    // fit the store pair (the caller sizes `store` accordingly).
-    assert((b == 0 || (!use_adaptive && n_buckets == (uint64_t{1} << b))) &&
+    // buckets have no single b, so they stay full-width (b==0). The compaction runs at b_c (wider
+    // records); the decouple gate keeps b_c the same store width as b_f, so the store holds both.
+    assert((b_f == 0 || (!use_adaptive && n_buckets_f == (uint64_t{1} << b_f))) &&
            "quotient bits must match a power-of-two prefix bucketing");
-    assert(2 * (2 * k - m) - b <= 2 * sizeof(store) * 8 &&
+    assert((!decouple || n_buckets == (uint64_t{1} << b_c)) && "coarse bucket count mismatch");
+    assert(2 * (2 * k - m) - b_c <= 2 * sizeof(store) * 8 &&
            "store type too narrow for the retained skmer bits");
 
     // Scale the phase-1 write buffer down for tiny RAM budgets so it does not
@@ -382,15 +444,32 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
         if (out.fail())
             throw std::runtime_error("Error opening output file for writing: " + output_path);
-        km::sortedlist::VirtualSkmerSerializer<store>::write_header(out, k, m, 0, n_buckets, sizeof(store), b);
+        km::sortedlist::VirtualSkmerSerializer<store>::write_header(out, k, m, 0, n_buckets_f, sizeof(store), b_f);
         if (out.fail())
             throw std::runtime_error("Error writing header to file: " + output_path);
 
-        // Per-bucket directory: lower bound for every bucket (incl. empty ones, so routing
+        // Per-FINE-bucket directory: lower bound for every fine bucket (incl. empty ones, so routing
         // covers the whole minimizer space), counts patched in as each bucket is built.
-        std::vector<km::sortedlist::BucketDirEntry> dir(n_buckets);
-        for (uint64_t id{0}; id < n_buckets; id++)
-            dir[id] = km::sortedlist::BucketDirEntry{ bucketing.lower_bound_of(id), 0 };
+        std::vector<km::sortedlist::BucketDirEntry> dir(n_buckets_f);
+        for (uint64_t id{0}; id < n_buckets_f; id++)
+            dir[id] = km::sortedlist::BucketDirEntry{ bucketing_fine.lower_bound_of(id), 0 };
+
+        // Compact at b_c, then split each coarse bucket's payload into its fine sub-buckets at b_f and
+        // serialize them (in increasing fine-id order) into one byte blob, patching each fine count.
+        // d==0 (no decouple) is the identity. Shared by the sequential and parallel phase-2 paths.
+        auto serialize_job = [&, b_c, b_f, k, m](uint64_t coarse_id,
+                                                 const std::vector<km::Skmer<store>>& payload_bc,
+                                                 std::vector<km::sortedlist::BucketDirEntry>& d,
+                                                 std::string& bytes,
+                                                 std::vector<km::Skmer<store>>& scratch) {
+            bytes.clear();
+            repartition_coarse_payload<store>(payload_bc, coarse_id, b_c, b_f, k, m, scratch,
+                [&](uint64_t fine_id, const std::vector<km::Skmer<store>>& fp) {
+                    d[fine_id].count = fp.size();
+                    bytes.append(reinterpret_cast<const char*>(fp.data()),
+                                 fp.size() * sizeof(km::Skmer<store>));
+                });
+        };
 
         // Each bucket is compacted (load -> sort+dedup -> column algorithm -> truncate) fully
         // independently; only the final payloads must hit disk in increasing bucket-id order. With
@@ -408,18 +487,22 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         if (params.n_threads >= 2) {
             total = km::sortedlist::parallel_build_phase2<store>(
                 out, dir, counts, n_buckets, params.n_threads,
-                [&]{ return BucketCompactor<gen, store>(k, m, b, shard_dirs, construct_greedy); });
+                [&]{ return BucketCompactor<gen, store>(k, m, b_c, shard_dirs, construct_greedy); },
+                serialize_job);
             if (out.fail())
                 throw std::runtime_error("Error writing skmers to file: " + output_path);
         } else {
-            BucketCompactor<gen, store> comp(k, m, b, shard_dirs, construct_greedy);
+            BucketCompactor<gen, store> comp(k, m, b_c, shard_dirs, construct_greedy);
+            std::string bytes;
+            std::vector<km::Skmer<store>> scratch;
             for (uint64_t id{0}; id < n_buckets; id++) {
                 if (counts[id] == 0) continue;
                 const std::vector<km::Skmer<store>>& payload = comp.compact(id);
-                km::sortedlist::VirtualSkmerSerializer<store>::append_payload(out, payload);
+                serialize_job(id, payload, dir, bytes, scratch);
+                if (!bytes.empty())
+                    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
                 if (out.fail())
                     throw std::runtime_error("Error writing skmers to file: " + output_path);
-                dir[id].count = payload.size(); // final (deduped) sub-list size, what the reader offsets on
                 total += payload.size();
             }
         }
