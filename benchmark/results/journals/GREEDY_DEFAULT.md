@@ -20,7 +20,7 @@ chosen (tie-breaking among co-optimal chains) differs ⇒ different packing, ide
 end-to-end by setop set-difference = 0.
 
 ## Method
-`benchmark/scripts/greedy_chaining_verif.sh`: for each genome, build with colinear (default at the time)
+`benchmark/scripts/verify/greedy_chaining_verif.sh`: for each genome, build with colinear (default at the time)
 and greedy (`SKLIB_CONSTRUCT_GREEDY` during the experiment), compare the VSKMER_4 record count, delete
 genome+index (peak disk ≈ one genome). k=31/m=15, `-t16`, clang-18 Release+LTO. Genomes fetched from
 UCSC goldenPath (>300 MB unpacked).

@@ -4,8 +4,8 @@
 # old table" comparisons (which is unreliable for the noisy k63 / __uint128 store). Reports each
 # binary's median + a robust delta with a noise band, so a gain is only called when it clears the band.
 #
-#   benchmark/scripts/union_ab.sh <binA> <binB> <A.sskm> <B.sskm> [rounds] [label]
-#   PIN=5 benchmark/scripts/union_ab.sh build-union/.../union_bench /tmp/ub.cand A.sskm B.sskm 15
+#   benchmark/scripts/microbench/union_ab.sh <binA> <binB> <A.sskm> <B.sskm> [rounds] [label]
+#   PIN=5 benchmark/scripts/microbench/union_ab.sh build-union/.../union_bench /tmp/ub.cand A.sskm B.sskm 15
 #
 # binA = reference (best known), binB = candidate. Positive delta% => candidate SLOWER (regression).
 set -uo pipefail

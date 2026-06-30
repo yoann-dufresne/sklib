@@ -3,7 +3,7 @@
 Phase-2 efficiency, and a CPU%-derived serial-fraction cross-check. Prints a text report and
 writes two PNGs (speedup-vs-threads + Amdahl fit; stacked phase1/phase2 wall vs threads).
 
-  python3 benchmark/scripts/diag_plot.py [csv] [outdir]
+  python3 benchmark/scripts/profiling/diag_plot.py [csv] [outdir]
 """
 import sys, csv, math
 from collections import defaultdict

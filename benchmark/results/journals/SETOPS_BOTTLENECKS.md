@@ -84,7 +84,7 @@ l'inverse la sortie de diff grossit et sa part post-merge monte. La part post-me
 
 ## 3. Attribution par fonction (`perf`, build Release, celegans ∩ matérialisé, ~30 k échantillons)
 
-Agrégateur : `benchmark/scripts/bottleneck/perf_categorize.py`. Brut : `benchmark/results/reference/bottleneck_perf_summary.txt`.
+Agrégateur : `benchmark/scripts/profiling/bottleneck/perf_categorize.py`. Brut : `benchmark/results/reference/bottleneck_perf_summary.txt`.
 
 | Phase / fonction | ∩ matér. | ∪ matér. | chr1 ∩ | ∩ `_size` |
 |---|--:|--:|--:|--:|
@@ -295,8 +295,8 @@ la **re-compaction** qui coûtent.
 
 ## 9. Reproductibilité
 
-- Harnais : `benchmark/scripts/bottleneck/decompose.sh` (décomposition `_size` vs matérialisé) et
-  `benchmark/scripts/bottleneck/perf_categorize.py` (agrégation `perf report` par phase).
+- Harnais : `benchmark/scripts/profiling/bottleneck/decompose.sh` (décomposition `_size` vs matérialisé) et
+  `benchmark/scripts/profiling/bottleneck/perf_categorize.py` (agrégation `perf report` par phase).
 - Données brutes versionnées : `benchmark/results/reference/bottleneck_decompose.csv`, `bottleneck_perf_summary.txt`,
   `bottleneck_sweep_{m,buckets,k}.csv`, `bottleneck_construct.csv`.
 - Builds (hors dépôt, dans `/tmp`) : Release `-O3 -march=native -g -fno-omit-frame-pointer` pour le timing +
@@ -304,9 +304,9 @@ la **re-compaction** qui coûtent.
 - Génomes : `…/sklib/benchmark/data/genomes/*.sanitized.fa` (réels) ; copies mutées via
   `benchmark/scripts/mutate.py`.
 - Exemples :
-  - décomposition : `bash benchmark/scripts/bottleneck/decompose.sh`
+  - décomposition : `bash benchmark/scripts/profiling/bottleneck/decompose.sh`
   - perf : `perf record -F 2500 -g -o p.data -- sskm setop --op intersection -a A.sskm -b B.sskm -o /dev/null`
-    puis `python3 benchmark/scripts/bottleneck/perf_categorize.py p.data`
+    puis `python3 benchmark/scripts/profiling/bottleneck/perf_categorize.py p.data`
   - callgrind (build Profile) : `valgrind --tool=callgrind --cache-sim=no sskm setop --op intersection_size -a A -b B`
 
 ---

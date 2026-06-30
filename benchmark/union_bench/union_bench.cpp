@@ -1,4 +1,5 @@
-// union_bench — isolated mono-thread benchmark/verify harness for km::sortedlist::set_union.
+// union_bench — isolated mono-thread benchmark/verify harness for km::sortedlist set operations.
+// (Legacy name: it now covers union / intersection / diff / xor via --op; see ./README.md.)
 //
 // It includes the library header and calls the REAL set_union (no copy of the body), so every edit
 // to SetOperations.hpp / VirtualSkmer.hpp / Skmer.hpp is measured as-is, free of the CLI / FASTA /

@@ -19,15 +19,15 @@
 # runs into pure-ACGT records, fed identically to both tools.
 #
 # Usage:
-#   bash benchmark/scripts/large_scale_e2e.sh
-#   GENOMES="ecoli yeast chr21 chr1" KM="21,11 31,13 32,17" bash benchmark/scripts/large_scale_e2e.sh
+#   bash benchmark/scripts/verify/large_scale_e2e.sh
+#   GENOMES="ecoli yeast chr21 chr1" KM="21,11 31,13 32,17" bash benchmark/scripts/verify/large_scale_e2e.sh
 #
 # Env knobs (defaults): GENOMES="ecoli chr21"  KM="21,11 31,13"
 #   N_PRESENT=5000  N_RANDOM=5000  SEED=1234  KEEP=0  (KEEP=1 keeps scratch dirs)
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 GENOMES="${GENOMES:-ecoli chr21}"
@@ -45,7 +45,7 @@ KEEP="${KEEP:-0}"
 
 REL_BIN="${REL_BIN:-$REPO_ROOT/build/bin/sskm}"
 DBG_BIN="${DBG_BIN:-$REPO_ROOT/build-debug/bin/sskm}"
-HELPER="$SCRIPT_DIR/e2e_helpers.py"
+HELPER="$SCRIPT_DIR/../e2e_helpers.py"
 # tests/sequences_2_fa.sh is a bash `while read` loop -- far too slow for the ~30M
 # skmer lines a human chromosome produces -- so we wrap lines into FASTA with awk.
 seq2fa() { awk '{print ">s" NR; print $0}'; }
@@ -80,7 +80,7 @@ done
 # carries its own (previously drifting -- it lacked celegans/chm13) copy.
 BENCH_GEN_DIR="$GEN_DIR"; BENCH_HELPER="$HELPER"
 # shellcheck source=benchmark/scripts/genomes.sh
-source "$SCRIPT_DIR/genomes.sh"
+source "$SCRIPT_DIR/../genomes.sh"
 
 # Construct under the DEBUG build (asserts on) for small genomes, Release for big
 # ones. Query is the slow, assert-light path, so it always uses the Release build.

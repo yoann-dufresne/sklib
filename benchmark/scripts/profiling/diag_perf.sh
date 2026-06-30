@@ -6,7 +6,7 @@
 #
 # Requires kernel.perf_event_paranoid <= 1.
 set -uo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SSKM="${SSKM:-$ROOT/build-profile/bin/sskm}"
 GDIR="$ROOT/benchmark/data/genomes"
 OUT="${OUT:-$ROOT/benchmark/results/latest/perf}"

@@ -6,10 +6,10 @@
 # warmup pass per genome primes the page cache. Every run's stream digest is checked against the
 # committed reference (benchmark/results/reference/producer_digest.tsv); any mismatch fails the run.
 #
-#   K=31 M=15 RUNS=9 bash benchmark/scripts/producer_median.sh
-#   GENOMES=chr21 K=63 M=31 RUNS=7 SSKM=build-timing/bin/sskm-produce bash benchmark/scripts/producer_median.sh
+#   K=31 M=15 RUNS=9 bash benchmark/scripts/producer/producer_median.sh
+#   GENOMES=chr21 K=63 M=31 RUNS=7 SSKM=build-timing/bin/sskm-produce bash benchmark/scripts/producer/producer_median.sh
 set -uo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SSKM="${SSKM:-$ROOT/build-timing/bin/sskm-produce}"
 GDIR="${GDIR:-$ROOT/benchmark/data/genomes}"
 REF="${REF:-$ROOT/benchmark/results/reference/producer_digest.tsv}"

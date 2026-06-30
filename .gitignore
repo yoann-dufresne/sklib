@@ -10,7 +10,7 @@ CLAUDE.md
 thirdparty/FlameGraph/
 
 # Benchmark harness: generated outputs, genome cache, competitor builds, venv.
-# Committed under benchmark/results/: reports/ + reference/ (curated snapshots).
+# Committed under benchmark/results/: runs/ + journals/ + reference/ (curated snapshots).
 benchmark/results/latest/
 benchmark/results/union_bench/
 benchmark/data/genomes/

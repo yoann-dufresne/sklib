@@ -20,10 +20,10 @@ the per-position orientation buffer (its bit-proxy iterators are ~13 % of produc
 
 - **Binary:** `build-profile/bin/sskm-produce` — the isolated producer (`app/produce/`,
   `FileSkmerator` only, no bucketing/sort/writer). Profile build (`-O3 -ggdb3 -fno-inline`, clang-18).
-- **Profiling:** `benchmark/scripts/producer_perf.sh` — `perf record --call-graph dwarf` (flamegraph +
+- **Profiling:** `benchmark/scripts/producer/producer_perf.sh` — `perf record --call-graph dwarf` (flamegraph +
   flat report) and `perf stat` (IPC, branch/cache misses, top-down) on chr21 (40.1 Mbp) and celegans
   (100.3 Mbp), k=21 m=11, single thread.
-- **Throughput baseline:** `benchmark/scripts/producer_bench.sh` (Release build), best-of-5, warm page
+- **Throughput baseline:** `benchmark/scripts/producer/producer_bench.sh` (Release build), best-of-5, warm page
   cache. chr21 **2.44 Mskmer/s** (2.77 s, 6 750 903 skmers); celegans **2.53 Mskmer/s** (6.62 s,
   16 754 510 skmers). RSS ~53 MB (the input is streamed; no whole-genome buffering).
 - **Caveat (read before trusting the absolute %s):** the Profile build is `-fno-inline` so that tiny
@@ -115,6 +115,6 @@ and on real genomes that is a minority; it would matter more at small even m.
 ```bash
 CC=clang-18 CXX=clang++-18 cmake -S . -B build-profile -DCMAKE_BUILD_TYPE=Profile -DWITH_TESTS=OFF
 cmake --build build-profile -j --target sskm-produce
-bash benchmark/scripts/producer_perf.sh     # -> benchmark/results/latest/perf-producer/*.{svg,flat.txt,stat.txt}
-bash benchmark/scripts/producer_bench.sh    # Release throughput + digest gate
+bash benchmark/scripts/producer/producer_perf.sh     # -> benchmark/results/latest/perf-producer/*.{svg,flat.txt,stat.txt}
+bash benchmark/scripts/producer/producer_bench.sh    # Release throughput + digest gate
 ```

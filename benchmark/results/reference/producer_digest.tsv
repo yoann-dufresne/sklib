@@ -1,7 +1,7 @@
 # Baseline producer fingerprints — `sskm-produce --digest` on the sanitized genomes.
 # These pin the BIT-EXACT output of the super-k-mer producer (FileSkmerator / SkmerManipulator)
 # on real data. Any monothread optimization of the producer must keep these unchanged; the
-# benchmark/scripts/producer_bench.sh harness re-computes and diffs against this file (chr21 is the
+# benchmark/scripts/producer/producer_bench.sh harness re-computes and diffs against this file (chr21 is the
 # dev signal, celegans the final verdict). Regenerate ONLY if the producer's output semantics change
 # on purpose (then update tests/km/skmerator_digest.cpp golden values too).
 #

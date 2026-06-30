@@ -8,15 +8,15 @@
 # benchmark harness (lib.sh/tools.sh) and only the joint-materialize path of setop.sh,
 # so no unitary work is wasted. RESUMABLE (rows already present are trusted).
 #
-#   bash benchmark/scripts/setop_joint_compare.sh
+#   bash benchmark/scripts/microbench/setop_joint_compare.sh
 #   DATASETS=ecoli KM="31,15" JACCARD="0.5" THREADS="1 8" bash …/setop_joint_compare.sh
 set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-export BENCH_REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+export BENCH_REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 # Capture any explicit user overrides BEFORE sourcing lib.sh (which fills these grids with
 # its own wide defaults), so this script's focused defaults win when the user set nothing.
 _U_DATASETS="${DATASETS:-}"; _U_KM="${KM:-}"; _U_JACCARD="${JACCARD:-}"; _U_THREADS="${THREADS:-}"; _U_TOOLS="${TOOLS:-}"
-source "$SCRIPT_DIR/lib.sh"; source "$SCRIPT_DIR/tools.sh"
+source "$SCRIPT_DIR/../lib.sh"; source "$SCRIPT_DIR/../tools.sh"
 need_tools kmc kmc_tools "$TIME_BIN" python3
 [[ -x "$SSKM_BIN" ]] || die "sskm not found at $SSKM_BIN"
 

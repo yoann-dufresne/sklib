@@ -23,7 +23,7 @@ time**, so the producer is the dominant floor.
   with the env on/off and across `-t`, sha256-verified).
 - **Data:** real genomes, fetched + sanitized via `benchmark/scripts/genomes.sh` — ecoli (4.6 Mbp),
   yeast (12.2 Mbp), chr21 (40.1 Mbp), celegans (100.3 Mbp). k=21, m=11, default `--buckets 4096`.
-- **Sweep:** `benchmark/scripts/construct_scaling.sh` — `-t ∈ {1,2,3,4,6,8,12,16,22}`, 3 reps (median),
+- **Sweep:** `benchmark/scripts/profiling/construct_scaling.sh` — `-t ∈ {1,2,3,4,6,8,12,16,22}`, 3 reps (median),
   1 warmup/genome, tmp on NVMe. Per run: wall + CPU% + peak RSS (`/usr/bin/time -v`) and
   `phase1_s`/`phase2_s` (`SKLIB_TIMING`). 108 rows, 0 failures.
 - **Machine:** Intel Core Ultra 7 165H — 22 logical cores (6 P-cores/12 threads + 8 E + 2 LP-E),
@@ -201,13 +201,13 @@ CC=clang-18 CXX=clang++-18 cmake -S . -B build-timing -DCMAKE_BUILD_TYPE=Release
 cmake --build build-timing -j --target sskm
 
 # fetch genomes + run the sweep + analyse:
-bash benchmark/scripts/construct_scaling.sh           # -> benchmark/results/latest/construct_scaling.csv
-python3 benchmark/scripts/diag_plot.py                # tables + figs/construct_{speedup,phase_split}.png
+bash benchmark/scripts/profiling/construct_scaling.sh           # -> benchmark/results/latest/construct_scaling.csv
+python3 benchmark/scripts/profiling/diag_plot.py                # tables + figs/construct_{speedup,phase_split}.png
 
 # phase split for a single build:
 SKLIB_TIMING=1 build-timing/bin/sskm construct -k21 -m11 -f genome.fa -o /tmp/x.sskm -t8
 #   -> [sklib-timing] ... phase1_s=… phase2_s=…
 
 # perf flamegraphs (needs kernel.perf_event_paranoid <= 1):
-bash benchmark/scripts/diag_perf.sh                   # -> benchmark/results/latest/perf/*.svg
+bash benchmark/scripts/profiling/diag_perf.sh                   # -> benchmark/results/latest/perf/*.svg
 ```

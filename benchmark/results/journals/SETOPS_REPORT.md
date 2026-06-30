@@ -42,7 +42,7 @@ E. coli K12 vs K12 muté 2 %, k=21 — **sklib = KMC = CBL exactement** :
 
 ## 3. Scaling — temps vs taille (B = A muté 1 %, k=21, mono-cœur)
 
-![Temps intersection vs taille](figs/fig_time_vs_size.png)
+![Temps intersection vs taille](../reference/figs/fig_time_vs_size.png)
 
 | génome | \|A\| Mk | ∩ sklib | ∩ kmc | ∩ cbl | ∪ sklib | ∪ kmc | **A\\B sklib** | A\\B kmc |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -71,7 +71,7 @@ Sur les **chromosomes humains** (Jaccard ~1–2 %), **sklib calcule l'intersecti
 
 ## 4. Mémoire — le résultat marquant
 
-![RAM vs taille](figs/fig_ram_vs_size.png)
+![RAM vs taille](../reference/figs/fig_ram_vs_size.png)
 
 RSS pic pendant l'intersection (Mo) :
 
@@ -98,7 +98,7 @@ KMC et CBL doivent **matérialiser** un index résultat puis le compter. sklib r
 
 ## 6. Overlap — le croisement (base chr21 32.7M, k=21)
 
-![Temps intersection vs overlap](figs/fig_time_vs_overlap.png)
+![Temps intersection vs overlap](../reference/figs/fig_time_vs_overlap.png)
 
 | Jaccard | ∩ taille (Mk) | **∩ sklib** | ∩ kmc | ∩ cbl |
 |--:|--:|--:|--:|--:|
@@ -115,7 +115,7 @@ Le temps sklib suit linéairement la taille de sortie ; KMC est plat. **Croiseme
 
 Depuis **v0.6.0**, `sskm setop` est **parallèle par bucket** (`-t`, défaut 8) : les buckets de minimiseurs sont indépendants et distribués dynamiquement entre les workers. **La sortie est octet-identique quel que soit le nombre de threads** (vérifié octet à octet vs le binaire séquentiel + ThreadSanitizer). On compare ici le scaling de sklib (`-t 1/4/8/22`) à **KMC** (`kmc_tools simple`, multi-thread) et à **FMSI** (cadre f-MS, séquentiel — seul autre outil set-op disponible ; CBL indisponible dans cet environnement), sur 6 paires réelles. Données : `benchmark/results/reference/setops_parallel.csv`.
 
-![Scaling threads — sklib vs KMC vs FMSI](figs/fig_threads.png)
+![Scaling threads — sklib vs KMC vs FMSI](../reference/figs/fig_threads.png)
 
 **Intersection** — temps (s), accélération sklib `t1→t22`, RAM pic (Mo) :
 
@@ -182,6 +182,6 @@ sklib se bonifie avec k (intersection plus petite, **∩ < KMC dès k=21** aprè
 
 ## 11. Reproductibilité
 
-Scripts (`benchmark/scripts/`) : `bench_setops.sh` (cœur, mono-cœur §§3–6) · `run_setops_parallel.sh` (**§7 multi-cœurs : sklib `-t` vs KMC vs FMSI**) · `run_scaling.sh` · `run_realpairs.sh` · `run_overlap.sh` · `run_ksweep.sh` · `run_threads.sh` (ancien, mono-thread) · `mutate.py` · `plot_setops.py`. Données brutes (instantané versionné) : `benchmark/results/reference/setops_*.csv` (dont `setops_parallel.csv` pour le §7) ; figures : `benchmark/results/reference/figs/`. Les génomes (gitignorés sous `benchmark/data/genomes/`) se re-téléchargent via le harness (`prepare_genome` dans `lib.sh`) ; régénérer les figures : `python3 benchmark/scripts/plot_setops.py`.
+Scripts (`benchmark/scripts/`) : le bench set-op est aujourd'hui **consolidé** dans `setop.sh` (unitaire + joint, matérialisation + cardinalité, balayages JACCARD / THREADS / k via variables d'environnement — il remplace les anciens `bench_setops.sh` / `run_setops_parallel.sh` / `run_{scaling,realpairs,overlap,ksweep,threads}.sh`) · `mutate.py` (mutants à Jaccard cible) · `plot.py` (figures). Décomposition du temps set-op : `profiling/bottleneck/decompose.sh`. Données brutes (instantané versionné) : `benchmark/results/reference/setops_*.csv` (dont `setops_parallel.csv` pour le §7) ; figures : `benchmark/results/reference/figs/`. Les génomes (gitignorés sous `benchmark/data/genomes/`) se re-téléchargent via le harness (`prepare_genome` dans `lib.sh`) ; régénérer les figures : `python3 benchmark/scripts/plot.py`.
 
-Régénérer un point de mesure mono-cœur : `BENCH_CSV_HEADER=1 bash benchmark/scripts/bench_setops.sh ecoli benchmark/data/genomes/ecoliK12.sanitized.fa benchmark/data/genomes/ecoliSakai.sanitized.fa 21 11 3`. Régénérer le §7 (multi-cœurs) : `FMSI_BIN=… KMERCAMEL_BIN=… bash benchmark/scripts/run_setops_parallel.sh` (sklib `-t 1/4/8/22`, KMC `-t 1/22`, FMSI série ; → `setops_parallel.csv`).
+Régénérer les mesures set-op (sklib `-t` vs KMC vs FMSI) : `DATASETS=ecoli KM="21,11" JACCARD="0.1 0.5 0.9" THREADS="1 4 8 22" bash benchmark/scripts/setop.sh` (→ `benchmark/results/latest/setop.csv`, promu ensuite en `reference/setops_*.csv`).

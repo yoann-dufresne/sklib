@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Helpers for benchmark/scripts/large_scale_e2e.sh.
+"""Helpers for benchmark/scripts/verify/large_scale_e2e.sh.
 
 Subcommands:
   sanitize <fasta>             Uppercase + split each record at runs of non-ACGT

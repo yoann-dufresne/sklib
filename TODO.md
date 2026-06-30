@@ -16,9 +16,9 @@
 - [ ] CI/CD WITH GITHUB ACTIONS
 - [X] DIFF BETWEEN 2 PRECOMPUTED LISTS (`sskm setop --op diff`; + `diff_size`)
 - [X] MERGE OF 2 PRECOMPUTED LISTS (`sskm setop --op union`; + `union_size`)
-- [X] INTERSECTION OF 2 PRECOMPUTED LISTS (`sskm setop --op intersection`; + `intersection_size`) — all bucket-parallel (`-t`), output byte-identical; benchmarked vs KMC/CBL/FMSI (benchmark/results/reports/SETOPS_REPORT.md)
+- [X] INTERSECTION OF 2 PRECOMPUTED LISTS (`sskm setop --op intersection`; + `intersection_size`) — all bucket-parallel (`-t`), output byte-identical; benchmarked vs KMC/CBL/FMSI (benchmark/results/journals/SETOPS_REPORT.md)
 - [X] SYMMETRIC DIFFERENCE OF 2 PRECOMPUTED LISTS (`sskm setop --op xor`; + `xor_size`) — A △ B = (A\B)∪(B\A), the k-mers in exactly one list; reuses the merge (`only_a`/`only_b`), bucket-parallel + byte-identical, also a combined-mode output (`--xor-out`); validated vs KMC (`tests/setop_verif.sh`, `tests/setop_multi_verif.sh`)
-- [X] COMBINED SET OPERATIONS (`sskm setop --inter-out/--union-out/--diff-ab-out/--diff-ba-out/--xor-out` and/or `--sizes`): any subset of {∩, ∪, A\B, B\A, A△B} materialized and/or counted in ONE merge pass (`multi_setop`); bucket-parallel, byte-identical to running the ops separately; combined counting ≈4× the sequential `*_size`, materialization ≈1.1–1.3×, both scaling ~6–7× with `-t`; validated vs KMC (`tests/setop_multi_verif.sh`), benchmarked mono+multi to chr1 (benchmark/results/reports/SETOPS_MULTI_REPORT.md)
+- [X] COMBINED SET OPERATIONS (`sskm setop --inter-out/--union-out/--diff-ab-out/--diff-ba-out/--xor-out` and/or `--sizes`): any subset of {∩, ∪, A\B, B\A, A△B} materialized and/or counted in ONE merge pass (`multi_setop`); bucket-parallel, byte-identical to running the ops separately; combined counting ≈4× the sequential `*_size`, materialization ≈1.1–1.3×, both scaling ~6–7× with `-t`; validated vs KMC (`tests/setop_multi_verif.sh`), benchmarked mono+multi to chr1 (benchmark/results/journals/SETOPS_MULTI_REPORT.md)
 - [ ] ADD HASHING
 - [ ] TEST ON HUMAN, METAGENOME, BACTERIA, RICE PANGENOME?
 - [X] TEST AGAINST BQF, SSHASH (benchmark vs bqf/sshash/sbwt/cbl — see benchmark/scripts)

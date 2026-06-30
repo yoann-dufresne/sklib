@@ -8,13 +8,13 @@
 # optimization is measured and correctness-verified in one shot. chr21 is the dev signal, celegans
 # the final verdict.
 #
-#   bash benchmark/scripts/producer_bench.sh
-#   GENOMES="chr21" REPS=7 SSKM=build-opt/bin/sskm-produce bash benchmark/scripts/producer_bench.sh
+#   bash benchmark/scripts/producer/producer_bench.sh
+#   GENOMES="chr21" REPS=7 SSKM=build-opt/bin/sskm-produce bash benchmark/scripts/producer/producer_bench.sh
 #
 # Inputs must already be fetched+sanitized (benchmark/scripts/genomes.sh). The binary's own
 # best-of-REPS timing is used (warm page cache); GNU time adds peak RSS.
 set -uo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SSKM="${SSKM:-$ROOT/build-timing/bin/sskm-produce}"
 GDIR="${GDIR:-$ROOT/benchmark/data/genomes}"
 REF="${REF:-$ROOT/benchmark/results/reference/producer_digest.tsv}"

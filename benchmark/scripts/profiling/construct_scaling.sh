@@ -6,12 +6,12 @@
 # and peak RSS. Phase times come from the `[sklib-timing]` stderr line emitted by build_bucketed;
 # wall/CPU%/RSS from GNU time. Output is a tidy long-format CSV (one row per rep).
 #
-#   bash benchmark/scripts/construct_scaling.sh
-#   GENOMES="ecoli chr21" THREADS="1 4 8" REPS=2 bash benchmark/scripts/construct_scaling.sh
+#   bash benchmark/scripts/profiling/construct_scaling.sh
+#   GENOMES="ecoli chr21" THREADS="1 4 8" REPS=2 bash benchmark/scripts/profiling/construct_scaling.sh
 #
 # Inputs must already be fetched+sanitized (benchmark/scripts/genomes.sh prepare_genome).
 set -uo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SSKM="${SSKM:-$ROOT/build-timing/bin/sskm}"
 GDIR="${GDIR:-$ROOT/benchmark/data/genomes}"
 OUT="${OUT:-$ROOT/benchmark/results/latest/construct_scaling.csv}"

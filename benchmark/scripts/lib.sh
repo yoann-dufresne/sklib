@@ -4,7 +4,7 @@
 # CSV utilities. Sourced -- not executed directly.
 #
 # It deliberately reuses the same genome cache directory as the correctness
-# harness (benchmark/scripts/large_scale_e2e.sh) so multi-GB downloads are shared.
+# harness (benchmark/scripts/verify/large_scale_e2e.sh) so multi-GB downloads are shared.
 
 # ---- paths (BENCH_REPO_ROOT must be set by the caller) ----
 : "${BENCH_REPO_ROOT:?source lib.sh with BENCH_REPO_ROOT set}"

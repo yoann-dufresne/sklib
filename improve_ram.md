@@ -147,7 +147,7 @@ exploiter ici plus tard.
   optimisations de facteur constant) : `cmp` la sortie binaire `--buckets {64,
   256, 4096}` contre un binaire `dev` ; doit être **identique**. Plus fort qu'un
   e2e échantillonné.
-- **Correction vs KMC** — `benchmark/scripts/large_scale_e2e.sh` sur `ecoli`, `yeast`,
+- **Correction vs KMC** — `benchmark/scripts/verify/large_scale_e2e.sh` sur `ecoli`, `yeast`,
   `chr21`, `KM="21,11 31,13 32,17"` (égalité d'ensemble + statuts vs KMC,
   déterminisme, cohérence comptes binaire/ASCII).
 - **Tests unitaires** — `build-debug/tests/sklib-tests` (depuis le dossier de

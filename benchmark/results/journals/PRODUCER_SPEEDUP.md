@@ -52,7 +52,7 @@ and the branch eliminations save more when each per-element op is heavier and th
 (2k-m = 95 nt at k=63) is longer. So the wins are not a width-4 artifact; they generalize, with k=31
 (the most realistic benchmark k) gaining ~+53–59 %.
 
-Verify any width with e.g. `K=31 M=15 bash benchmark/scripts/producer_bench.sh` (digest-gated).
+Verify any width with e.g. `K=31 M=15 bash benchmark/scripts/producer/producer_bench.sh` (digest-gated).
 
 ## What landed
 
@@ -135,7 +135,7 @@ to attempt them safely. Iteration continues while gains stay clear on celegans.
 
 The wins above were developed at k=21/m=11 (uint32). This phase targets the two realistic benchmark
 points the construct path actually uses — **k=31/m=15 (uint64)** and **k=63/m=31 (__uint128)** — and
-measures with `benchmark/scripts/producer_median.sh`: N independent process launches per genome,
+measures with `benchmark/scripts/producer/producer_median.sh`: N independent process launches per genome,
 **median** Mskmer/s with [min..max] spread (so a delta is judged against run-to-run noise), digest
 gated on every run. Dev signal chr21, verdict celegans.
 
@@ -285,6 +285,6 @@ noise floor on chr21 back-to-back** (the lesson from B11/E3).
 CC=clang-18 CXX=clang++-18 cmake -S . -B build-timing -DCMAKE_BUILD_TYPE=Release -DWITH_TESTS=ON
 cmake --build build-timing -j --target sskm-produce sklib-tests
 ctest --test-dir build-timing --output-on-failure        # full suite incl. skmerator_digest
-bash benchmark/scripts/producer_bench.sh                 # throughput + digest gate (chr21, celegans)
+bash benchmark/scripts/producer/producer_bench.sh                 # throughput + digest gate (chr21, celegans)
 # A/B: git stash push -- lib/include/io/Skmerator.hpp ; rebuild ; bench ; git stash pop ; rebuild ; bench
 ```

@@ -15,7 +15,7 @@ detail: how to run each script and what knobs exist.
 - A **Release** `sskm` at `build-bench/bin/sskm` (override with `SSKM_BIN=…`). A DEBUG build
   enables AddressSanitizer and skews RSS/time, so do not point the harness at a debug binary.
   `cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release && cmake --build build-bench -j --target sskm`
-- Competitors (optional): `bash tools/setup.sh` clones+builds sshash/sbwt/cbl/bqf/fmsi into
+- Competitors (optional): `bash tools/setup.sh` clones+builds sshash/sbwt/sbwtrs/cbl/bqf/fmsi into
   `../data/tools_src/` and writes `tools.env`. Unbuilt tools are skipped automatically.
 - Figures: `python3 -m venv .venv && .venv/bin/pip install pandas matplotlib`.
 
@@ -36,7 +36,7 @@ self-contained.
 ## Env knobs (defaults)
 
 Shared (in `lib.sh`): `DATASETS="sarscov2 ecoli yeast celegans chr21 chr1"` ·
-`TOOLS="sklib sshash sbwt cbl bqf fmsi kmc"` · `KM="15,7 21,11 31,15 41,19 51,25 63,31"` ·
+`TOOLS="sklib sshash sbwt sbwtrs cbl bqf fmsi kmc"` · `KM="15,7 21,11 31,15 41,19 51,25 63,31"` ·
 `THREADS="1 2 4 8 16"` · `PRESENCE="0 25 50 75 100"` · `JACCARD="0 0.1 0.3 0.5 0.7 0.9 1.0"` ·
 `REPS=3` · `SEED=1234`. Query: `N_QUERY=200000` (single), `STREAM_RECS=2000`,
 `STREAM_LEN=300` (stream). Paths: `SSKM_BIN`, `RESULTS` (default `../results/latest`),
@@ -80,10 +80,20 @@ Implement `available_<t>` / `version_<t>` / `construct_<t> san k m wd` (set `IDX
 and — for set ops — `setop_op_<t>` / `setop_joint_<t>` plus `setop_has_{size,joint}_<t>`.
 Per-`k` limits live in the wrapper (e.g. `sbwt.sh` rejects `k>32`): just `return 1`.
 
-## Figures, correctness, profiling
+## Beyond the four experiments — subfolders
+
+The four drivers + their shared libs (`lib.sh`, `tools.sh`, `genomes.sh`), the genome fetcher
+(`fetch_genomes.sh`), the query/mutant helpers (`e2e_helpers.py`, `mutate.py`) and the figure
+generator (`plot.py`) sit at the top level. Everything else is grouped by role:
+
+| Folder | What | Entry points |
+|---|---|---|
+| `tools/` | competitor adapters + one-shot setup | `setup.sh`, `{sshash,sbwt,sbwtrs,cbl,bqf,fmsi}.sh` (`bcalm.sh` = sshash preprocessor, not a competitor) |
+| `producer/` | isolated super-k-mer producer throughput + bit-exact digest gate | `producer_{bench,median,setcheck,perf}.sh` |
+| `profiling/` | construct/set-op perf attribution | `flamegraph_construct.sh`, `diag_perf.sh`, `construct_scaling.sh`, `diag_plot.py`; `bottleneck/` = set-op `_size`-vs-materialize decomposition + `perf` categorisation |
+| `microbench/` | isolated single-thread set-op microbench + a focused KMC-vs-sklib joint compare | `union_bench.sh` / `union_ab.sh` (see [`../union_bench/README.md`](../union_bench/README.md)), `setop_joint_compare.sh` + `setop_joint_report.py` |
+| `verify/` | correctness vs the KMC oracle (set-equality, determinism) | `large_scale_e2e.sh`, `greedy_chaining_verif.sh` |
 
 - `plot.py [results_dir]` → per-experiment figures in `results/latest/figs/` (needs `.venv`).
-- `large_scale_e2e.sh` — correctness vs the KMC oracle (set-equality, determinism); separate
-  from the perf harness. `tests/setop_multi_verif.sh` cross-validates combined set ops vs KMC.
-- `flamegraph_construct.sh` — perf flame graph of `construct`. `bottleneck/` — set-op time
-  decomposition + `perf` categorisation (feeds the bottleneck report).
+- `verify/large_scale_e2e.sh` is correctness, not a benchmark; `tests/setop_multi_verif.sh`
+  cross-validates combined set ops vs KMC.

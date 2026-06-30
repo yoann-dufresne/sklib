@@ -8,10 +8,10 @@
 # super-k-mers with KMC, and diffs that set against KMC run directly on the genome. Segmentation-
 # agnostic by construction (KMC re-derives the k-mers whatever the super-k-mers are).
 #
-#   bash benchmark/scripts/producer_setcheck.sh
-#   GENOMES="chr21 celegans" K=31 M=15 bash benchmark/scripts/producer_setcheck.sh
+#   bash benchmark/scripts/producer/producer_setcheck.sh
+#   GENOMES="chr21 celegans" K=31 M=15 bash benchmark/scripts/producer/producer_setcheck.sh
 set -uo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SSKM="${SSKM:-$ROOT/build-timing/bin/sskm}"
 GDIR="${GDIR:-$ROOT/benchmark/data/genomes}"
 GENOMES="${GENOMES:-chr21}"

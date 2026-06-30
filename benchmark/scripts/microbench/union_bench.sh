@@ -8,14 +8,14 @@
 # exists (the union k-mer set is invariant across optimizations), so it must be created from a
 # pristine build BEFORE any optimization edit.
 #
-#   bash benchmark/scripts/union_bench.sh [prep|verify|bench|all]   (default: all)
-#   DATASETS="chr21" KS="31" JS="0.5" bash benchmark/scripts/union_bench.sh bench
+#   bash benchmark/scripts/microbench/union_bench.sh [prep|verify|bench|all]   (default: all)
+#   DATASETS="chr21" KS="31" JS="0.5" bash benchmark/scripts/microbench/union_bench.sh bench
 #
 # Knobs (env): DATASETS, KS (k list; m=k/2 via the case below), JS (target Jaccard list),
 #   SEED, WARMUP, REPS, PIN (taskset core), TAG (label written into the TSV), OUT_TSV.
 set -uo pipefail
 
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BUILD="${BUILD:-$ROOT/build-union}"
 SSKM="${SSKM:-$BUILD/bin/sskm}"
 HARNESS="${HARNESS:-$BUILD/benchmark/union_bench/union_bench}"

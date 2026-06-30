@@ -14,7 +14,7 @@ identically. Byte-level packing may change; record count may not grow.
   `sskm` has none either — representative). Build dir `build-union`, `-DWITH_UNION_BENCH=ON`.
 - **Harness.** `benchmark/union_bench/union_bench.cpp` calls the real `set_union<store>(A,B,out,
   /*no_compact*/false, /*nthreads*/1)` on two pre-built lists; output to `/dev/shm` (no write-I/O
-  noise); inputs page-cache-warm. Driver: `benchmark/scripts/union_bench.sh`.
+  noise); inputs page-cache-warm. Driver: `benchmark/scripts/microbench/union_bench.sh`.
 - **Data.** Dev on **chr21**, non-regression verdict on **celegans**. k=31 (m=15 → `uint64` store,
   8 B) and k=63 (m=31 → `__uint128` store, 16 B). A/B pairs at target **Jaccard ∈ {0.1, 0.5, 0.9}**
   (B = `mutate.py` copy of A). → **12 configs** (2 datasets × 2 k × 3 J); all must hold before commit.
