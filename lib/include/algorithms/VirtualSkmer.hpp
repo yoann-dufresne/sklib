@@ -26,6 +26,20 @@
 #define FRIEND_TEST(test_case_name, test_name) static_assert(true, "")
 #endif
 
+#ifndef SKLIB_QUERY_OPT
+// Streaming-query column-loop variant selector (search_kmers_in_span_into). Byte-identical output at
+// every level; higher levels only remove per-column work on WIDE records:
+//   0 = original loop (per-column kmer_compare) — kept for A/B and as the narrow-width path
+//   1 = query-mask cache: precompute query&mask once per query, compare with pair::compare3
+//   2 = 1 + XOR shared-high-bit short-circuit: when query and the probed record differ in the region
+//       shared by all active columns, one compare3 resolves every column's direction (default).
+// Only wide record integers (sizeof(store) >= 16, i.e. __uint128/kuint256) take the level-1/2 path;
+// the narrow (uint32/uint64) instantiation keeps the original loop verbatim via `if constexpr`, so its
+// codegen is unchanged (measured: search-loop time -0.0% at k31). Wide streaming query: ~+12-16% on the
+// search loop, ~+5-10% end-to-end (benchmark/results/journals/QUERY_XOR_SPEEDUP.md).
+#define SKLIB_QUERY_OPT 2
+#endif
+
 namespace km
 {
 namespace sortedlist
@@ -60,6 +74,10 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V5 = 0x56534B4D45525F35ULL; // "VSK
 // i.e. 2k-m <= 256, which bounds k-m+1 <= 128. (The previous value 64 matched the old __uint128_t
 // cap of 2k-m <= 128; a longer super-k-mer overflows these arrays -> stack corruption / hang.)
 constexpr uint64_t MAX_POSSIBLE_KMERS = 128;
+// Minimum record-integer width (bytes) at which the streaming-query mask-cache / XOR short-circuit
+// engages (SKLIB_QUERY_OPT>=1). Below it (uint32/uint64) the original per-column compare is kept,
+// so narrow codegen is unchanged. Mirrors SetOperations.hpp's WIDE_MERGE_MIN_STORE_BYTES.
+constexpr size_t QUERY_XOR_MIN_STORE_BYTES = 16;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
     return ((value & 0x00000000000000FFULL) << 56) |
@@ -280,6 +298,16 @@ inline void search_kmers_in_span_into(
     for(size_t i {0}; i < tot_num_kmers_to_search; i++){
         positions_to_search[i] = i;
     }
+#if SKLIB_QUERY_OPT >= 1
+    // V1 (mask-cache): the query's masked k-mer at each column is constant across every probe, so
+    // hoist it out of the inner loop and compute it once. Wide store only (narrow keeps the original
+    // kmer_compare via the `if constexpr` below); the unused array is elided for the narrow path.
+    decltype(query.m_pair) qk[km::sortedlist::util::MAX_POSSIBLE_KMERS];
+    if constexpr (sizeof(kuint) >= km::sortedlist::util::QUERY_XOR_MIN_STORE_BYTES) {
+        for (uint64_t off {0}; off < tot_num_kmers_to_search; ++off)
+            qk[off] = manip.masked_kmer(query, query_start_position + off);
+    }
+#endif
     // START BINARY SEARCH
     while(num_kmers_to_search > 0){
         // VERIFY THAT THE CURRENT PRIORITY_POSITION IS STILL VALID AND UPDATE
@@ -319,12 +347,58 @@ inline void search_kmers_in_span_into(
 
         auto [queried_start_position, queried_end_position] = manip.get_valid_kmer_bounds(list[mean]);
 
+#if SKLIB_QUERY_OPT >= 2
+        if constexpr (sizeof(kuint) >= km::sortedlist::util::QUERY_XOR_MIN_STORE_BYTES) {
+            // XOR shared-high-bit short-circuit. The active in-range columns are the contiguous
+            // ascending slice [lo,hi) of positions_to_search whose absolute position falls in
+            // list[mean]'s valid k-mer window (positions_to_search is built ascending, and the window
+            // is an interval, so they are contiguous). S = Ma&Mb and V = Ma^Mb of the two extreme
+            // columns' masks are, by the monotone sliding-window mask geometry, the bits shared by /
+            // differing across ALL active masks. If D = query^list[mean] differs inside the shared
+            // region (Dhi>Dlo), the highest differing bit is common to every active column, so they
+            // all compare the same way and none can be equal — resolve them with ONE compare3.
+            uint64_t lo {0};
+            while (lo < searchable_position_count &&
+                   query_start_position + positions_to_search[lo] < queried_start_position) ++lo;
+            uint64_t hi {searchable_position_count};
+            while (hi > lo &&
+                   query_start_position + positions_to_search[hi - 1] > queried_end_position) --hi;
+            if (lo < hi) {
+                const auto& Ma {manip.kmer_mask(query_start_position + positions_to_search[lo])};
+                const auto& Mb {manip.kmer_mask(query_start_position + positions_to_search[hi - 1])};
+                const auto S {Ma & Mb};
+                const auto Vd {Ma ^ Mb};
+                const auto D {query.m_pair ^ list[mean].m_pair};
+                if ((D & S) > (D & Vd)) {
+                    const int dir {(query.m_pair & S).compare3(list[mean].m_pair & S)};   // != 0
+                    for (uint64_t i {lo}; i < hi; ++i) {
+                        const uint64_t offset {positions_to_search[i]};
+                        if (dir < 0) binary_search_boundaries[offset].second = mean - 1;
+                        else         binary_search_boundaries[offset].first  = mean + 1;
+                        if (binary_search_boundaries[offset].first > binary_search_boundaries[offset].second) {
+                            km::sortedlist::util::setFalse(keep_searching[offset]);
+                            num_kmers_to_search--;
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+#endif
         for(uint64_t i {0}; i < searchable_position_count; i++){
             const uint64_t offset {positions_to_search[i]};
             current_searched_position_in_skmer = query_start_position + offset;
             if(current_searched_position_in_skmer >= queried_start_position && current_searched_position_in_skmer <= queried_end_position){
 
+#if SKLIB_QUERY_OPT >= 1
+                int kmer_comparison;
+                if constexpr (sizeof(kuint) >= km::sortedlist::util::QUERY_XOR_MIN_STORE_BYTES)
+                    kmer_comparison = qk[offset].compare3(manip.masked_kmer(list[mean], current_searched_position_in_skmer));
+                else
+                    kmer_comparison = manip.kmer_compare(query, list[mean], current_searched_position_in_skmer);
+#else
                 const int kmer_comparison {manip.kmer_compare(query, list[mean], current_searched_position_in_skmer)};
+#endif
                 if (kmer_comparison == 0){
                     // FOUND. SET RESULT TO TRUE, KEEP_SEARCHING TO FALSE, UPDATE PRIORITY POSITION IF NECESSARY
                     km::sortedlist::util::setTrue(result[offset]);

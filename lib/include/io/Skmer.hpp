@@ -1321,6 +1321,14 @@ public:
         return skmer.m_pair & kmer_masks[kmer_pos];
     }
 
+    // Const view of the per-column k-mer mask (the same kmer_masks[pos] kmer_compare / masked_kmer
+    // use). Lets the query search compute the shared/divergent mask regions (S = Ma&Mb, V = Ma^Mb)
+    // for the XOR shared-high-bit short-circuit.
+    inline const kpair& kmer_mask(const uint64_t kmer_pos) const
+    {
+        return kmer_masks[kmer_pos];
+    }
+
     /** Check if a skmer has a kmer starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param kmer_pos Position of the start of the kmer
