@@ -118,7 +118,17 @@ XOR-comparing all columns of a probed super-k-mer at once (short-circuited on th
 speeds the wide streaming-query search loop **+12-16 %** (**+5-10 % end-to-end**), byte-identical, with the
 narrow path provably untouched. Enabled by default for wide records; set `-DSKLIB_QUERY_OPT=0` to disable.
 
-**Remaining lead (not this journal).** The search win is capped because `update_searchable_positions` runs
-`O(active columns)` **every probe** — with the compares gone it is now the per-probe hotspot. Making the
-active-column set incremental (it only shrinks as columns resolve) would compound with this change; that is
-the next lever for the streaming query.
+### Tested and rejected — incremental active-column list
+
+Hypothesis: with the compares gone, `update_searchable_positions` (an `O(tot)` scan every probe) is the
+new per-probe hotspot, and iterating only the still-active columns would compound with the XOR win. Tested
+with a compact ascending active-column list (`update_searchable_positions_active`) that iterates just the
+active columns and drops resolved ones in place — **byte-identical** (cmp, k63 + k31, -t{1,8}).
+
+**Verdict: rejected.** It **regresses the wide path** −1 to −5 % (chr21 k63 p100 −5.1 %, chr1 −4.3 %, cele
+−1.1 %; internal timer, min-11) and only helps **narrow +3 %** (k31, where there is no XOR short-circuit and
+the search runs more probes). The compaction writes one entry per surviving column every probe, which costs
+more than the `O(tot)` scan (well-predicted branches) saves, because columns resolve only near convergence
+(the XOR collapses them in bulk, late). So `update_searchable_positions` is **not** the wide hotspot; the
+remaining wide cost sits in the non-firing per-column compares, the `list[mean]` load, and the per-probe
+`get_valid_kmer_bounds` — a future profile should target those, not the column-set scan.
