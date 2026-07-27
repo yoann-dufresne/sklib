@@ -536,6 +536,13 @@ class SortedVirtualSkmerList {
         // is_sorted and unique passes are all redundant and skipped. Produces the SAME ids sort_column
         // would for that input (ascending index == ascending k-mer, no duplicates), so the result is
         // byte-identical.
+        // Without a caller-supplied layout (construction), the per-column valid-id lists come from a
+        // column CSR built ONCE over the enumeration instead of re-scanning the whole enumeration for
+        // each of the k-m+1 columns. See build_enumeration_csr / sort_column_from_csr: the slice is
+        // the same ascending-id list sort_column's scan produced, so the sort/unique below sees
+        // identical input and the output is byte-identical.
+        if (!col_offsets)
+            build_enumeration_csr(skmer_enumeration, m_manip.k - m_manip.m + 1);
         auto column_ids = [&](uint64_t pos) -> std::vector<uint64_t> {
             if (col_offsets) {
                 const uint64_t lo {(*col_offsets)[pos]}, hi {(*col_offsets)[pos + 1]};
@@ -543,7 +550,7 @@ class SortedVirtualSkmerList {
                 std::iota(ids.begin(), ids.end(), lo);
                 return ids;
             }
-            return sort_column(skmer_enumeration.begin(), skmer_enumeration.end(), pos);
+            return sort_column_from_csr(skmer_enumeration, pos);
         };
 
         // 0 - sort the column ids based on kmers of the first column
@@ -744,14 +751,89 @@ class SortedVirtualSkmerList {
     std::vector<typename Skmer<kuint>::pair> m_gco_keys;   // right column's overlap keys (parallel to right_column)
     std::vector<int64_t> m_gco_head;                       // hash bucket -> first right index in its chain, or -1
     std::vector<int64_t> m_gco_next;                       // right index -> next index in the same chain, or -1
+    // Column CSR over the enumeration (build_enumeration_csr): column c's valid ids are
+    // m_csr_idx[m_csr_off[c] .. m_csr_off[c+1]). Members so the buffers are reused across the
+    // buckets a single compactor processes instead of being reallocated per bucket.
+    std::vector<uint32_t> m_csr_off;
+    std::vector<uint32_t> m_csr_idx;
+    std::vector<uint32_t> m_csr_cur;                       // placement cursors (pass 2)
+    std::vector<int64_t>  m_csr_diff;                      // per-column count difference array (pass 1)
 
     private:
+
+    /** Column CSR over the whole enumeration: on return, the ids valid at column `c` are
+     * m_csr_idx[m_csr_off[c] .. m_csr_off[c+1]) in ascending order.
+     *
+     * A record carries a k-mer at exactly the contiguous column interval get_valid_kmer_bounds
+     * returns (has_valid_kmer(sk, c) is literally `start <= c && c <= end` on those bounds), so one
+     * pass over the enumeration determines every column's membership. The previous code instead
+     * re-scanned the WHOLE enumeration once per column, testing has_valid_kmer on every record:
+     * O(n * ncols) record touches, i.e. n*ncols*sizeof(Skmer) bytes of traffic (48 B x 33 columns
+     * at k=63). perf put sort_column at 11.1% (k=31) / 11.7% (k=63) of construct wall time. The CSR
+     * touches each record once and then writes one uint32 per (record, column) pair: ~180 B/record
+     * instead of ~1584 B/record at k=63.
+     *
+     * Counts come from a difference array (+1 at `start`, -1 past `end`, then a prefix sum) so the
+     * count pass is O(1) per record rather than O(columns spanned). Buffers are members, reused
+     * across the buckets one compactor processes.
+     **/
+    void build_enumeration_csr(std::vector<Skmer<kuint>> const& enumeration, uint64_t ncols) {
+        const size_t n {enumeration.size()};
+        m_csr_diff.assign(ncols + 1, 0);
+        for (size_t i {0}; i < n; ++i) {
+            const auto [s, e] {m_manip.get_valid_kmer_bounds(enumeration[i])};
+            if (e < s) continue;                    // no valid k-mer (unsigned: a wrapped s>e is skipped)
+            const uint64_t hi {e < ncols ? e : ncols - 1};
+            ++m_csr_diff[s];
+            --m_csr_diff[hi + 1];
+        }
+        m_csr_off.assign(ncols + 1, 0);
+        int64_t running {0};
+        for (uint64_t c {0}; c < ncols; ++c) {
+            running += m_csr_diff[c];
+            m_csr_off[c + 1] = m_csr_off[c] + static_cast<uint32_t>(running);
+        }
+        m_csr_idx.resize(m_csr_off[ncols]);
+        m_csr_cur.assign(m_csr_off.begin(), m_csr_off.end() - 1);
+        for (size_t i {0}; i < n; ++i) {
+            const auto [s, e] {m_manip.get_valid_kmer_bounds(enumeration[i])};
+            if (e < s) continue;
+            for (uint64_t c {s}; c <= e && c < ncols; ++c) m_csr_idx[m_csr_cur[c]++] = static_cast<uint32_t>(i);
+        }
+    }
+
+    /** sort_column's result for column `pos`, taken from the prebuilt CSR slice instead of a fresh
+     * scan. The slice holds exactly the ids sort_column's first pass collected, in the same
+     * ascending order, so the is_sorted / sort / unique steps below are the untouched originals and
+     * the returned vector is identical element for element. **/
+    std::vector<uint64_t> sort_column_from_csr(std::vector<Skmer<kuint>> const& enumeration, uint64_t pos) {
+        const uint32_t lo {m_csr_off[pos]}, hi {m_csr_off[pos + 1]};
+        std::vector<uint64_t> valid_skmer_ids(hi - lo);
+        for (uint32_t i {lo}; i < hi; ++i) valid_skmer_ids[i - lo] = m_csr_idx[i];
+
+        const auto col_less = [this, pos, &enumeration](uint64_t id1, uint64_t id2){
+            return m_manip.kmer_compare(enumeration[id1], enumeration[id2], pos) < 0;
+        };
+        if (!std::is_sorted(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less))
+            std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less);
+
+        auto last_value = std::unique(valid_skmer_ids.begin(), valid_skmer_ids.end(),
+            [this, pos, &enumeration](uint64_t id1, uint64_t id2){
+                return m_manip.kmer_compare(enumeration[id1], enumeration[id2], pos) == 0;
+            });
+        valid_skmer_ids.erase(last_value, valid_skmer_ids.end());
+        return valid_skmer_ids;
+    }
 
     /** Sorts skmer ids based on the kmers they contain at a given positon.
      * @param start start_position in the skmer generator
      * @param end end_positon in the skmer generator
      * @param kmer_pos position of the kmer in the skmer (column position)
      * @return a vector of Virtual superkmer ids (if no kmer, no skmer id)
+     *
+     * Reference implementation, pinned by the SortingColumn* tests. The construction path takes the
+     * equivalent CSR route above (sort_column_from_csr); this one keeps the straightforward
+     * per-column scan.
      **/
     template <class It>
     std::vector<uint64_t> sort_column(It start, It end, uint64_t kmer_pos){
