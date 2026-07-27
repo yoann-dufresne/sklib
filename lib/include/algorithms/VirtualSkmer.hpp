@@ -75,9 +75,18 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V5 = 0x56534B4D45525F35ULL; // "VSK
 // cap of 2k-m <= 128; a longer super-k-mer overflows these arrays -> stack corruption / hang.)
 constexpr uint64_t MAX_POSSIBLE_KMERS = 128;
 // Minimum record-integer width (bytes) at which the streaming-query mask-cache / XOR short-circuit
-// engages (SKLIB_QUERY_OPT>=1). Below it (uint32/uint64) the original per-column compare is kept,
-// so narrow codegen is unchanged. Mirrors SetOperations.hpp's WIDE_MERGE_MIN_STORE_BYTES.
-constexpr size_t QUERY_XOR_MIN_STORE_BYTES = 16;
+// engages (SKLIB_QUERY_OPT>=1). Below it (uint32) the original per-column compare is kept, so the
+// narrowest codegen is unchanged.
+//
+// Re-measured from scratch on chr1/chr21 (alternating A/B, N=9, noise floor +/-0.5% at t=1); the
+// threshold used to be 16, which kept uint64 records on the original loop:
+//     store  8 B (k=31)  +2.6% p50 / +2.3% p100 / +3.3% p0   -> engage
+//     store  4 B (k=15)  -0.6%                                -> keep the original loop
+// The 32-bit pair is two 32-bit words, so a compare is already a single 64-bit-ish operation and the
+// per-column mask cache only adds bookkeeping; from 64-bit records up, masking once per query column
+// instead of twice per probe pays. Mirrors SetOperations.hpp's WIDE_MERGE_MIN_STORE_BYTES, which is
+// a different loop and keeps its own (16 B) threshold.
+constexpr size_t QUERY_XOR_MIN_STORE_BYTES = 8;
 // Helper function to check endianness
 inline uint64_t swap_endian(uint64_t value) {
     return ((value & 0x00000000000000FFULL) << 56) |
