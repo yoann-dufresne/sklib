@@ -43,6 +43,50 @@ std::vector<overlap> colinear_chaining(std::vector<overlap>::iterator begin, std
  * super-k-mer packing can differ (same k-mer SET); used on the set-operation re-compaction path, whose
  * correctness is the represented set, not the byte layout. WARNING: reorders the input range.
  */
+/** Reusable scratch for greedy_chaining_into. The chain is recomputed for EVERY column of EVERY
+ * bucket (k-m calls per bucket, thousands of buckets), and the by-value greedy_chaining below
+ * allocates `parent`, `tail` and the result on each of them. Hoisting the buffers into a
+ * caller-owned scratch turns that churn into a resize: perf attributed ~9.6% of a materializing
+ * set op to vector reallocation on this path. **/
+struct GreedyScratch {
+    std::vector<size_t> parent;
+    std::vector<size_t> tail;
+};
+
+/** greedy_chaining writing into `out` (cleared first) and reusing `scr`'s buffers. Identical
+ * result — same sort, same LIS, same backtrack — with no per-call allocation. **/
+inline void greedy_chaining_into(std::vector<overlap>::iterator begin,
+                                 std::vector<overlap>::iterator end,
+                                 std::vector<overlap>& out, GreedyScratch& scr)
+{
+    out.clear();
+    const size_t n = static_cast<size_t>(end - begin);
+    if (n == 0) return;
+    auto chain_less = [](const overlap& a, const overlap& b) {
+        return a.first != b.first ? a.first < b.first : a.second > b.second;
+    };
+    if (!std::is_sorted(begin, end, chain_less))
+        std::sort(begin, end, chain_less);
+    scr.parent.assign(n, SIZE_MAX);
+    scr.tail.clear();
+    std::vector<size_t>& parent = scr.parent;
+    std::vector<size_t>& tail = scr.tail;
+    for (size_t i = 0; i < n; ++i) {
+        const uint64_t s = begin[i].second;
+        size_t lo = 0, hi = tail.size();
+        while (lo < hi) { const size_t mid = (lo + hi) / 2; if (begin[tail[mid]].second < s) lo = mid + 1; else hi = mid; }
+        if (lo > 0) parent[i] = tail[lo - 1];
+        if (lo == tail.size()) tail.push_back(i); else tail[lo] = i;
+    }
+    out.reserve(tail.size());
+    for (size_t cur = tail.back(); ; cur = parent[cur]) {
+        out.push_back(begin[cur]);
+        if (parent[cur] == SIZE_MAX) break;
+    }
+    std::reverse(out.begin(), out.end());
+}
+
+/** Allocating wrapper, kept for the tests and the in-RAM callers. **/
 inline std::vector<overlap> greedy_chaining(std::vector<overlap>::iterator begin,
                                             std::vector<overlap>::iterator end)
 {

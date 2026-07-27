@@ -534,8 +534,13 @@ class SortedVirtualSkmerList {
         uint64_t right_column_position {0};
         uint64_t left_column_position {0};
         km::sortedlist::util::SlidingWindow window;
-        std::vector<overlap> candidate_overlaps;
-        std::vector<overlap> valid_overlaps;
+        // Members, not locals: this routine runs once per bucket (thousands of them) and the chain
+        // buffers were rebuilt from scratch each time — candidate_overlaps grew from zero on every
+        // bucket, and valid_overlaps was re-declared INSIDE the column loop (below), so every column
+        // of every bucket allocated a fresh result. perf put ~9.6% of a materializing set op in
+        // vector reallocation on this path. Reused buffers keep the exact same contents.
+        std::vector<overlap>& candidate_overlaps = m_candidate_overlaps;
+        std::vector<overlap>& valid_overlaps = m_valid_overlaps;
 
         // Per-column valid-id list. The generic path (sort_column) re-scans the WHOLE enumeration for
         // each column (has_valid_kmer x n, the dominant recompaction cost — ~6% at k=31, ~22% at
@@ -602,14 +607,15 @@ class SortedVirtualSkmerList {
             //     cout << "(" << o.first << ";" << o.second << ") , ";
             // cout << endl;
 
-            // 3 - get valid overlaps using colinear chaining
-            std::vector<overlap> valid_overlaps;
+            // 3 - get valid overlaps using colinear chaining (into the reused buffer)
             if(candidate_overlaps.size() != 0){
-                valid_overlaps = greedy_chain
-                    ? km::chaining::greedy_chaining(candidate_overlaps.begin(), candidate_overlaps.end())
-                    : km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
+                if (greedy_chain)
+                    km::chaining::greedy_chaining_into(candidate_overlaps.begin(), candidate_overlaps.end(),
+                                                       valid_overlaps, m_greedy_scratch);
+                else
+                    valid_overlaps = km::chaining::colinear_chaining(candidate_overlaps.begin(), candidate_overlaps.end());
             }
-            else { valid_overlaps = candidate_overlaps;}
+            else { valid_overlaps.clear(); }
             // cout << "valid overlaps for " << right_column_position << "\t";
             // for (const auto& o : valid_overlaps)
             //     cout << "(" << o.first << ";" << o.second << ") , ";
@@ -767,6 +773,11 @@ class SortedVirtualSkmerList {
     std::vector<uint32_t> m_csr_idx;
     std::vector<uint32_t> m_csr_cur;                       // placement cursors (pass 2)
     std::vector<int64_t>  m_csr_diff;                      // per-column count difference array (pass 1)
+    // Overlap/chain buffers, reused across every column of every bucket (see
+    // generate_sorted_list_from_enumeration): they used to be locals rebuilt per bucket / per column.
+    std::vector<overlap> m_candidate_overlaps;
+    std::vector<overlap> m_valid_overlaps;
+    km::chaining::GreedyScratch m_greedy_scratch;
 
     private:
 
