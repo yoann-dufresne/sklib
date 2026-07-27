@@ -1380,6 +1380,33 @@ public:
         return kmer_masks[kmer_pos];
     }
 
+    // ---- pair/size accessors for split (SoA) payloads -------------------------------------------
+    // The stored bucket payload keeps the interleaved pairs and the prefix/suffix sizes in two
+    // separate arrays (VSKMER_6), so the hot paths can touch only the one they need: the dichotomy
+    // reads sizes then a pair, and the set-op column CSR reads sizes ONLY. These overloads take the
+    // two pieces directly instead of a reassembled Skmer, and are the exact bodies of their
+    // Skmer-taking twins below.
+
+    bool inline has_valid_kmer_of(const uint64_t pref, const uint64_t suff, const uint64_t kmer_pos) const {
+        return (this->m_pref_size - (this->m + 1) / 2 - kmer_pos <= pref) && (suff >= kmer_pos);
+    }
+
+    std::pair<uint64_t, uint64_t> valid_kmer_bounds_of(const uint64_t pref, const uint64_t suff) const {
+        return {this->m_pref_size - pref - (this->m + 1) / 2, suff};
+    }
+
+    inline kpair masked_kmer_of(const kpair& value, const uint64_t kmer_pos) const {
+        return value & kmer_masks[kmer_pos];
+    }
+
+    inline int kmer_compare_of(const kpair& first, const kpair& second, const uint64_t kmer_pos) const {
+        const kpair a {first & kmer_masks[kmer_pos]};
+        const kpair b {second & kmer_masks[kmer_pos]};
+        if (a < b) return -1;
+        else if (a > b) return 1;
+        else return 0;
+    }
+
     /** Check if a skmer has a kmer starting at the given position.
      * @param skmer The skmer you want to evaluate having a kmer at the given position
      * @param kmer_pos Position of the start of the kmer

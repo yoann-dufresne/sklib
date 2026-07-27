@@ -499,8 +499,7 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
             repartition_coarse_payload<store>(payload_bc, coarse_id, b_c, b_f, k, m, scratch,
                 [&](uint64_t fine_id, const std::vector<km::Skmer<store>>& fp) {
                     d[fine_id].count = fp.size();
-                    bytes.append(reinterpret_cast<const char*>(fp.data()),
-                                 fp.size() * sizeof(km::Skmer<store>));
+                    km::sortedlist::VirtualSkmerSerializer<store>::serialize_payload(fp, bytes);
                 });
         };
 

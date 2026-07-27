@@ -68,6 +68,15 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V4 = 0x56534B4D45525F34ULL; // "VSK
 // order + bucket assignment) differ, so a V5-aware reader MUST reject V2/V3/V4 for query — an old φ file
 // read with ψ routing/decoding would silently return wrong results. Rebuild pre-V5 indexes.
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V5 = 0x56534B4D45525F35ULL; // "VSKMER_5" in ASCII
+// Bumped to "VSKMER_6" when the per-bucket payload became SPLIT (SoA): each bucket stores its `n`
+// interleaved pairs first, then `n` (prefix, suffix) byte pairs, instead of `n` padded AoS records.
+// The C++ record was padded to alignof(kuint) — 16 bytes for 12 useful at uint32, 24/20 at uint64,
+// 48/36 at __uint128, 72/68 at kuint256 — so 8 to 25 % of every byte read was padding. Splitting
+// removes it (10/18/34/66 bytes per record) and matches the access pattern: the dichotomy, the
+// closest-valid scan and the set-op column CSR each touch only one of the two arrays.
+// Same header, same directory, same record CONTENT and same order — only the payload byte layout
+// differs, which a V5 reader cannot detect, so V5 files must be rejected outright.
+constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V6 = 0x56534B4D45525F36ULL; // "VSKMER_6" in ASCII
 // Upper bound on the number of k-mer columns in one super-k-mer, used to size the fixed
 // stack arrays in search_kmers_in_span_into. A super-k-mer spans at most 2k-m nucleotides, so it
 // holds at most k-m+1 k-mers. The widest record pair (kuint256, 512 bits) caps 2*(2k-m) <= 512,
@@ -103,18 +112,18 @@ inline uint64_t swap_endian(uint64_t value) {
 // minimizer slot, so querying them with the ψ router/decoder would silently return wrong results;
 // they must be rebuilt. Distinguishes a byte-swapped V5 (endianness mismatch) from a genuine legacy
 // magic (rebuild required) from garbage. Centralized so open()/load()/read_list_header agree.
-inline void require_v5_or_throw(uint64_t magic, const std::string& filename) {
-    if (magic == ENDIANNESS_SANITY_INTEGER_V5) return;
+inline void require_v6_or_throw(uint64_t magic, const std::string& filename) {
+    if (magic == ENDIANNESS_SANITY_INTEGER_V6) return;
     const uint64_t swapped = swap_endian(magic);
-    if (swapped == ENDIANNESS_SANITY_INTEGER_V5)
+    if (swapped == ENDIANNESS_SANITY_INTEGER_V6)
         throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness: " + filename);
     auto is_legacy = [](uint64_t v) {
         return v == ENDIANNESS_SANITY_INTEGER || v == ENDIANNESS_SANITY_INTEGER_V3 ||
-               v == ENDIANNESS_SANITY_INTEGER_V4;
+               v == ENDIANNESS_SANITY_INTEGER_V4 || v == ENDIANNESS_SANITY_INTEGER_V5;
     };
     if (is_legacy(magic) || is_legacy(swapped))
-        throw std::runtime_error("Legacy pre-VSKMER_5 index (built before the minimizer-bucketing "
-                                 "phi->psi fix); rebuild it with this version: " + filename);
+        throw std::runtime_error("Legacy pre-VSKMER_6 index (built before the split payload layout); "
+                                 "rebuild it with this version: " + filename);
     throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch: " + filename);
 }
 
@@ -219,6 +228,62 @@ inline void print_query_results(const std::vector<std::vector<uint8_t>> & result
 
 }
 
+// ---- payload views -----------------------------------------------------------------------------
+//
+// A bucket payload is a run of records = (interleaved pair, prefix size, suffix size). Stored AoS,
+// the C++ record is padded to alignof(kuint): 16 B for 12 useful at uint32, 24/20 at uint64, 48/36
+// at __uint128, 72/68 at kuint256 — 8 to 25 % of every byte read is padding, on disk and in cache.
+//
+// VSKMER_6 stores it SPLIT instead: `n` pairs, then `n` (pref, suff) byte pairs. That removes the
+// padding entirely (10/18/34/66 bytes per record) AND matches how the code reads it — every hot
+// path needs only ONE of the two arrays at a time:
+//   * the per-column dichotomy reads sizes (valid-k-mer window) then one pair (the comparison);
+//   * find_closest_valid_skmer scans sizes ONLY — over a 2-byte-per-record array instead of the
+//     full records;
+//   * the set-op column CSR reads sizes ONLY, twice over the whole bucket;
+//   * the set-op merge reads pairs ONLY, except when the sink materializes a k-mer.
+//
+// The search is templated on the view so the in-RAM list and the tests keep an AoS array with no
+// duplicated algorithm and no runtime indirection.
+
+// Split (SoA) view over a stored bucket payload.
+template<typename kuint>
+struct SkmerSpan {
+    using kpair = typename Skmer<kuint>::pair;
+    const kpair* m_pairs {nullptr};
+    const uint8_t* m_sizes {nullptr};   // 2 bytes per record: [2i] = prefix, [2i+1] = suffix
+    int64_t m_n {0};
+
+    int64_t size() const { return m_n; }
+    const kpair& pair_at(int64_t i) const { return m_pairs[i]; }
+    uint64_t pref(int64_t i) const { return m_sizes[2 * i]; }
+    uint64_t suff(int64_t i) const { return m_sizes[2 * i + 1]; }
+    // Reassembled record, for the rare sites that need a whole Skmer (set-op sinks).
+    Skmer<kuint> at(int64_t i) const {
+        return Skmer<kuint>(m_pairs[i], static_cast<uint16_t>(pref(i)), static_cast<uint16_t>(suff(i)));
+    }
+};
+
+// AoS view over a plain Skmer array (the in-RAM SortedVirtualSkmerList and the tests).
+template<typename kuint>
+struct SkmerAos {
+    using kpair = typename Skmer<kuint>::pair;
+    const Skmer<kuint>* m_recs {nullptr};
+    int64_t m_n {0};
+
+    int64_t size() const { return m_n; }
+    const kpair& pair_at(int64_t i) const { return m_recs[i].m_pair; }
+    uint64_t pref(int64_t i) const { return m_recs[i].m_pref_size; }
+    uint64_t suff(int64_t i) const { return m_recs[i].m_suff_size; }
+    Skmer<kuint> at(int64_t i) const { return m_recs[i]; }
+};
+
+// Bytes one record occupies in a VSKMER_6 payload: the pair, plus one byte per size. Prefix and
+// suffix are both <= k - m <= 127 (MAX_POSSIBLE_KMERS), so a byte each is enough — asserted where
+// the payload is written.
+template<typename kuint>
+constexpr uint64_t stored_record_bytes() { return 2 * sizeof(kuint) + 2; }
+
 // One per-bucket directory entry of the VSKMER_3 on-disk format. `mini_lower_bound` is the
 // inclusive lower bound (in φ-permuted minimizer space) of the bucket's minimizer interval;
 // entries are stored for every bucket (empty ones too) in strictly increasing order so a
@@ -234,20 +299,21 @@ static_assert(sizeof(BucketDirEntry) == 2 * sizeof(uint64_t), "BucketDirEntry mu
 // closest super-k-mer that actually carries a k-mer at `kmer_position_in_skmer`. Span-based
 // twin of the former SortedVirtualSkmerList member, so the search below works on any
 // contiguous skmer range (the whole in-RAM list or a single lazily-loaded bucket).
-template<typename kuint>
+template<typename kuint, typename View>
 inline int64_t find_closest_valid_skmer_in_span(
-    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list,
+    const SkmerManipulator<kuint>& manip, const View& list,
     const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum,
     const uint64_t kmer_position_in_skmer)
 {
-    // `i` is unsigned, so the down-scan guards on `i == minimum` (a `>= minimum` test would
-    // wrap past 0 to 2^64-1 and read out of bounds).
+    // Reads the SIZES only — on a split payload that is a 2-byte-per-record scan, not a walk over
+    // whole records. `i` is unsigned, so the down-scan guards on `i == minimum` (a `>= minimum`
+    // test would wrap past 0 to 2^64-1 and read out of bounds).
     for (uint64_t i {position_in_list}; ; i--){
-        if (manip.has_valid_kmer(list[i], kmer_position_in_skmer)) return (int64_t)i;
+        if (manip.has_valid_kmer_of(list.pref(i), list.suff(i), kmer_position_in_skmer)) return (int64_t)i;
         if (i == minimum) break;
     }
     for (uint64_t i {position_in_list}; i <= maximum; i++){
-        if (manip.has_valid_kmer(list[i], kmer_position_in_skmer)) return (int64_t)i;
+        if (manip.has_valid_kmer_of(list.pref(i), list.suff(i), kmer_position_in_skmer)) return (int64_t)i;
     }
     return -1L;
 }
@@ -267,12 +333,13 @@ inline int64_t find_closest_valid_skmer_in_span(
 // m_pair, i.e. minimizer-major, so those records form one contiguous run and the caller can bound it
 // from a small side table without changing which records can match — the result is identical, only
 // the probed range shrinks. Defaults cover the whole span (in-RAM list, tests).
-template<typename kuint>
+template<typename kuint, typename View>
 inline void search_kmers_in_span_into(
-    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
+    const SkmerManipulator<kuint>& manip, const View& list,
     const Skmer<kuint>& query, std::vector<uint8_t>& out,
     int64_t span_lo = 0, int64_t span_hi = -1)
 {
+    const int64_t list_size {list.size()};
     if (span_hi < 0) span_hi = list_size - 1;
     auto [query_start_position, query_end_position] = manip.get_valid_kmer_bounds(query);
 
@@ -339,7 +406,7 @@ inline void search_kmers_in_span_into(
         const int64_t old_mean {mean};
         mean = (binary_search_boundaries[current_priority_offset].first + binary_search_boundaries[current_priority_offset].second) >> 1;
         if (mean == old_mean){
-            int64_t new_pos = find_closest_valid_skmer_in_span(manip, list, mean, binary_search_boundaries[current_priority_offset].first, binary_search_boundaries[current_priority_offset].second, query_start_position + current_priority_offset);
+            int64_t new_pos = find_closest_valid_skmer_in_span<kuint>(manip, list, mean, binary_search_boundaries[current_priority_offset].first, binary_search_boundaries[current_priority_offset].second, query_start_position + current_priority_offset);
             if (new_pos < 0){
                 // there are no positions left, flag as not found and continue
                 km::sortedlist::util::setFalse(keep_searching[current_priority_offset]);
@@ -357,15 +424,15 @@ inline void search_kmers_in_span_into(
             const int64_t plo {binary_search_boundaries[current_priority_offset].first};
             const int64_t phi {binary_search_boundaries[current_priority_offset].second};
             if (plo <= phi) {
-                __builtin_prefetch(&list[(plo + mean) >> 1], 0, 1);
-                __builtin_prefetch(&list[(mean + phi) >> 1], 0, 1);
+                __builtin_prefetch(&list.pair_at((plo + mean) >> 1), 0, 1);
+                __builtin_prefetch(&list.pair_at((mean + phi) >> 1), 0, 1);
             }
         }
 
         // COMPUTE POSITION TO UPDATE FOR BINARY SEARCH
         searchable_position_count = km::sortedlist::util::update_searchable_positions(mean, keep_searching, binary_search_boundaries, positions_to_search, tot_num_kmers_to_search);
 
-        auto [queried_start_position, queried_end_position] = manip.get_valid_kmer_bounds(list[mean]);
+        auto [queried_start_position, queried_end_position] = manip.valid_kmer_bounds_of(list.pref(mean), list.suff(mean));
 
 #if SKLIB_QUERY_OPT >= 2
         if constexpr (sizeof(kuint) >= km::sortedlist::util::QUERY_XOR_MIN_STORE_BYTES) {
@@ -388,9 +455,9 @@ inline void search_kmers_in_span_into(
                 const auto& Mb {manip.kmer_mask(query_start_position + positions_to_search[hi - 1])};
                 const auto S {Ma & Mb};
                 const auto Vd {Ma ^ Mb};
-                const auto D {query.m_pair ^ list[mean].m_pair};
+                const auto D {query.m_pair ^ list.pair_at(mean)};
                 if ((D & S) > (D & Vd)) {
-                    const int dir {(query.m_pair & S).compare3(list[mean].m_pair & S)};   // != 0
+                    const int dir {(query.m_pair & S).compare3(list.pair_at(mean) & S)};   // != 0
                     for (uint64_t i {lo}; i < hi; ++i) {
                         const uint64_t offset {positions_to_search[i]};
                         if (dir < 0) binary_search_boundaries[offset].second = mean - 1;
@@ -413,11 +480,11 @@ inline void search_kmers_in_span_into(
 #if SKLIB_QUERY_OPT >= 1
                 int kmer_comparison;
                 if constexpr (sizeof(kuint) >= km::sortedlist::util::QUERY_XOR_MIN_STORE_BYTES)
-                    kmer_comparison = qk[offset].compare3(manip.masked_kmer(list[mean], current_searched_position_in_skmer));
+                    kmer_comparison = qk[offset].compare3(manip.masked_kmer_of(list.pair_at(mean), current_searched_position_in_skmer));
                 else
-                    kmer_comparison = manip.kmer_compare(query, list[mean], current_searched_position_in_skmer);
+                    kmer_comparison = manip.kmer_compare_of(query.m_pair, list.pair_at(mean), current_searched_position_in_skmer);
 #else
-                const int kmer_comparison {manip.kmer_compare(query, list[mean], current_searched_position_in_skmer)};
+                const int kmer_comparison {manip.kmer_compare_of(query.m_pair, list.pair_at(mean), current_searched_position_in_skmer)};
 #endif
                 if (kmer_comparison == 0){
                     // FOUND. SET RESULT TO TRUE, KEEP_SEARCHING TO FALSE, UPDATE PRIORITY POSITION IF NECESSARY
@@ -449,14 +516,32 @@ inline void search_kmers_in_span_into(
 }
 
 // Wrapper returning a fresh vector (in-RAM list path and single-query callers).
+template<typename kuint, typename View>
+inline std::vector<uint8_t> search_kmers_in_span(
+    const SkmerManipulator<kuint>& manip, const View& list,
+    const Skmer<kuint>& query, int64_t span_lo = 0, int64_t span_hi = -1)
+{
+    std::vector<uint8_t> out;
+    search_kmers_in_span_into<kuint>(manip, list, query, out, span_lo, span_hi);
+    return out;
+}
+
+// Back-compatible overloads taking a plain Skmer array (in-RAM list, tests).
+template<typename kuint>
+inline void search_kmers_in_span_into(
+    const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
+    const Skmer<kuint>& query, std::vector<uint8_t>& out,
+    int64_t span_lo = 0, int64_t span_hi = -1)
+{
+    search_kmers_in_span_into<kuint>(manip, SkmerAos<kuint>{list, list_size}, query, out, span_lo, span_hi);
+}
+
 template<typename kuint>
 inline std::vector<uint8_t> search_kmers_in_span(
     const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
     const Skmer<kuint>& query, int64_t span_lo = 0, int64_t span_hi = -1)
 {
-    std::vector<uint8_t> out;
-    search_kmers_in_span_into<kuint>(manip, list, list_size, query, out, span_lo, span_hi);
-    return out;
+    return search_kmers_in_span<kuint>(manip, SkmerAos<kuint>{list, list_size}, query, span_lo, span_hi);
 }
 
 // VIRTUAL SUPERKMER CLASS
@@ -990,7 +1075,8 @@ class SortedVirtualSkmerList {
     // Thin wrapper over the shared span helper, kept for the in-RAM list and its tests.
     int64_t find_closest_valid_skmer(const uint64_t position_in_list, const uint64_t minimum, const uint64_t maximum, const uint64_t kmer_position_in_skmer) const{
         return km::sortedlist::find_closest_valid_skmer_in_span<kuint>(
-            m_manip, m_skmer_list.data(), position_in_list, minimum, maximum, kmer_position_in_skmer);
+            m_manip, SkmerAos<kuint>{m_skmer_list.data(), static_cast<int64_t>(m_skmer_list.size())},
+            position_in_list, minimum, maximum, kmer_position_in_skmer);
     }
 
     // Take a pair of Virtual skmer columns (their position), the valid overlaps from the colinear chaining, the skmers in input. It outputs a linked-list of Virtual skmers
@@ -1150,7 +1236,7 @@ public:
         const uint64_t n_buckets = 1;
         const uint64_t store_width = sizeof(kuint);
         const uint64_t quotient_bits = 0;
-        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V5), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V6), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.k), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.m), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
@@ -1165,9 +1251,12 @@ public:
             return;
         }
 
-        // Calculate chunk parameters
-        outFile.write(reinterpret_cast<const char*>(list.m_skmer_list.data()),
-                  count * sizeof(Skmer<kuint>));
+        // Payload in the VSKMER_6 split layout (pairs, then size bytes).
+        {
+            std::string bytes;
+            serialize_payload(list.m_skmer_list, bytes);
+            if (!bytes.empty()) outFile.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
 
         int went_good = outFile.good() ? true : false;
         if(!went_good){
@@ -1198,7 +1287,7 @@ public:
     static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count,
                              uint64_t n_buckets, uint64_t store_width = sizeof(kuint),
                              uint64_t quotient_bits = 0) {
-        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V5), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V6), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&k), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&m), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
@@ -1212,10 +1301,33 @@ public:
                       static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
     }
 
+    // VSKMER_6 payload for one bucket: the `n` interleaved pairs, then the `n` (prefix, suffix)
+    // byte pairs. Splitting drops the AoS alignment padding (8-25 % of the file) and lets the
+    // readers touch only the array they need. Sizes are bytes: both are <= k - m <= 127.
     static void append_payload(std::ofstream& out, const std::vector<Skmer<kuint>>& list) {
         if (list.empty()) return;
-        out.write(reinterpret_cast<const char*>(list.data()),
-                  static_cast<std::streamsize>(list.size() * sizeof(Skmer<kuint>)));
+        std::string bytes;
+        serialize_payload(list, bytes);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+
+    // Same layout, appended to a byte buffer (the parallel writers assemble a bucket blob first).
+    static void serialize_payload(const std::vector<Skmer<kuint>>& list, std::string& bytes) {
+        if (list.empty()) return;
+        const size_t n {list.size()};
+        const size_t base {bytes.size()};
+        bytes.resize(base + n * (2 * sizeof(kuint)) + 2 * n);
+        char* p {bytes.data() + base};
+        for (size_t i {0}; i < n; ++i) {
+            std::memcpy(p + i * 2 * sizeof(kuint), list[i].m_pair.m_value.data(), 2 * sizeof(kuint));
+            assert(list[i].m_pref_size <= 255 && list[i].m_suff_size <= 255 &&
+                   "prefix/suffix size must fit a byte in the VSKMER_6 payload");
+        }
+        char* sz {p + n * 2 * sizeof(kuint)};
+        for (size_t i {0}; i < n; ++i) {
+            sz[2 * i]     = static_cast<char>(static_cast<uint8_t>(list[i].m_pref_size));
+            sz[2 * i + 1] = static_cast<char>(static_cast<uint8_t>(list[i].m_suff_size));
+        }
     }
 
     static void patch_count(std::ofstream& out, uint64_t total) {
@@ -1315,7 +1427,7 @@ public:
         // Only VSKMER_5 is accepted (ψ-permuted layout). load() returns the whole concatenated
         // list (it ignores the bucket directory); the lazy per-bucket reader lives in
         // BucketedSkmerListReader. Legacy V2/V3/V4 are rejected (rebuild required).
-        km::sortedlist::util::require_v5_or_throw(read_endianess_int, filename);
+        km::sortedlist::util::require_v6_or_throw(read_endianess_int, filename);
 
         uint64_t file_k, file_m;
         inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
@@ -1354,10 +1466,22 @@ public:
                          std::ios::cur);
         }
 
-        // Read the skmer data
-        m_virtual_skmer_list.m_skmer_list.reserve(count);
-        m_virtual_skmer_list.m_skmer_list.resize(count);
-        inFile.read(reinterpret_cast<char*>(m_virtual_skmer_list.m_skmer_list.data()), count * sizeof(Skmer<kuint>));
+        // Read the split payload back into AoS records (this legacy whole-list path keeps the
+        // in-RAM SortedVirtualSkmerList representation).
+        {
+            std::vector<typename Skmer<kuint>::pair> pairs(count);
+            std::vector<uint8_t> sizes(2 * count);
+            if (count) {
+                inFile.read(reinterpret_cast<char*>(pairs.data()),
+                            static_cast<std::streamsize>(count * 2 * sizeof(kuint)));
+                inFile.read(reinterpret_cast<char*>(sizes.data()),
+                            static_cast<std::streamsize>(2 * count));
+            }
+            m_virtual_skmer_list.m_skmer_list.resize(count);
+            for (uint64_t i {0}; i < count; ++i)
+                m_virtual_skmer_list.m_skmer_list[i] =
+                    Skmer<kuint>(pairs[i], sizes[2 * i], sizes[2 * i + 1]);
+        }
 
         if (inFile.fail()) {
             throw std::runtime_error("Error reading virtual skmer data from file: " + filename);
@@ -1387,7 +1511,7 @@ public:
         if (in.fail())
             throw std::runtime_error("Error reading magic number from file: " + filename);
 
-        km::sortedlist::util::require_v5_or_throw(magic, filename);
+        km::sortedlist::util::require_v6_or_throw(magic, filename);
 
         uint64_t file_k, file_m, count;
         in.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
@@ -1433,7 +1557,7 @@ public:
     // directory entries to assemble the output file. bucket_count/bucket_lower are the on-disk
     // {count, mini_lower_bound} of bucket `b`; with matching construction parameters the two lists'
     // directories are identical, which set_operations validates before merging.
-    const std::vector<Skmer<kuint>>& load_bucket(uint64_t b) { return bucket(b); }
+    SkmerSpan<kuint> load_bucket(uint64_t b) { return bucket(b); }
     uint64_t bucket_count(uint64_t b) const { return m_count[b]; }
     uint64_t bucket_lower(uint64_t b) const { return m_lower[b]; }
 
@@ -1448,7 +1572,8 @@ public:
     // operation) keeps only the buckets in flight resident instead of the whole list. NOT thread-safe
     // and meant for sequential batch use only: it races with the lock-free cache-hit path of bucket().
     void release_bucket(uint64_t b) {
-        std::vector<Skmer<kuint>>().swap(m_cache[b]);
+        std::vector<typename Skmer<kuint>::pair>().swap(m_cache_pairs[b]);
+        std::vector<uint8_t>().swap(m_cache_sizes[b]);
         std::vector<uint32_t>().swap(m_ptbl[b]);
         m_ptbl_t[b] = 0;
         m_loaded[b].store(0, std::memory_order_relaxed);
@@ -1508,30 +1633,27 @@ public:
     std::vector<uint8_t> query_skmer(const Skmer<kuint>& query) {
         const uint64_t bid {bucket_of(query)};
         const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
-        const std::vector<Skmer<kuint>>& span = bucket(bid);
+        const SkmerSpan<kuint> span = bucket(bid);
         const auto [lo, hi] {prefix_range(bid, trunc)};
-        return km::sortedlist::search_kmers_in_span<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, lo, hi);
+        return km::sortedlist::search_kmers_in_span<kuint>(m_manip, span, trunc, lo, hi);
     }
 
     // Like query_skmer but writes flags into `out`, reusing its capacity (no per-query allocation).
     void query_skmer_into(const Skmer<kuint>& query, std::vector<uint8_t>& out) {
         const uint64_t bid {bucket_of(query)};
         const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
-        const std::vector<Skmer<kuint>>& span = bucket(bid);
+        const SkmerSpan<kuint> span = bucket(bid);
         const auto [lo, hi] {prefix_range(bid, trunc)};
-        km::sortedlist::search_kmers_in_span_into<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, out, lo, hi);
+        km::sortedlist::search_kmers_in_span_into<kuint>(m_manip, span, trunc, out, lo, hi);
     }
 
     // Driver path for gen > store (the wide query is parsed and routed elsewhere): search a known
     // bucket with an ALREADY-truncated store-width query. `bucket_id` must come from the full
     // minimizer (bucket_of_phi_min) computed before down-conversion.
     void query_into(uint64_t bucket_id, const Skmer<kuint>& truncated_query, std::vector<uint8_t>& out) {
-        const std::vector<Skmer<kuint>>& span = bucket(bucket_id);
+        const SkmerSpan<kuint> span = bucket(bucket_id);
         const auto [lo, hi] {prefix_range(bucket_id, truncated_query)};
-        km::sortedlist::search_kmers_in_span_into<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), truncated_query, out, lo, hi);
+        km::sortedlist::search_kmers_in_span_into<kuint>(m_manip, span, truncated_query, out, lo, hi);
     }
 
     std::vector<std::vector<uint8_t>> query_skmer_batch(const std::vector<Skmer<kuint>>& query_skmers) {
@@ -1574,9 +1696,10 @@ private:
             m_lower[b] = dir[b].mini_lower_bound;
             m_count[b] = dir[b].count;
             m_byte_offset[b] = off;
-            off += static_cast<std::streamoff>(dir[b].count) * static_cast<std::streamoff>(sizeof(Skmer<kuint>));
+            off += static_cast<std::streamoff>(dir[b].count) * static_cast<std::streamoff>(stored_record_bytes<kuint>());
         }
-        m_cache.assign(m_n_buckets, {});
+        m_cache_pairs.assign(m_n_buckets, {});
+        m_cache_sizes.assign(m_n_buckets, {});
         m_ptbl.assign(m_n_buckets, {});
         m_ptbl_t.assign(m_n_buckets, 0);
         m_mini_bits = (2 * m >= quotient_bits) ? (2 * m - quotient_bits) : 0;
@@ -1597,25 +1720,33 @@ private:
     // takes m_load_mtx so concurrent consumers don't race on m_in / m_cache. m_cache is pre-sized
     // and never resized, and each entry is written exactly once before its flag is released, so the
     // returned reference stays valid for the reader's lifetime even as other buckets load.
-    const std::vector<Skmer<kuint>>& bucket(uint64_t b) {
+    SkmerSpan<kuint> bucket(uint64_t b) {
         if (m_loaded[b].load(std::memory_order_acquire))
-            return m_cache[b];
+            return span_of(b);
         std::lock_guard<std::mutex> lock(*m_load_mtx);
         if (!m_loaded[b].load(std::memory_order_relaxed)) {
-            std::vector<Skmer<kuint>>& dst = m_cache[b];
-            dst.resize(m_count[b]);
-            if (m_count[b]) {
+            const uint64_t n {m_count[b]};
+            m_cache_pairs[b].resize(n);
+            m_cache_sizes[b].resize(2 * n);
+            if (n) {
                 m_in.clear(); // drop any EOF/fail flag from a previous read
                 m_in.seekg(m_byte_offset[b], std::ios::beg);
-                m_in.read(reinterpret_cast<char*>(dst.data()),
-                          static_cast<std::streamsize>(m_count[b] * sizeof(Skmer<kuint>)));
+                m_in.read(reinterpret_cast<char*>(m_cache_pairs[b].data()),
+                          static_cast<std::streamsize>(n * 2 * sizeof(kuint)));
+                m_in.read(reinterpret_cast<char*>(m_cache_sizes[b].data()),
+                          static_cast<std::streamsize>(2 * n));
                 if (m_in.fail())
                     throw std::runtime_error("Error reading bucket payload from sorted skmer list");
             }
             build_prefix_table(b);
             m_loaded[b].store(1, std::memory_order_release);
         }
-        return m_cache[b];
+        return span_of(b);
+    }
+
+    SkmerSpan<kuint> span_of(uint64_t b) const {
+        return SkmerSpan<kuint>{m_cache_pairs[b].data(), m_cache_sizes[b].data(),
+                                static_cast<int64_t>(m_count[b])};
     }
 
     // Per-bucket minimizer-prefix table. Records in a bucket are sorted by m_pair, whose most
@@ -1655,12 +1786,14 @@ private:
         if (t == 0) return;
         const uint64_t slots {uint64_t{1} << t};
         const uint64_t shift {m_mini_bits - t};
-        const std::vector<Skmer<kuint>>& rec = m_cache[b];
+        // Reads the PAIRS only — the sizes array is irrelevant here.
+        const std::vector<typename Skmer<kuint>::pair>& rec = m_cache_pairs[b];
+        const uint64_t mini_shift {4 * (m_manip.k - m_manip.m)};
         tbl.assign(slots + 1, 0);
         // Counting pass, then prefix sum: records are already grouped, but counting is O(n) with a
         // single pass either way and does not assume anything beyond the sort order.
         for (uint64_t i {0}; i < n; ++i) {
-            const uint64_t p {static_cast<uint64_t>(m_manip.minimizer(rec[i]) >> shift)};
+            const uint64_t p {static_cast<uint64_t>((rec[i] >> mini_shift).to_kuint() >> shift)};
             ++tbl[p + 1];
         }
         for (uint64_t p {0}; p < slots; ++p) tbl[p + 1] += tbl[p];
@@ -1688,7 +1821,8 @@ private:
     std::vector<uint64_t> m_lower;        // per-bucket minimizer lower bound (routing table)
     std::vector<uint64_t> m_count;        // per-bucket super-k-mer count
     std::vector<std::streamoff> m_byte_offset; // per-bucket payload offset in the file
-    std::vector<std::vector<Skmer<kuint>>> m_cache; // lazily-filled per-bucket sub-lists
+    std::vector<std::vector<typename Skmer<kuint>::pair>> m_cache_pairs; // lazily-filled, split payload
+    std::vector<std::vector<uint8_t>> m_cache_sizes;                    // 2 bytes per record
     std::vector<std::vector<uint32_t>> m_ptbl;      // per-bucket minimizer-prefix table (see build_prefix_table)
     std::vector<uint64_t> m_ptbl_t;                 // per-bucket prefix width in bits (0 = no table)
     uint64_t m_mini_bits {0};                       // bits of the STORED minimizer slot = 2m - b
@@ -1721,7 +1855,7 @@ inline ListHeaderInfo read_list_header(const std::string& filename) {
     if (in.fail())
         throw std::runtime_error("Error reading magic number from file: " + filename);
 
-    km::sortedlist::util::require_v5_or_throw(magic, filename);
+    km::sortedlist::util::require_v6_or_throw(magic, filename);
 
     ListHeaderInfo info{};
     in.read(reinterpret_cast<char*>(&info.k), sizeof(uint64_t));

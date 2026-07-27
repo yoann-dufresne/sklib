@@ -276,8 +276,9 @@ void run_suite(uint64_t k, uint64_t m,
     // ---- (a) in-RAM merge_columns emits exactly the reference keys ----
     {
         CaptureSink<store> sink{manip.get_k_mask(), {}, {}, {}};
-        km::sortedlist::merge_columns<store>(manip, A.get_list().data(), A.size(),
-                                             B.get_list().data(), B.size(), sink);
+        km::sortedlist::merge_columns<store>(manip,
+            km::sortedlist::SkmerAos<store>{A.get_list().data(), static_cast<int64_t>(A.size())}, A.size(),
+            km::sortedlist::SkmerAos<store>{B.get_list().data(), static_cast<int64_t>(B.size())}, B.size(), sink);
         EXPECT_EQ(sink.inter, R_inter) << tag << ": intersection keys";
         EXPECT_EQ(sink.onlyA, R_onlyA) << tag << ": A\\B keys";
         EXPECT_EQ(sink.onlyB, R_onlyB) << tag << ": B\\A keys";
@@ -285,8 +286,9 @@ void run_suite(uint64_t k, uint64_t m,
     // ---- (b) CountSink sizes match, and equal op-emission counts (so no duplicates) ----
     {
         km::sortedlist::CountSink<store> cs;
-        km::sortedlist::merge_columns<store>(manip, A.get_list().data(), A.size(),
-                                             B.get_list().data(), B.size(), cs);
+        km::sortedlist::merge_columns<store>(manip,
+            km::sortedlist::SkmerAos<store>{A.get_list().data(), static_cast<int64_t>(A.size())}, A.size(),
+            km::sortedlist::SkmerAos<store>{B.get_list().data(), static_cast<int64_t>(B.size())}, B.size(), cs);
         EXPECT_EQ(cs.n_inter, exp_inter) << tag;
         EXPECT_EQ(cs.n_only_a, exp_onlyA) << tag;
         EXPECT_EQ(cs.n_inter + cs.n_only_a + cs.n_only_b, exp_union) << tag;
@@ -323,10 +325,18 @@ void run_suite(uint64_t k, uint64_t m,
             auto Rd = BucketedSkmerListReader<store>::open(pd);
             auto Rx = BucketedSkmerListReader<store>::open(px);
             km::SkmerManipulator<store> rmanip{k, m};
-            const std::vector<km::Skmer<store>>& bi = Ri.load_bucket(0);
-            const std::vector<km::Skmer<store>>& bu = Ru.load_bucket(0);
-            const std::vector<km::Skmer<store>>& bd = Rd.load_bucket(0);
-            const std::vector<km::Skmer<store>>& bx = Rx.load_bucket(0);
+            // The stored payload is split (VSKMER_6: pairs, then size bytes), so reassemble whole
+            // records here — this check compares CONTENT, not layout.
+            auto recs_of = [](const km::sortedlist::SkmerSpan<store>& sp) {
+                std::vector<km::Skmer<store>> v;
+                v.reserve(static_cast<size_t>(sp.size()));
+                for (int64_t i = 0; i < sp.size(); ++i) v.push_back(sp.at(i));
+                return v;
+            };
+            const std::vector<km::Skmer<store>> bi = recs_of(Ri.load_bucket(0));
+            const std::vector<km::Skmer<store>> bu = recs_of(Ru.load_bucket(0));
+            const std::vector<km::Skmer<store>> bd = recs_of(Rd.load_bucket(0));
+            const std::vector<km::Skmer<store>> bx = recs_of(Rx.load_bucket(0));
             std::set<Key<store>> got_inter = keys_of<store>(rmanip, bi.data(), bi.size());
             std::set<Key<store>> got_union = keys_of<store>(rmanip, bu.data(), bu.size());
             std::set<Key<store>> got_diff  = keys_of<store>(rmanip, bd.data(), bd.size());

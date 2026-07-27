@@ -104,9 +104,9 @@ inline size_t set_next_valid(const km::SkmerManipulator<store>& cmp,
 // only_a/only_b k-mers (and hence the result) byte-identical. `Filtered=false` (the default for union,
 // intersection and every existing caller) compiles to the ORIGINAL loop with no per-record test and no
 // `drop` access — same codegen as before this fast-path existed, so those paths cannot regress.
-template<bool Filtered = false, typename store>
+template<bool Filtered = false, typename store, typename View>
 inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
-                             const km::Skmer<store>* L, size_t n, uint64_t ncols,
+                             const View& L, size_t n, uint64_t ncols,
                              std::vector<uint32_t>& idx, std::vector<uint32_t>& off,
                              const char* drop = nullptr) {
     // Pass 1 — per-column counts via a difference array. A record valid at columns [s, hi] contributes
@@ -117,7 +117,7 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
     col_diff.assign(ncols + 1, 0);
     for (size_t i {0}; i < n; ++i) {
         if constexpr (Filtered) { if (drop[i]) continue; }   // xor/diff fast-path: excluded both-k-mers
-        const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
+        const auto [s, e] {cmp.valid_kmer_bounds_of(L.pref(i), L.suff(i))};
         if (e < s) continue;                       // no valid k-mer (unsigned: a wrapped s>e is skipped)
         const uint64_t hi {e < ncols ? e : ncols - 1};
         ++col_diff[s];
@@ -130,7 +130,7 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
     std::vector<uint32_t> cur(off.begin(), off.end() - 1);
     for (size_t i {0}; i < n; ++i) {
         if constexpr (Filtered) { if (drop[i]) continue; }
-        const auto [s, e] {cmp.get_valid_kmer_bounds(L[i])};
+        const auto [s, e] {cmp.valid_kmer_bounds_of(L.pref(i), L.suff(i))};
         if (e < s) continue;
         for (uint64_t c {s}; c <= e && c < ncols; ++c) idx[cur[c]++] = static_cast<uint32_t>(i);
     }
@@ -149,9 +149,9 @@ inline void build_column_csr(const km::SkmerManipulator<store>& cmp,
 // count (its valid columns, all in the intersection) into *dropped_kmers — so a counting caller
 // (set_sizes) can drop the pair yet keep |A∩B| exact by adding these back. Counted off A only (the pair
 // is identical), inline at the match, so it is O(dropped) not O(records). Materialize callers pass none.
-template<typename store>
-inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
-                                     const km::Skmer<store>* B, size_t nB,
+template<typename store, typename View>
+inline size_t mark_identical_records(const View& A, size_t nA,
+                                     const View& B, size_t nB,
                                      std::vector<char>& dropA, std::vector<char>& dropB,
                                      const km::SkmerManipulator<store>* cmp = nullptr,
                                      uint64_t ncols = 0, uint64_t* dropped_kmers = nullptr) {
@@ -159,18 +159,19 @@ inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
     dropB.assign(nB, 0);
     size_t i {0}, j {0}, dropped {0};
     while (i < nA && j < nB) {
-        if (A[i].m_pair < B[j].m_pair) { ++i; continue; }
-        if (B[j].m_pair < A[i].m_pair) { ++j; continue; }
-        // Equal m_pair on both sides — gather the (tiny) run on each side and match byte-identical pairs.
-        const auto mp {A[i].m_pair};
-        size_t i2 {i}; while (i2 < nA && A[i2].m_pair == mp) ++i2;
-        size_t j2 {j}; while (j2 < nB && B[j2].m_pair == mp) ++j2;
+        if (A.pair_at(i) < B.pair_at(j)) { ++i; continue; }
+        if (B.pair_at(j) < A.pair_at(i)) { ++j; continue; }
+        // Equal m_pair on both sides — gather the (tiny) run on each side and match byte-identical records.
+        const auto mp {A.pair_at(i)};
+        size_t i2 {i}; while (i2 < nA && A.pair_at(i2) == mp) ++i2;
+        size_t j2 {j}; while (j2 < nB && B.pair_at(j2) == mp) ++j2;
         for (size_t a {i}; a < i2; ++a)
             for (size_t b {j}; b < j2; ++b)
-                if (!dropB[b] && A[a] == B[b]) {
+                if (!dropB[b] && A.pair_at(a) == B.pair_at(b) &&
+                    A.pref(a) == B.pref(b) && A.suff(a) == B.suff(b)) {
                     dropA[a] = 1; dropB[b] = 1; ++dropped;
                     if (dropped_kmers) {
-                        const auto [s, e] {cmp->get_valid_kmer_bounds(A[a])};
+                        const auto [s, e] {cmp->valid_kmer_bounds_of(A.pref(a), A.suff(a))};
                         if (e >= s) { const uint64_t hi {e < ncols ? e : ncols - 1}; *dropped_kmers += hi - s + 1; }
                     }
                     break;
@@ -185,10 +186,10 @@ inline size_t mark_identical_records(const km::Skmer<store>* A, size_t nA,
 // share one implementation. `sink` receives each emitted k-mer as (record, column) via only_a /
 // only_b / both, in column-major order with ascending k-mer order within each column (identical to
 // the previous set_next_valid implementation, so every sink sees the exact same call sequence).
-template<typename store, typename Sink>
+template<typename store, typename View, typename Sink>
 inline void merge_columns(const km::SkmerManipulator<store>& cmp,
-                          const km::Skmer<store>* A, size_t nA,
-                          const km::Skmer<store>* B, size_t nB,
+                          const View& A, size_t nA,
+                          const View& B, size_t nB,
                           Sink& sink,
                           const char* dropA = nullptr, const char* dropB = nullptr) {
     const uint64_t k_minus_m {cmp.k - cmp.m};
@@ -218,32 +219,32 @@ inline void merge_columns(const km::SkmerManipulator<store>& cmp,
         size_t ia {0}, ib {0};
         if constexpr (sizeof(store) >= WIDE_MERGE_MIN_STORE_BYTES) {
             if (na && nb) {
-                auto ka {cmp.masked_kmer(A[ra[ia]], c)};   // re-masked only when ia advances
-                auto kb {cmp.masked_kmer(B[rb[ib]], c)};   // re-masked only when ib advances
+                auto ka {cmp.masked_kmer_of(A.pair_at(ra[ia]), c)};   // re-masked only when ia advances
+                auto kb {cmp.masked_kmer_of(B.pair_at(rb[ib]), c)};   // re-masked only when ib advances
                 while (true) {
                     const int r {ka.compare3(kb)};
-                    if (r < 0)      { sink.only_a(A[ra[ia]], c); if (++ia >= na) break; ka = cmp.masked_kmer(A[ra[ia]], c); }
-                    else if (r > 0) { sink.only_b(B[rb[ib]], c); if (++ib >= nb) break; kb = cmp.masked_kmer(B[rb[ib]], c); }
+                    if (r < 0)      { sink.only_a(A.at(ra[ia]), c); if (++ia >= na) break; ka = cmp.masked_kmer_of(A.pair_at(ra[ia]), c); }
+                    else if (r > 0) { sink.only_b(B.at(rb[ib]), c); if (++ib >= nb) break; kb = cmp.masked_kmer_of(B.pair_at(rb[ib]), c); }
                     else {
-                        sink.both(A[ra[ia]], c);
+                        sink.both(A.at(ra[ia]), c);
                         const bool a_end {++ia >= na};         // advance BOTH (no short-circuit)
                         const bool b_end {++ib >= nb};
                         if (a_end || b_end) break;
-                        ka = cmp.masked_kmer(A[ra[ia]], c);
-                        kb = cmp.masked_kmer(B[rb[ib]], c);
+                        ka = cmp.masked_kmer_of(A.pair_at(ra[ia]), c);
+                        kb = cmp.masked_kmer_of(B.pair_at(rb[ib]), c);
                     }
                 }
             }
         } else {
             while (ia < na && ib < nb) {
-                const int r {cmp.kmer_compare(A[ra[ia]], B[rb[ib]], c)};
-                if (r < 0)      { sink.only_a(A[ra[ia]], c); ++ia; }
-                else if (r > 0) { sink.only_b(B[rb[ib]], c); ++ib; }
-                else            { sink.both  (A[ra[ia]], c); ++ia; ++ib; }
+                const int r {cmp.kmer_compare_of(A.pair_at(ra[ia]), B.pair_at(rb[ib]), c)};
+                if (r < 0)      { sink.only_a(A.at(ra[ia]), c); ++ia; }
+                else if (r > 0) { sink.only_b(B.at(rb[ib]), c); ++ib; }
+                else            { sink.both  (A.at(ra[ia]), c); ++ia; ++ib; }
             }
         }
-        for (; ia < na; ++ia) sink.only_a(A[ra[ia]], c);
-        for (; ib < nb; ++ib) sink.only_b(B[rb[ib]], c);
+        for (; ia < na; ++ia) sink.only_a(A.at(ra[ia]), c);
+        for (; ib < nb; ++ib) sink.only_b(B.at(rb[ib]), c);
     }
 }
 
@@ -278,16 +279,29 @@ struct CollectSink {
 // owns its own ifstream so positional reads on different buckets don't race, and dst is a reused
 // per-worker buffer freed at the end (the shared bucket() cache, by contrast, never evicts and its
 // release path is not thread-safe). Mirrors the seek+read in BucketedSkmerListReader::bucket().
+// Per-worker split payload buffers (VSKMER_6: `n` pairs then `n` size byte-pairs). Kept as two
+// vectors so the merge can walk pairs only and the column CSR sizes only.
+template<typename store>
+struct BucketBuffers {
+    std::vector<typename km::Skmer<store>::pair> pairs;
+    std::vector<uint8_t> sizes;
+    SkmerSpan<store> span() const {
+        return SkmerSpan<store>{pairs.data(), sizes.data(), static_cast<int64_t>(pairs.size())};
+    }
+};
+
 template<typename store>
 inline void read_bucket_into(const BucketedSkmerListReader<store>& R, std::ifstream& fh,
-                             uint64_t b, std::vector<km::Skmer<store>>& dst) {
+                             uint64_t b, BucketBuffers<store>& dst) {
     const uint64_t cnt {R.bucket_count(b)};
-    dst.resize(cnt);
+    dst.pairs.resize(cnt);
+    dst.sizes.resize(2 * cnt);
     if (cnt) {
         fh.clear();                                  // drop any EOF/fail flag from a previous read
         fh.seekg(R.bucket_byte_offset(b), std::ios::beg);
-        fh.read(reinterpret_cast<char*>(dst.data()),
-                static_cast<std::streamsize>(cnt * sizeof(km::Skmer<store>)));
+        fh.read(reinterpret_cast<char*>(dst.pairs.data()),
+                static_cast<std::streamsize>(cnt * 2 * sizeof(store)));
+        fh.read(reinterpret_cast<char*>(dst.sizes.data()), static_cast<std::streamsize>(2 * cnt));
         if (fh.fail())
             throw std::runtime_error("Error reading bucket payload during set operation");
     }
@@ -386,7 +400,7 @@ inline SetSizes set_sizes_plain(BucketedSkmerListReader<store>& A, BucketedSkmer
     const uint64_t k {A.k()}, m {A.m()}, b {A.quotient_bits()}, nb {A.n_buckets()};
     std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;   // owns raw masks: not movable
     std::vector<CountSink<store>> sinks(nthr);
-    std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
+    std::vector<BucketBuffers<store>> bufA(nthr), bufB(nthr);
     std::vector<std::ifstream> fhA, fhB;
     manips.reserve(nthr); fhA.reserve(nthr); fhB.reserve(nthr);
     for (unsigned t {0}; t < nthr; ++t) {
@@ -404,8 +418,8 @@ inline SetSizes set_sizes_plain(BucketedSkmerListReader<store>& A, BucketedSkmer
         try {
             read_bucket_into<store>(A, fhA[tid], i, bufA[tid]);
             read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
-            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
-                                 bufB[tid].data(), bufB[tid].size(), sinks[tid]);
+            merge_columns<store>(*manips[tid], bufA[tid].span(), bufA[tid].pairs.size(),
+                                 bufB[tid].span(), bufB[tid].pairs.size(), sinks[tid]);
         } catch (...) {
             std::lock_guard<std::mutex> lk(err_mtx);
             if (!eptr) eptr = std::current_exception();
@@ -432,7 +446,7 @@ inline SetSizes set_sizes_dedup(BucketedSkmerListReader<store>& A, BucketedSkmer
     const uint64_t ncols {k - m + 1};
     std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;
     std::vector<CountSink<store>> sinks(nthr);
-    std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
+    std::vector<BucketBuffers<store>> bufA(nthr), bufB(nthr);
     std::vector<std::vector<char>> dropA(nthr), dropB(nthr);
     std::vector<uint64_t> dropped_inter(nthr, 0);   // intersection k-mers carried by dropped identical records
     std::vector<std::ifstream> fhA, fhB;
@@ -454,12 +468,12 @@ inline SetSizes set_sizes_dedup(BucketedSkmerListReader<store>& A, BucketedSkmer
             read_bucket_into<store>(B, fhB[tid], i, bufB[tid]);
             const char* dpa {nullptr};
             const char* dpb {nullptr};
-            if (mark_identical_records<store>(bufA[tid].data(), bufA[tid].size(),
-                    bufB[tid].data(), bufB[tid].size(), dropA[tid], dropB[tid],
+            if (mark_identical_records<store>(bufA[tid].span(), bufA[tid].pairs.size(),
+                    bufB[tid].span(), bufB[tid].pairs.size(), dropA[tid], dropB[tid],
                     manips[tid].get(), ncols, &dropped_inter[tid]))
             { dpa = dropA[tid].data(); dpb = dropB[tid].data(); }
-            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
-                                 bufB[tid].data(), bufB[tid].size(), sinks[tid], dpa, dpb);
+            merge_columns<store>(*manips[tid], bufA[tid].span(), bufA[tid].pairs.size(),
+                                 bufB[tid].span(), bufB[tid].pairs.size(), sinks[tid], dpa, dpb);
         } catch (...) {
             std::lock_guard<std::mutex> lk(err_mtx);
             if (!eptr) eptr = std::current_exception();
@@ -496,13 +510,13 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
     if (pa.fail() || pb.fail())
         throw std::runtime_error("set operation: cannot open input list for parallel read");
     uint64_t pr {0}, pd {0};
-    std::vector<km::Skmer<store>> pba, pbb;
+    BucketBuffers<store> pba, pbb;
     std::vector<char> pda, pdb;
     for (uint64_t i {0}; i < nb && pr < sample_target; ++i) {
         read_bucket_into<store>(A, pa, i, pba);
         read_bucket_into<store>(B, pb, i, pbb);
-        pd += mark_identical_records<store>(pba.data(), pba.size(), pbb.data(), pbb.size(), pda, pdb);
-        pr += pba.size() + pbb.size();
+        pd += mark_identical_records<store>(pba.span(), pba.pairs.size(), pbb.span(), pbb.pairs.size(), pda, pdb);
+        pr += pba.pairs.size() + pbb.pairs.size();
     }
     const bool do_dedup {pr != 0 && (2.0 * static_cast<double>(pd) * static_cast<double>(k - m)
                                      >= DEDUP_GAMMA * static_cast<double>(pr))};
@@ -550,7 +564,8 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     // thread_local inside merge_columns, so it is already per-worker.
     std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;
     std::vector<std::unique_ptr<SortedVirtualSkmerList<store>>> subs;
-    std::vector<std::vector<km::Skmer<store>>> collected(nthr), bufA(nthr), bufB(nthr);
+    std::vector<std::vector<km::Skmer<store>>> collected(nthr);
+    std::vector<BucketBuffers<store>> bufA(nthr), bufB(nthr);
     std::vector<uint64_t> kmers(nthr, 0);   // result k-mers per worker (== the matching _size, summed)
     // Per-worker scratch for the column-layout fast-path: col_count[tid] holds the per-column kept
     // count (filled by the sink), prefix-summed into col_off[tid] and handed to the re-compaction so
@@ -622,9 +637,9 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
             const char* dpa {nullptr};
             const char* dpb {nullptr};
             if (drop_both && dedup_state.load(std::memory_order_relaxed) != 2) {   // sampling or on
-                const size_t nrec {bufA[tid].size() + bufB[tid].size()};
-                const size_t nd {mark_identical_records<store>(bufA[tid].data(), bufA[tid].size(),
-                                                              bufB[tid].data(), bufB[tid].size(),
+                const size_t nrec {bufA[tid].pairs.size() + bufB[tid].pairs.size()};
+                const size_t nd {mark_identical_records<store>(bufA[tid].span(), bufA[tid].pairs.size(),
+                                                              bufB[tid].span(), bufB[tid].pairs.size(),
                                                               dropA[tid], dropB[tid])};
                 if (nd) { dpa = dropA[tid].data(); dpb = dropB[tid].data(); }
                 drop_dropped[tid] += nd;
@@ -640,8 +655,8 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
                     }
                 }
             }
-            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
-                                 bufB[tid].data(), bufB[tid].size(), sink, dpa, dpb);
+            merge_columns<store>(*manips[tid], bufA[tid].span(), bufA[tid].pairs.size(),
+                                 bufB[tid].span(), bufB[tid].pairs.size(), sink, dpa, dpb);
             kmers[tid] += col.size();
             const phase_clock::time_point t2 {timing ? phase_clock::now() : t0};
 
@@ -977,7 +992,7 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
     // corresponding single-op materialization. The few extra recompactors per worker are lightweight.
     std::vector<std::unique_ptr<km::SkmerManipulator<store>>> manips;
     std::vector<std::vector<std::unique_ptr<SortedVirtualSkmerList<store>>>> subs(nthr);
-    std::vector<std::vector<km::Skmer<store>>> bufA(nthr), bufB(nthr);
+    std::vector<BucketBuffers<store>> bufA(nthr), bufB(nthr);
     // One collected buffer per output channel, per worker (reused across buckets).
     std::vector<std::vector<std::vector<km::Skmer<store>>>> collected(
         nthr, std::vector<std::vector<km::Skmer<store>>>(nout));
@@ -1026,8 +1041,8 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
                 ch_ab    >= 0 ? &cc[ch_ab]    : nullptr,
                 ch_ba    >= 0 ? &cc[ch_ba]    : nullptr,
                 ch_sym   >= 0 ? &cc[ch_sym]   : nullptr};
-            merge_columns<store>(*manips[tid], bufA[tid].data(), bufA[tid].size(),
-                                 bufB[tid].data(), bufB[tid].size(), sink);
+            merge_columns<store>(*manips[tid], bufA[tid].span(), bufA[tid].pairs.size(),
+                                 bufB[tid].span(), bufB[tid].pairs.size(), sink);
             acc_inter[tid] += sink.n_inter;
             acc_a[tid]     += sink.n_only_a;
             acc_b[tid]     += sink.n_only_b;
