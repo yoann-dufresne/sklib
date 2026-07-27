@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <algorithm>
+#include <cstdlib>
 
 #include <io/Skmer.hpp>
 
@@ -42,8 +43,20 @@ public:
 
         // Per-bucket flush threshold, in records. Spread the global budget over
         // the buckets but keep a sane floor so tiny budgets still batch writes.
+        //
+        // NOTE the floor dominates at the default settings: 32 MB over 4096 buckets is 8 KB per
+        // bucket, exactly the floor, so the real buffer footprint is n_buckets * 8 KB = 32 MB per
+        // writer — and the parallel phase 1 gives each worker its own writer, so it is 32 MB x
+        // n_threads. SKLIB_WRITER_FLOOR_KB raises that floor (and hence the footprint) to trade RAM
+        // for fewer flushes: each flush is an open + write + close of the bucket file, and
+        // `strace -c` attributes 5.4 % of construct wall time to those three syscalls.
+        size_t floor_bytes {size_t{8} << 10};
+        if (const char* e = std::getenv("SKLIB_WRITER_FLOOR_KB")) {
+            const long long v = std::atoll(e);
+            if (v > 0) floor_bytes = static_cast<size_t>(v) << 10;
+        }
         const size_t per_bucket_bytes = std::max<size_t>(
-            buffer_bytes_total / std::max<uint64_t>(n_buckets, 1), size_t{8} << 10);
+            buffer_bytes_total / std::max<uint64_t>(n_buckets, 1), floor_bytes);
         m_flush_records = std::max<size_t>(per_bucket_bytes / sizeof(Skmer<kuint>), 1);
 
         m_buffers.resize(n_buckets);

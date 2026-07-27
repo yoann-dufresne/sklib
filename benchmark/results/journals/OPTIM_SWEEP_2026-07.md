@@ -520,16 +520,32 @@ k=31/m=15/b=12 le pair a 128 − 82 = 46 bits libres pour 14 bits de tailles, ce
 enregistrement de **16 octets au lieu de 24 (−33 %)**, aligné et de pas puissance de deux. Dis-moi
 si tu veux que je l'instruise.
 
-### 6.2 E/S temporaires de la phase 1 (5,4 % de construct, mesuré)
+### 6.2 E/S temporaires de la phase 1 — **piste morte, et mon chiffre initial était faux**
 
-`strace -c` sur `construct chr21 k=31 -t1` : **0,175 s de syscalls sur 3,2 s** (18 925 `openat`,
-14 803 `write`, 18 907 `close`). `SkmerBucketWriter::flush_bucket` ouvre, écrit et ferme le
-fichier de bucket **à chaque vidage**, avec un tampon par bucket de 8 Ko (plancher). Les deux
-sorties évidentes coûtent cher : un cache de fd est inefficace (ordre de vidage quasi aléatoire
-sur 4096 buckets), et augmenter le budget d'écriture multiplie 32 Mo × n_threads de tampons.
-La sortie propre serait de changer la disposition des temporaires (un fichier séquentiel par
-worker + un index de segments par bucket, lu en `pread` scatter en phase 2). C'est un changement
-structurel : je te le laisse en décision.
+Ce point figurait ici comme « 5,4 % de construct en syscalls open/write/close, ~3 % récupérables ».
+**Ce chiffre était un artefact de `strace -c`** : ptrace ajoute un coût énorme par appel système,
+donc les 0,175 s qu'il rapportait ne mesuraient pas l'exécution réelle.
+
+Mesuré correctement, en faisant varier le tampon par bucket (`SKLIB_WRITER_FLOOR_KB`) et en
+regardant le *wall* :
+
+| tampon/bucket | RAM des tampons | syscalls E/S | construct t=1 | construct t=6 |
+|---|---|---|---|---|
+| 8 KB (défaut) | 32 MB × nthreads | 52 635 | 3,030 s | 0,767 s |
+| 32 KB | 128 MB × nthreads | 17 331 | 3,025 s | 0,837 s |
+| 128 KB | 512 MB × nthreads | 16 424 | 3,019 s | 0,819 s |
+
+**Diviser les syscalls par 3 ne change rien au temps** (tout est dans le plancher de bruit).
+Confirmé sur chr1 : −0,62 % à t=6, +0,20 % à t=1, pour un **pic RSS de 282 → 862 MB (+206 %)**.
+
+L'explication tient au volume réel : le round-trip temporaire, c'est ~120 MB écrits puis relus à
+chr21/k=31, soit ~24 ms de bande passante mémoire sur 3,0 s — **moins de 1 %**. Il n'y a rien à
+récupérer, quelle que soit la RAM qu'on y met. La piste est close.
+
+Le knob `SKLIB_WRITER_FLOOR_KB` est conservé (défaut inchangé, index byte-identical quelle que
+soit sa valeur) parce que le raisonnement pourrait ne pas tenir sur un **système de fichiers
+réseau**, où `open`/`close` coûtent bien plus qu'en NVMe local — c'est le cas du cluster. Non
+mesuré là-bas ; à tester avant d'y croire.
 
 ### 6.3 Requête à petit m
 
