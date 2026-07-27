@@ -19,3 +19,6 @@ lives in [`../reference/`](../reference/) (plus the git-ignored microbench scrat
 - [`PRODUCER_BOTTLENECKS.md`](PRODUCER_BOTTLENECKS.md) — flamegraph / `perf stat` of the isolated super-k-mer producer (instruction-throughput bound).
 - [`PRODUCER_SPEEDUP.md`](PRODUCER_SPEEDUP.md) — six successive producer micro-optimizations (cumulative ~+58 %), digest-gated.
 - [`GREEDY_DEFAULT.md`](GREEDY_DEFAULT.md) — switching the construction default to greedy chaining (identical record counts, ~3–7 % faster phase-2).
+
+### Cross-cutting sweeps
+- [`OPTIM_SWEEP_2026-07.md`](OPTIM_SWEEP_2026-07.md) — full from-scratch sweep over all three workloads (no prior journal read, everything re-measured): noise-floor protocol, time map per workload × width, 19 levers instructed (7 landed, 7 measured-and-rejected incl. PGO and record packing, 5 untested). construct +7…+49 %, query +18…+172 %, setop +1…+3,5 %; byte-identical output throughout. Also reports a pre-existing `construct` segfault for `2m − b ≥ 8·sizeof(gen)`.
