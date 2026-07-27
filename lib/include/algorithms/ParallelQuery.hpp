@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 #include <queue>
+#include <deque>
+#include <memory>
 #include <unordered_map>
 #include <mutex>
 #include <condition_variable>
@@ -31,6 +33,7 @@
 #include <ostream>
 #include <utility>
 
+#include <kseq++/seqio.hpp>
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
@@ -181,107 +184,183 @@ private:
 
 } // namespace parallel_detail
 
-// Query every super-k-mer of `filename` against `reader` using `n_threads` total worker threads
-// (1 producer + the rest as parallel consumers), writing presence vectors to `os` in input order.
-// Equivalent in output to reader.query(filename, os). `batch_size` is the number of super-k-mers per
-// work batch (bounds per-batch RAM and sink granularity; mainly a test/tuning knob).
+// Query every super-k-mer of `filename` against `reader` using `n_threads` worker threads, writing
+// presence vectors to `os` in input order. Equivalent in output to reader.query(filename, os).
+//
+// The parse is parallel too. It used to run on ONE producer thread that read the FASTA, drove the
+// Skmerator, routed and truncated, while the other threads only searched. Once the search itself got
+// cheap (per-bucket minimizer-prefix narrowing) that producer became the ceiling: it accounts for
+// ~31% of the CPU work at k=31, which caps the whole query at ~3x however many threads are given
+// (measured: -t4 2.7x, and -t6 SLOWER than -t4).
+//
+// Now a reader thread only slices the input into work items and every worker does parse + query for
+// its own item. Two item shapes, both of which reproduce the sequential super-k-mer stream exactly:
+//
+//   * a run of WHOLE records (the common case — reads are far shorter than the chunk target). Each
+//     record is enumerated in full, exactly as FileSkmerator does, so there is no seam to reason
+//     about at all.
+//   * one [a,b) sub-range of a record longer than the chunk target. The worker enumerates
+//     [a-margin, b+margin] and keeps the super-k-mers whose CREATION index falls in [a,b) — the same
+//     tiling ParallelConstruct uses, with the same margin of 4*(2k-m) (a super-k-mer spans <= 2k-m
+//     and the iterator warm-up is ~2k-m). The creation index is the same original-sequence position
+//     whichever chunk computes it, so each super-k-mer is claimed by exactly one chunk. The last
+//     chunk (b == L) also claims the end-of-sequence flush, whose creation index runs past L.
+//
+// The iterator yields by increasing creation index and carries one creation index across the split
+// pieces of an ambiguous super-k-mer, so within an item the order is the sequential order and the
+// items partition the stream in input order. Emitting item texts by item index therefore reproduces
+// the sequential output byte for byte — which is what the -t identity gate checks.
 template<typename gen, typename store = gen>
 void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& filename,
                     std::ostream& os, unsigned n_threads, uint64_t batch_size = 4096) {
     using namespace parallel_detail;
+    (void)batch_size;   // kept for API compatibility; the unit of work is now an input slice
 
-    const unsigned n_consumers = (n_threads > 1) ? (n_threads - 1) : 1;
-    // Experiment knob: override the per-batch window (a.k.a. locality window) without a rebuild.
-    if (const char* w = std::getenv("SKLIB_QUERY_WINDOW")) {
+    const unsigned nw = std::max(1u, n_threads);
+    const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
+
+    // Target bases per work item. Big enough that the per-item overhead (one queue hand-off, one
+    // sink entry, one output string) is negligible, small enough to keep every worker fed and to
+    // bound in-flight RAM.
+    int64_t target_chunk {int64_t{1} << 20};
+    if (const char* w = std::getenv("SKLIB_QUERY_CHUNK_BP")) {
         const long long v = std::atoll(w);
-        if (v > 0) batch_size = static_cast<uint64_t>(v);
+        if (v > 0) target_chunk = static_cast<int64_t>(v);
     }
-    if (batch_size == 0) batch_size = 1;
-    // Keep total in-flight items ~constant as the window grows (bounds RAM at large windows): the
-    // default 4096-window kept ~n_consumers*4 batches, i.e. ~n_consumers*4*4096 items, in flight.
-    const size_t queue_capacity =
-        std::max<size_t>(2, static_cast<size_t>(n_consumers) * 4 * 4096 / std::max<uint64_t>(1, batch_size)) + 1;
+    const int64_t margin {static_cast<int64_t>(4 * (2 * k - m))};
 
-    WorkQueue<store> queue(queue_capacity);
+    struct WorkItem {
+        std::vector<std::shared_ptr<const std::string>> whole;  // enumerated in full, in order
+        std::shared_ptr<const std::string> big;                 // non-null => sub-range [a,b) of *big
+        int64_t a {0}, b {0};
+        uint64_t idx {0};
+    };
+
+    std::mutex mtx;
+    std::condition_variable cv_item, cv_space;
+    std::deque<WorkItem> queue;
+    bool done_reading {false};
+    std::exception_ptr first_err;
+    const size_t max_items {std::max<size_t>(4ull * nw, 16)};
+
     OrderedSink sink(os);
 
-    std::thread producer([&]{
-        // Parse at the full `gen` width (the whole minimizer is needed to route), bucket from the
-        // full φ(min), then down-convert to the narrower `store` records the consumers search.
-        const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
-        km::SkmerManipulator<gen> manip{k, m};
-        km::FileSkmerator<gen> file_skmerator{manip, filename};
+    auto worker = [&]() {
+        try {
+            km::SkmerManipulator<gen> manip{k, m};
+            std::string buf_whole, buf_big;
+            km::SeqSkmerator<gen, false> rator_whole{manip, buf_whole};
+            km::SeqSkmerator<gen, true>  rator_big{manip, buf_big};
+            auto it_whole = rator_whole.begin();
+            auto it_big = rator_big.begin();
+            std::vector<uint8_t> res;     // reused presence buffer
+            std::string text;             // reused per-item output
 
-        std::vector<std::pair<uint64_t, Skmer<store>>> batch;
-        batch.reserve(batch_size);
-        uint64_t seq {0};
+            for (;;) {
+                WorkItem item;
+                {
+                    std::unique_lock<std::mutex> lk(mtx);
+                    cv_item.wait(lk, [&]{ return !queue.empty() || done_reading || first_err; });
+                    if (first_err) return;
+                    if (queue.empty()) break;
+                    item = std::move(queue.front());
+                    queue.pop_front();
+                }
+                cv_space.notify_one();
 
-        for (const km::Skmer<gen> skmer : file_skmerator) {
-            const uint64_t bid {reader.route_minimizer(manip.minimizer(skmer))};
-            batch.emplace_back(bid, km::truncate_skmer<gen, store>(k, m, b, skmer));
-            if (batch.size() >= batch_size) {
-                queue.push(WorkBatch<store>{seq++, std::move(batch)});
-                batch = std::vector<std::pair<uint64_t, Skmer<store>>>();
-                batch.reserve(batch_size);
+                text.clear();
+                auto run_one = [&](const km::Skmer<gen>& sk) {
+                    const uint64_t bid {reader.route_minimizer(manip.minimizer(sk))};
+                    const km::Skmer<store> trunc {km::truncate_skmer<gen, store>(k, m, b, sk)};
+                    reader.query_into(bid, trunc, res);
+                    append_result(text, res);
+                };
+
+                for (const std::shared_ptr<const std::string>& rec : item.whole) {
+                    if (rec->length() < k) continue;      // matches FileSkmerator::init_record
+                    buf_whole.assign(*rec);
+                    it_whole.reset();
+                    for (; !it_whole.consumed(); ++it_whole) run_one(*it_whole);
+                }
+                if (item.big) {
+                    const int64_t L {static_cast<int64_t>(item.big->size())};
+                    const int64_t s0 {std::max<int64_t>(0, item.a - margin)};
+                    const int64_t s1 {std::min<int64_t>(L, item.b + margin)};
+                    buf_big.assign(*item.big, static_cast<size_t>(s0), static_cast<size_t>(s1 - s0));
+                    it_big.reset();
+                    for (; !it_big.consumed(); ++it_big) {
+                        const int64_t orig {s0 + it_big.yielded_position()};
+                        if (orig < item.a || (item.b != L && orig >= item.b)) continue;
+                        run_one(*it_big);
+                    }
+                }
+                sink.put(item.idx, std::move(text));
+                text = std::string();
             }
+        } catch (...) {
+            std::lock_guard<std::mutex> lk(mtx);
+            if (!first_err) first_err = std::current_exception();
+            cv_item.notify_all();
+            cv_space.notify_all();
         }
-        if (!batch.empty())
-            queue.push(WorkBatch<store>{seq++, std::move(batch)});
+    };
 
-        queue.set_done();      // let consumers exit once the queue is drained
-        sink.set_total(seq);   // let the sink stop once all `seq` batches are emitted
-    });
+    std::vector<std::thread> workers;
+    workers.reserve(nw);
+    for (unsigned t {0}; t < nw; ++t) workers.emplace_back(worker);
 
-    std::vector<std::thread> consumers;
-    consumers.reserve(n_consumers);
-    for (unsigned t {0}; t < n_consumers; ++t) {
-        consumers.emplace_back([&]{
-            WorkBatch<store> batch;
-            std::string text;         // reused per-batch output
-#if SKLIB_QUERY_BUCKET_SORT
-            const uint64_t nb = reader.n_buckets();
-            std::vector<uint32_t> counts;           // reused counting-sort histogram (size nb+1)
-            std::vector<uint32_t> order;            // reused permutation: batch positions in bucket order
-            std::vector<std::vector<uint8_t>> slot; // reused per-position result store (cleared, not freed)
-            while (queue.pop(batch)) {
-                const size_t n = batch.items.size();
-                text.clear();
-                if (slot.size() < n) slot.resize(n);       // grow-only; inner vectors keep capacity
-                // Counting sort of [0,n) by bucket_id (O(n + nb)); groups same-bucket queries together.
-                counts.assign(nb + 1, 0);
-                for (size_t i {0}; i < n; ++i) ++counts[batch.items[i].first + 1];
-                for (uint64_t b {0}; b < nb; ++b) counts[b + 1] += counts[b];
-                order.resize(n);
-                for (size_t i {0}; i < n; ++i) order[counts[batch.items[i].first]++] = static_cast<uint32_t>(i);
-                // Query in bucket-grouped order; result of position oi lands in slot[oi] (reused capacity).
-                for (size_t j {0}; j < n; ++j) {
-                    const uint32_t oi {order[j]};
-                    reader.query_into(batch.items[oi].first, batch.items[oi].second, slot[oi]);
+    // Reader (this thread): slice the input into items, in input order.
+    uint64_t idx {0};
+    auto emit = [&](WorkItem&& wi) {
+        wi.idx = idx++;
+        std::unique_lock<std::mutex> lk(mtx);
+        cv_space.wait(lk, [&]{ return queue.size() < max_items || first_err; });
+        if (first_err) return;
+        queue.push_back(std::move(wi));
+        cv_item.notify_one();
+    };
+    try {
+        klibpp::SeqStreamIn ksi(filename.c_str());
+        klibpp::KSeq rec;
+        WorkItem acc;
+        int64_t acc_bp {0};
+        while (ksi >> rec) {
+            if (rec.seq.length() < k) continue;             // matches FileSkmerator::init_record
+            auto seq = std::make_shared<const std::string>(rec.seq);
+            const int64_t L {static_cast<int64_t>(seq->size())};
+            if (L <= target_chunk) {
+                acc.whole.push_back(seq);
+                acc_bp += L;
+                if (acc_bp >= target_chunk) { emit(std::move(acc)); acc = WorkItem{}; acc_bp = 0; }
+            } else {
+                if (!acc.whole.empty()) { emit(std::move(acc)); acc = WorkItem{}; acc_bp = 0; }
+                for (int64_t a {0}; a < L; a += target_chunk) {
+                    WorkItem wi;
+                    wi.big = seq;
+                    wi.a = a;
+                    wi.b = std::min<int64_t>(L, a + target_chunk);
+                    emit(std::move(wi));
+                    if (first_err) break;
                 }
-                // Format in ORIGINAL input order -> byte-identical to the baseline.
-                for (size_t i {0}; i < n; ++i)
-                    append_result(text, slot[i]);
-                sink.put(batch.seq, std::move(text));
             }
-#else
-            std::vector<uint8_t> buf; // reused result buffer (no per-query allocation)
-            while (queue.pop(batch)) {
-                text.clear();
-                for (const std::pair<uint64_t, Skmer<store>>& item : batch.items) {
-                    reader.query_into(item.first, item.second, buf);
-                    append_result(text, buf);
-                }
-                sink.put(batch.seq, std::move(text));
-            }
-#endif
-        });
+            if (first_err) break;
+        }
+        if (!acc.whole.empty()) emit(std::move(acc));
+    } catch (...) {
+        std::lock_guard<std::mutex> lk(mtx);
+        if (!first_err) first_err = std::current_exception();
     }
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        done_reading = true;
+    }
+    cv_item.notify_all();
+    sink.set_total(idx);
 
-    sink.run(); // drain output in order on this thread until every batch is emitted
+    sink.run();   // drain output in item order on this thread
 
-    producer.join();
-    for (std::thread& c : consumers)
-        c.join();
+    for (std::thread& w : workers) w.join();
+    if (first_err) std::rethrow_exception(first_err);
 }
 
 // Sequential file query for the dual-width (gen >= store) path: parse at the full `gen` width,
