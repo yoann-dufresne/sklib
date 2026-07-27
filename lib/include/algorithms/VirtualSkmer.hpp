@@ -1479,8 +1479,18 @@ public:
     }
 
     // Bucket id for a FULL (un-truncated) store-width skmer (its minimizer slot carries all 2m bits).
+    //
+    // Routed on the PAIR, not on minimizer()'s low word. The minimizer occupies the TOP 2m bits of
+    // the skmer's 2*(2k-m) meaningful bits, so the bucket prefix — the top b bits of the minimizer —
+    // is also the top b bits of the whole skmer, and `pair >> (2*(2k-m) - b)` extracts it through
+    // pair::operator>>, which is defined for any shift. Going through minimizer() instead truncated
+    // to one word and then shifted past the word width whenever 2m - b exceeds it (small k - m),
+    // which is undefined behaviour and returned an out-of-range bucket. The result is < 2^b, so it
+    // fits the uint64 return.
     uint64_t bucket_of(const Skmer<kuint>& query) const {
-        return route_minimizer(m_manip.minimizer(query));
+        if (!m_fixed_prefix) return route_minimizer(m_manip.minimizer(query));
+        const uint64_t k {m_manip.k}, m {m_manip.m};
+        return static_cast<uint64_t>((query.m_pair >> (2 * (2 * k - m) - m_quotient_bits)).to_kuint());
     }
 
     // Look up every k-mer of `query` (a FULL, un-truncated skmer), restricted to its bucket's
@@ -1623,6 +1633,15 @@ private:
         m_ptbl_t[b] = 0;
         tbl.clear();
         if (n < PTBL_MIN_RECORDS || m_mini_bits == 0) return;
+        // The table indexes the TOP bits of the stored minimizer, read through
+        // SkmerManipulator::minimizer() — which returns the pair's LOW WORD. When the stored
+        // minimizer is wider than one word (2m - b > 8*sizeof(kuint), reachable as soon as k - m is
+        // small: k=31 m=29 stores a 46-bit minimizer in a uint32 record) that read truncates, and
+        // `minimizer >> (m_mini_bits - t)` shifts by more than the word width — undefined behaviour,
+        // and on x86 the masked count yielded an index far past the end of `tbl`: SIGSEGV.
+        // The top bits simply are not reachable in one word, so there is no table to build; t stays
+        // 0 and prefix_range hands back the whole bucket, i.e. exactly the pre-table behaviour.
+        if (m_mini_bits > sizeof(kuint) * 8) return;
         uint64_t t {0};
         while (t + 1 <= PTBL_MAX_BITS && t + 1 <= m_mini_bits && (uint64_t{1} << (t + 1)) <= n / 8) ++t;
         if (t == 0) return;
