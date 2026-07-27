@@ -19,6 +19,8 @@
 // width and down-converts each query to the stored `store` width before handing it off.
 
 #include <cstdint>
+#include <cstdlib>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <queue>
@@ -32,6 +34,16 @@
 #include <io/Skmer.hpp>
 #include <io/Skmerator.hpp>
 #include <algorithms/VirtualSkmer.hpp>
+
+#ifndef SKLIB_QUERY_BUCKET_SORT
+// Consumer-side intra-window bucket-locality experiment (A/B). 0 = current behaviour: query each
+// batch in input order (baseline; the #else path below is byte-for-byte the shipped loop). 1 =
+// counting-sort each batch's items by bucket_id and query in bucket-grouped order into a reused
+// per-slot result store, then format results back in ORIGINAL input order. Output is byte-identical
+// either way (query_into is a pure function of (bucket_id, query); output order is reconstructed from
+// the original position, never from execution order). Default 0 (off).
+#define SKLIB_QUERY_BUCKET_SORT 0
+#endif
 
 namespace km
 {
@@ -179,8 +191,16 @@ void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& f
     using namespace parallel_detail;
 
     const unsigned n_consumers = (n_threads > 1) ? (n_threads - 1) : 1;
+    // Experiment knob: override the per-batch window (a.k.a. locality window) without a rebuild.
+    if (const char* w = std::getenv("SKLIB_QUERY_WINDOW")) {
+        const long long v = std::atoll(w);
+        if (v > 0) batch_size = static_cast<uint64_t>(v);
+    }
     if (batch_size == 0) batch_size = 1;
-    const size_t queue_capacity = static_cast<size_t>(n_consumers) * 4 + 1;
+    // Keep total in-flight items ~constant as the window grows (bounds RAM at large windows): the
+    // default 4096-window kept ~n_consumers*4 batches, i.e. ~n_consumers*4*4096 items, in flight.
+    const size_t queue_capacity =
+        std::max<size_t>(2, static_cast<size_t>(n_consumers) * 4 * 4096 / std::max<uint64_t>(1, batch_size)) + 1;
 
     WorkQueue<store> queue(queue_capacity);
     OrderedSink sink(os);
@@ -217,8 +237,34 @@ void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& f
     for (unsigned t {0}; t < n_consumers; ++t) {
         consumers.emplace_back([&]{
             WorkBatch<store> batch;
-            std::vector<uint8_t> buf; // reused result buffer (no per-query allocation)
             std::string text;         // reused per-batch output
+#if SKLIB_QUERY_BUCKET_SORT
+            const uint64_t nb = reader.n_buckets();
+            std::vector<uint32_t> counts;           // reused counting-sort histogram (size nb+1)
+            std::vector<uint32_t> order;            // reused permutation: batch positions in bucket order
+            std::vector<std::vector<uint8_t>> slot; // reused per-position result store (cleared, not freed)
+            while (queue.pop(batch)) {
+                const size_t n = batch.items.size();
+                text.clear();
+                if (slot.size() < n) slot.resize(n);       // grow-only; inner vectors keep capacity
+                // Counting sort of [0,n) by bucket_id (O(n + nb)); groups same-bucket queries together.
+                counts.assign(nb + 1, 0);
+                for (size_t i {0}; i < n; ++i) ++counts[batch.items[i].first + 1];
+                for (uint64_t b {0}; b < nb; ++b) counts[b + 1] += counts[b];
+                order.resize(n);
+                for (size_t i {0}; i < n; ++i) order[counts[batch.items[i].first]++] = static_cast<uint32_t>(i);
+                // Query in bucket-grouped order; result of position oi lands in slot[oi] (reused capacity).
+                for (size_t j {0}; j < n; ++j) {
+                    const uint32_t oi {order[j]};
+                    reader.query_into(batch.items[oi].first, batch.items[oi].second, slot[oi]);
+                }
+                // Format in ORIGINAL input order -> byte-identical to the baseline.
+                for (size_t i {0}; i < n; ++i)
+                    append_result(text, slot[i]);
+                sink.put(batch.seq, std::move(text));
+            }
+#else
+            std::vector<uint8_t> buf; // reused result buffer (no per-query allocation)
             while (queue.pop(batch)) {
                 text.clear();
                 for (const std::pair<uint64_t, Skmer<store>>& item : batch.items) {
@@ -227,6 +273,7 @@ void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& f
                 }
                 sink.put(batch.seq, std::move(text));
             }
+#endif
         });
     }
 
