@@ -792,6 +792,25 @@ public:
             u ^= static_cast<uint64_t>(m_phi_k);
             return static_cast<kuint>(u & m64);
         }
+        // Same argument one width up: for 64 < 2m <= 128 the mixer's surviving bits are the low 2m,
+        // and a __uint128_t multiply yields exactly the low 128 product bits — identical after the
+        // mask — so the whole chain runs in __uint128_t instead of _BitInt(256). This is the k~65..127
+        // range (k=95 -> 2m=94), where phi runs once per base and the 256-bit multiplies dominated.
+        if constexpr (sizeof(kuint) > 16)
+        {
+            if (m_phi_w <= 128)
+            {
+                const __uint128_t m128 {static_cast<__uint128_t>(mask)};
+                __uint128_t u {static_cast<__uint128_t>(x) & m128};
+                u ^= u >> m_phi_s1;
+                u = (u * static_cast<__uint128_t>(m_phi_c1)) & m128;
+                u ^= u >> m_phi_s2;
+                u = (u * static_cast<__uint128_t>(m_phi_c2)) & m128;
+                u ^= u >> m_phi_s3;
+                u ^= static_cast<__uint128_t>(m_phi_k);
+                return static_cast<kuint>(u & m128);
+            }
+        }
         x &= mask;
         x ^= x >> m_phi_s1;
         x = (x * m_phi_c1) & mask;
@@ -855,6 +874,30 @@ public:
             // x is φ(min), masked to the low w<=64 bits, so its value lives entirely in the low word.
             const uint64_t u {reverse_bits64(static_cast<uint64_t>(x)) >> (64 - w)};
             return static_cast<kuint>(u);
+        }
+        // 64 < w <= bits(kuint): reverse the low ceil(w/64)*64-bit block limb-wise — each 64-bit limb
+        // bit-reversed by the same swap network, limb order reversed — then right-align the w-bit
+        // window. Bit i of the result comes from bit w-1-i of x, exactly as the loop below, but in
+        // O(#limbs) instead of O(w): at k=95 (2m=94) that is 2 swap-network reversals in place of 94
+        // iterations of _BitInt(256) shift+mask+or. permute_minimizer_slot runs once per yielded
+        // super-k-mer, and perf attributed 15.8% of construct wall time at k=95 to it. Bit-identical
+        // either way, so stored records (and on-disk indexes) are unchanged.
+        //
+        // The `w <= bits(kuint)` guard matters: a minimizer window WIDER than kuint is reachable
+        // (k=40, m=33 -> 2m=66 while 2*(2k-m)=94 selects a 64-bit generation width), and there the
+        // limb walk would shift a uint64_t by 64 — UB, and observably different from the loop. That
+        // configuration already truncates the minimizer to 64 bits in `minimizer()`/`to_kuint()`, so
+        // it keeps the historical loop verbatim rather than changing its (equally degenerate) result.
+        if (w <= sizeof(kuint) * 8)
+        {
+            const uint64_t nl {(w + 63) / 64};
+            kuint r {static_cast<kuint>(0)};
+            for (uint64_t i {0}; i < nl; ++i)
+            {
+                const uint64_t limb {static_cast<uint64_t>(x >> (64 * i))};
+                r |= static_cast<kuint>(static_cast<kuint>(reverse_bits64(limb)) << (64 * (nl - 1 - i)));
+            }
+            return r >> (nl * 64 - w);
         }
         kuint r {static_cast<kuint>(0)};
         for (uint64_t i {0}; i < w; ++i)
@@ -1136,6 +1179,14 @@ public:
         if constexpr (sizeof(kuint) > 8)
         {
             if (2 * m <= 64) return mmer_repeats<uint64_t>(S, L, pref);
+        }
+        // Same reasoning one width up: an m-mer of 64 < 2m <= 128 bits rolls entirely in
+        // __uint128_t, so every compare and shift of the roll avoids _BitInt(256). k=95 (2m=94) is
+        // the case; perf put minimizer_is_ambiguous at 22.3% of construct wall time there. All the
+        // values involved are <= 2m bits, so the boolean is identical.
+        if constexpr (sizeof(kuint) > 16)
+        {
+            if (2 * m <= 128) return mmer_repeats<__uint128_t>(S, L, pref);
         }
         return mmer_repeats<kuint>(S, L, pref);
     }
