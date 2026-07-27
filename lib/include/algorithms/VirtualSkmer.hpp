@@ -1473,8 +1473,16 @@ public:
     // correct against a store-width reader. Templated on the minimizer's width W.
     template<typename W>
     uint64_t route_minimizer(W full_minimizer) const {
-        if (m_fixed_prefix)
+        if (m_fixed_prefix) {
+            // Same guard, and the same reasoning, as make_prefix_bucketing's bucket_of: when the
+            // shift reaches the width of the value, the whole bucket prefix sits in the region that
+            // permute_minimizer_slot leaves zero for EVERY record (2m > bits(gen)), so bucket 0 is
+            // the exact answer. Without the guard the shift is undefined behaviour and the router
+            // hands back an out-of-range bucket id. The construction side must agree bit for bit or
+            // queries would look in the wrong bucket.
+            if (m_route_shift >= sizeof(W) * 8) return 0;
             return static_cast<uint64_t>(full_minimizer >> m_route_shift); // top b bits fit a uint64
+        }
         return bucket_of_phi_min(static_cast<uint64_t>(full_minimizer));
     }
 

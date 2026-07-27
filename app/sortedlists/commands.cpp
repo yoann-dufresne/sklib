@@ -89,7 +89,10 @@ int run_construct(const ConstructOptions& opts) {
         // storage needs only 2*(2k-m)-b once the bucket id absorbs the top b φ-minimizer bits.
         // Pick the smallest precompiled integer width for each, then instantiate the build.
         const uint64_t b = km::sortedlist::quotient_bits_for(params);
-        const uint64_t gen_w   = km::sortedlist::select_width_bytes(2 * (2 * k - m));
+        // The generation width must hold the super-k-mer in its PAIR *and* the minimizer in a single
+        // WORD — the second constraint used to be missing, which silently truncated the minimizer
+        // whenever 3m > 2k (see select_generation_width_bytes).
+        const uint64_t gen_w   = km::sortedlist::select_generation_width_bytes(k, m);
         const uint64_t store_w = km::sortedlist::select_width_bytes(2 * (2 * k - m) - b);
         km::sortedlist::dispatch_width_bytes(gen_w, [&]<typename gen>() {
             km::sortedlist::dispatch_width_bytes(store_w, [&]<typename store>() {
@@ -234,8 +237,11 @@ int run_query(const QueryOptions& opts) {
     // Generation width from k/m, but never narrower than the record width: queries are generated at
     // `gen` then down-converted to `store`, so we need gen >= store (a legacy 8-byte file with a
     // tiny k whose generation alone would fit 4 bytes is the one case where this max bites).
+    // Same two constraints as construction (super-k-mer in the pair, minimizer in one word), and
+    // never narrower than the record width. Construction and query MUST pick the same generation
+    // width or they would frame and route k-mers differently.
     const uint64_t gen_w = std::max<uint64_t>(
-        km::sortedlist::select_width_bytes(2 * (2 * hdr.k - hdr.m)), hdr.store_width_bytes);
+        km::sortedlist::select_generation_width_bytes(hdr.k, hdr.m), hdr.store_width_bytes);
     const uint64_t store_w = hdr.store_width_bytes;
 
     try {

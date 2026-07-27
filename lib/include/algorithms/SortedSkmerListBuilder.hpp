@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unistd.h>
 #include <chrono>   // SKLIB_TIMING: env-gated phase-1/phase-2 split
+#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 
@@ -186,9 +187,26 @@ Bucketing<kuint> make_prefix_bucketing(uint64_t m, uint64_t requested_buckets) {
     const uint64_t effective_bits = std::min<uint64_t>(bucket_bits, mini_bits);
     const uint64_t n_buckets = uint64_t{1} << effective_bits;
     const uint64_t shift = mini_bits - effective_bits;
+    // A minimizer WIDER than the working integer (2m > bits(kuint), i.e. 3m > 2k) does not fit one
+    // word: minimizer() returns the pair's low word only, and permute_minimizer_slot writes a
+    // kuint-wide ψ value into the 2m-bit slot. The top `2m - bits(kuint)` bits of every stored slot
+    // are therefore ZERO — measured exactly so on real super-k-mer streams (k=42,m=38: 12 zero bits;
+    // k=45,m=43: 22; k=95,m=93: 58).
+    //
+    // The bucket id is the top `effective_bits` of that slot, so `shift >= bits(kuint)` puts the
+    // WHOLE prefix inside the always-zero region: every record belongs to bucket 0, and that is the
+    // exact value, not a fallback. (It also keeps quotienting lossless: the b dropped bits are the
+    // same zeros for every record, which is precisely the "constant within a bucket" invariant.)
+    //
+    // Computing it as `mini >> shift` was undefined behaviour once shift reached the width. On x86
+    // the shift count is masked modulo the width, so the expression returned the minimizer ITSELF as
+    // a bucket id, which then indexed the per-bucket buffer array out of bounds — a SIGSEGV for every
+    // (k, m, --buckets) with 2m - b >= 8*sizeof(gen) (e.g. `construct -k 42 -m 38`, k=25/m=22,
+    // k=50/m=38, k=95/m=93 …). The sibling lower_bound_of lambda below already carried this guard.
+    const bool prefix_all_zero = (shift >= sizeof(kuint) * 8);
     return Bucketing<kuint>{ n_buckets,
-        [shift, n_buckets](kuint mini) -> uint64_t {
-            if (n_buckets == 1) return 0;
+        [shift, n_buckets, prefix_all_zero](kuint mini) -> uint64_t {
+            if (n_buckets == 1 || prefix_all_zero) return 0;
             return static_cast<uint64_t>(mini >> shift);
         },
         // Bucket b covers the ψ-minimizer interval [b << shift, (b+1) << shift); its lower bound is
@@ -373,6 +391,21 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         : bucketing_fine;
     const uint64_t n_buckets = bucketing_coarse.n_buckets;   // phase 1 / counts / phase-2 job key
     const auto& bucket_of = bucketing_coarse.bucket_of;
+
+    // Contract check on the generation width. `gen` must hold the minimizer in ONE WORD, not just
+    // the super-k-mer in the pair: minimizer(), phi/reverse_2m, permute_minimizer_slot and
+    // mmer_repeats all work on a single kuint. Violating it truncates the minimizer, which biases
+    // the bucketing, and — because the ambiguous-minimizer detection then misfires — breaks
+    // exactness outright (measured on ecoli at k=21 m=20: 8 884 false positives out of 200 000
+    // random k-mers). The CLI sizes `gen` with select_generation_width_bytes, which enforces this;
+    // a direct library caller choosing its own widths can still get it wrong, so say so loudly.
+    if (2 * m > sizeof(gen) * 8) {
+        std::cerr << "[sklib] WARNING: generation width too narrow for the minimizer: 2m = " << (2 * m)
+                  << " bits > " << (sizeof(gen) * 8) << "-bit work integer (k=" << k << ", m=" << m
+                  << "). The minimizer is truncated, so the bucketing degenerates AND query results"
+                     " may be wrong. Size the generation type with select_generation_width_bytes(k, m)."
+                  << std::endl;
+    }
 
     // Quotienting (b>0) drops the top b φ-minimizer bits of each record; those bits must be exactly
     // the uniform b-bit prefix that defines the bucket (power-of-two prefix bucketing). Adaptive

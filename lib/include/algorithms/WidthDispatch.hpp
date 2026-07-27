@@ -37,6 +37,40 @@ inline uint64_t select_width_bytes(uint64_t need_bits) {
         " bits but the widest backend (kuint256) holds 512. Reduce k, or raise m.");
 }
 
+// Generation (work) width for a given k/m, in bytes.
+//
+// Two independent constraints, and only the first used to be applied:
+//
+//  1. the interleaved super-k-mer must fit the PAIR: 2*(2k-m) <= 16*bytes;
+//  2. the minimizer must fit a SINGLE WORD: 2m <= 8*bytes.
+//
+// (2) matters because the whole minimizer pipeline works on one word: `minimizer()` returns the
+// pair's low word (`to_kuint()`), `phi`/`reverse_2m` mix a `kuint`, `permute_minimizer_slot` writes
+// a `kuint`-wide ψ back into the 2m-bit slot, and `mmer_repeats` rolls the central m-mer in a
+// `kuint`. Sizing on (1) alone lets 2m exceed the word whenever 3m > 2k, and then every one of
+// those silently truncates. The damage is graded and was measured on ecoli:
+//
+//   * the top 2m - 8*bytes bits of every stored ψ slot are zero, so the minimizer-prefix bucketing
+//     loses that many bits (k=40,m=33: 2 bits, 1024 of 4096 buckets actually used);
+//   * once the WHOLE bucket prefix falls in that zero region (2m - b >= 8*bytes) the router
+//     computed `mini >> shift` with shift >= width — undefined behaviour, and on x86 the masked
+//     shift count returned the minimizer itself as a bucket id, indexing the per-bucket buffer
+//     array out of bounds: SIGSEGV for e.g. `construct -k 42 -m 38`;
+//   * and `mmer_repeats` rolling a 2m-bit m-mer in a narrower word misdetects the ambiguous
+//     minimizer case, which changes the per-k-mer framing and breaks EXACTNESS — k=25,m=22 (a
+//     44-bit minimizer in a uint32 word) answered 3 false negatives on ecoli's 4.5 M k-mers and
+//     3 875 false positives out of 100 000 random k-mers.
+//
+// Taking the max of the two constraints removes all three at once. It cannot affect any k/m where
+// the minimizer already fitted: 2m <= 8*bytes implies 4m <= 16*bytes, so select_width_bytes(4m)
+// is then <= the width constraint (1) already picked, and the max is that same width.
+inline uint64_t select_generation_width_bytes(uint64_t k, uint64_t m) {
+    const uint64_t for_skmer {select_width_bytes(2 * (2 * k - m))};
+    // pair capacity 16*bytes >= 4m  <=>  word capacity 8*bytes >= 2m
+    const uint64_t for_minimizer {select_width_bytes(4 * m)};
+    return std::max(for_skmer, for_minimizer);
+}
+
 // Number of high φ-minimizer bits a power-of-two prefix bucketing removes, i.e. the
 // quotient bit count `b`. Mirrors make_prefix_bucketing exactly:
 // effective_bits = min(floor(log2(buckets)), 2m).
