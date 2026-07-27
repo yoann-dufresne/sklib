@@ -25,6 +25,10 @@ harnais de benchmark et de mesures faites dans cette session.
 Sortie **byte-identical** à la baseline dans tous les cas : aucun changement de format, aucun
 changement de valeur par défaut de la CLI, aucune perte d'exactitude.
 
+La campagne a par ailleurs mis au jour — et corrigé (§5bis) — **un segfault de `construct` et une
+inexactitude silencieuse** préexistants (jusqu'à 4,4 % de faux positifs) dans le régime `3m > 2k`,
+ainsi qu'**une régression introduite par la campagne elle-même** à petit `k − m`.
+
 ---
 
 ## 1. Protocole et plancher de bruit
@@ -420,35 +424,81 @@ trouvées ont été traitées (L18 retenu, L16/L17 rejetés).
 
 ---
 
+## 5 bis. Suite : le segfault de `construct`, corrigé (commits `bb48b04`, `9298299`)
+
+Le balayage k/m avait révélé un segfault préexistant. En le corrigeant, deux défauts plus
+graves sont apparus derrière — et **une régression introduite par la campagne elle-même**.
+
+### 5bis.1 La cause racine : la largeur de travail ignorait le minimizer
+
+L'entier de génération était dimensionné sur **une seule** contrainte — le super-k-mer
+interleavé doit tenir dans la **paire**, `2(2k−m) ≤ 16·sizeof(gen)` — alors que toute la chaîne
+du minimizer travaille sur **un seul mot** : `minimizer()` renvoie le mot bas de la paire,
+`phi`/`reverse_2m` mixent un `kuint`, `permute_minimizer_slot` réécrit un ψ de largeur `kuint`
+dans le slot de 2m bits, et `mmer_repeats` fait rouler le m-mer central dans un `kuint`. Dès que
+`3m > 2k`, le minimizer (2m bits) déborde ce mot et **tous** tronquent silencieusement.
+
+Dégâts mesurés (sonde dédiée + oracle KMC sur ecoli), par ordre de gravité croissante :
+
+| Symptôme | Mesure |
+|---|---|
+| Les `2m − 8·sizeof(gen)` bits de tête de **chaque** slot ψ stocké sont nuls | k=40/m=33 : 2 bits · k=42/m=38 : 12 · k=95/m=93 : 58 |
+| Le bucketing par préfixe perd d'autant de bits | k=40/m=33 : 1024 buckets utilisés sur 4096 |
+| Quand tout le préfixe tombe dans la zone nulle : `mini >> shift` avec `shift ≥ largeur` → UB, id de bucket hors bornes | **SIGSEGV** (`-k 42 -m 38`, `-k 25 -m 22`, `-k 50 -m 48`, …) |
+| `mmer_repeats` roulant un m-mer de 2m bits dans un mot plus étroit **casse l'exactitude** | **faux positifs sur 200 k k-mers aléatoires : 2 (k=21/m=17), 29 (m=18), 553 (m=19), 8 884 = 4,4 % (m=20), 35 (k=25/m=20)** |
+
+La dernière ligne est le point important : ces configurations **ne plantaient pas**, elles
+répondaient faux. Un crash aurait été préférable.
+
+**Correctif** : `select_generation_width_bytes(k, m)` prend le max des deux contraintes. Il ne
+peut élargir aucune configuration qui les satisfaisait déjà (`2m ≤ 8·octets` implique
+`4m ≤ 16·octets`), donc **tout k/m sain garde sa largeur exacte et son index byte-identical** ;
+seule la région cassée bouge, et elle passe de faux à juste. Deux gardes de décalage
+(`make_prefix_bucketing`, `route_minimizer`) restent en défense en profondeur.
+
+### 5bis.2 Une régression de cette campagne : L19 plantait à petit `k − m`
+
+En construisant la porte manquante, j'ai découvert que **mon propre commit `76f6f17` (L19)**
+faisait planter `query` — pas la baseline. La table de préfixe indexe les bits de tête du
+minimizer **stocké** (`2m − b` bits), lu via `minimizer()`, donc encore un mot — celui du type
+de **stockage**. À petit `k − m` le stockage rétrécit plus vite que le minimizer :
+`k=31 m=29` garde un minimizer de 46 bits dans un enregistrement `uint32`. Le décalage dépassait
+la largeur du mot → index très au-delà de la table → SIGSEGV ou corruption du tas.
+
+La table est désormais simplement désactivée dans ce cas (comportement et performance d'avant
+L19 pour ces k/m). `bucket_of` reçoit le même traitement en routant sur la **paire**
+(`pair >> (2(2k−m) − b)`), défini pour tout décalage.
+
+**Pourquoi la campagne ne l'avait pas vu** : la matrice de portes utilisait `m ≈ k/2` partout —
+4 largeurs, 3 taux de présence, 6 valeurs de `-t`, 2 datasets — mais **jamais un `k − m` petit
+ni un `m/k` grand**. Les deux axes que ces bugs occupent étaient précisément ceux que je tenais
+fixes. C'est la leçon méthodologique de cette campagne.
+
+### 5bis.3 Ce qui garde maintenant ces deux familles
+
+- `tests/km/minimizer_width.cpp` : porte **comportementale** (tous les k-mers du référent
+  présents, les absents absents) sur une grille couvrant `k − m = 2` et `3m > 2k`, à **deux**
+  nombres de buckets — 4096 et 8, ce dernier parce que le défaut étale une référence de test
+  trop finement pour que la table de préfixe soit seulement construite. Chaque moitié du
+  correctif a été **vérifiée nécessaire** en la neutralisant et en regardant le test échouer.
+  Plus un test de propriété sur le sélecteur de largeur.
+- `benchmark/results/latest/optim/km_sweep.sh` : balayage externe de **76 configurations** sur
+  ecoli (`k − m` de 2 à 29, `m/k` jusqu'à 0,96) contre la vérité terrain KMC — construct et
+  query sans plantage, zéro faux négatif, index identique entre `-t1` et `-t8`, et identique à
+  la baseline **hors** région boguée. **Zéro échec** ; 20 configurations plantaient ou mentaient
+  auparavant.
+
+**Compatibilité** : les index construits avant ce correctif avec
+`2m > 8·select_width_bytes(2(2k−m))` (en gros `3m > 2k`) sont faux et doivent être reconstruits.
+Pas de bump de magic : la disposition disque est inchangée, tout k/m hors de cette région est
+byte-identical, et bumper globalement invaliderait un corpus entier d'index corrects pour un cas
+de bord. Rien ne bouge autour du `m ≈ k/2` usuel.
+
+---
+
 ## 6. Points demandant ton arbitrage
 
-### 6.1 Bug préexistant : segfault de `construct` quand `2m − b ≥ 8·sizeof(gen)`
-
-**Trouvé en balayant k/m, présent à l'identique dans la baseline — je ne l'ai pas corrigé.**
-
-`make_prefix_bucketing` route par `mini >> shift` avec `shift = 2m − b`. Quand `shift` atteint ou
-dépasse la largeur de l'entier de génération, le décalage est un UB ; sur x86 le compte est
-masqué modulo la largeur, l'id de bucket sort des bornes et le processus segfaulte.
-
-Condition exacte, vérifiée sur 21 configurations :
-
-| k | m | 2m | 2(2k−m) | genW | 2m ≥ 8·genW + b ? | rc |
-|---|---|---|---|---|---|---|
-| 25 | 21 | 42 | 58 | 4 B | 42 < 44 → non | 0 |
-| 25 | 22 | 44 | 56 | 4 B | 44 ≥ 44 → **oui** | **139** |
-| 42 | 37 | 74 | 94 | 8 B | 74 < 76 → non | 0 |
-| 42 | 38 | 76 | 92 | 8 B | 76 ≥ 76 → **oui** | **139** |
-| 70 | 68 | 136 | 144 | 16 B | 136 < 140 → non | 0 |
-| 95 | 93 | 186 | 194 | 16 B | 186 ≥ 140 → **oui** | **139** |
-
-Repro : `sskm construct -k 42 -m 38 -f <fa> -o /tmp/x.sskm -t 1`.
-
-Je ne l'ai pas corrigé parce que le bon correctif est un **choix sémantique qui t'appartient** :
-(a) router à pleine largeur comme le fait déjà `route_minimizer` côté lecteur, ou (b) refuser la
-configuration avec un message clair. Note connexe : dans ce régime `minimizer()` tronque déjà le
-minimizer à 64 bits via `to_kuint()`, donc (a) demande de regarder la chaîne complète.
-
-### 6.2 Packing des enregistrements (`VSKMER_6`) — tu l'avais autorisé, je ne l'ai pas livré
+### 6.1 Packing des enregistrements (`VSKMER_6`) — tu l'avais autorisé, je ne l'ai pas livré
 
 Tu m'avais donné le feu vert pour un bump de format. **Je ne l'ai pas pris, pour deux raisons
 mesurées :**
@@ -470,7 +520,7 @@ k=31/m=15/b=12 le pair a 128 − 82 = 46 bits libres pour 14 bits de tailles, ce
 enregistrement de **16 octets au lieu de 24 (−33 %)**, aligné et de pas puissance de deux. Dis-moi
 si tu veux que je l'instruise.
 
-### 6.3 E/S temporaires de la phase 1 (5,4 % de construct, mesuré)
+### 6.2 E/S temporaires de la phase 1 (5,4 % de construct, mesuré)
 
 `strace -c` sur `construct chr21 k=31 -t1` : **0,175 s de syscalls sur 3,2 s** (18 925 `openat`,
 14 803 `write`, 18 907 `close`). `SkmerBucketWriter::flush_bucket` ouvre, écrit et ferme le
@@ -481,7 +531,7 @@ La sortie propre serait de changer la disposition des temporaires (un fichier s�
 worker + un index de segments par bucket, lu en `pread` scatter en phase 2). C'est un changement
 structurel : je te le laisse en décision.
 
-### 6.4 Requête à petit m
+### 6.3 Requête à petit m
 
 À k=15/m=7 aucun de mes leviers ne mord (−0,82 %) : le minimizer fait 14 bits, `--buckets 4096`
 en consomme 12, il ne reste que 2 bits pour la table de préfixe. Si ce régime t'importe,
@@ -503,6 +553,11 @@ la table sur les premiers nucléotides de flanc plutôt que sur le minimizer.
 - **`--max-ram` (bucketing adaptatif)** : jamais exercé par cette campagne.
 - Le plancher de bruit à t=6 (5 %) m'a empêché de conclure sur plusieurs gains multithread
   potentiellement réels mais inférieurs à ce seuil.
+- **La matrice de portes de la campagne tenait `m ≈ k/2` fixe** et n'a donc rien vu des deux
+  familles de bugs décrites en §5bis — dont une que j'ai moi-même introduite. Le balayage k/m
+  (`km_sweep.sh`) et `tests/km/minimizer_width.cpp` comblent cette lacune, mais d'autres axes
+  restent tenus fixes dans toute la campagne : `--buckets` (toujours 4096 sauf dans le nouveau
+  test), `--max-ram`, la sortie ASCII, et l'entrée sur stdin.
 
 ## 8. Reproduire
 
