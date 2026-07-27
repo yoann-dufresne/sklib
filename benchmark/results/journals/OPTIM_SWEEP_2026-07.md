@@ -21,6 +21,7 @@ harnais de benchmark et de mesures faites dans cette session.
 | `query` | k=31, multithread | **+172 %** (t=2) · **+23 %** (t=4) · **+18 %** (t=6) |
 | `setop` | matérialisé, k=31/95 | **+2 à +3,5 %** |
 | `setop` | `--sizes`, k=15/63 | neutre |
+| **taille d'index** | k=15/31/63 (v0.15.0) | **−37,5 % / −25,0 % / −29,1 %** |
 
 Sortie **byte-identical** à la baseline dans tous les cas : aucun changement de format, aucun
 changement de valeur par défaut de la CLI, aucune perte d'exactitude.
@@ -149,6 +150,7 @@ jointure de hachage des overlaps ; ~5,8 % dans le prédicat de la boucle de merg
 | L19 | Table de préfixe de minimizer par bucket | `76f6f17` | query **+22 à +55 %** |
 | L4 | Parallélisation du *parse* de requête | `41ad75b` | query t=2 +173 %, t=4 +67 %, t=6 +44 % |
 | L8 | Tri de colonne sur clés pré-extraites | `d3ec019` | construct +4,9 % (k15) / +2,8 % (k63) |
+| L2 | **Payload de bucket scindé (SoA), `VSKMER_6`** | `c93bc2a` | **index −25 à −37,5 %**, query +12 à +22 %, RSS query −25 à −30 % |
 
 ### Rejetés sur mesure
 
@@ -157,7 +159,6 @@ jointure de hachage des overlaps ; ~5,8 % dans le prédicat de la boucle de merg
 | L15 | Supprimer le zero-fill de `resize()` au chargement de bucket | +0,53 / +0,09 / +0,74 / −0,50 % (chaud, froid, t=1, t=6) | Les 4–7 % attribués à `__memset_avx2` par `perf` sont du **défaut de page déplacé**, pas du travail supprimé : les pages fraîchement allouées doivent être fautées de toute façon, la lecture les touche ensuite. Sous le plancher partout. |
 | L17 | `get_skmer_of_kmer` par référence au lieu de par valeur | −0,33 % / −0,92 % | Le compilateur élidait déjà la copie (fonction inlinée, argument non modifié). |
 | L16 | Mémoïser `col_skmer` dans `merge_LList_column` | +1,25 / −0,17 / +0,83 % | La redondance existe (le côté liste gagne ⇒ `col_idx` n'avance pas ⇒ recalcul), mais elle est trop rare pour dépasser le plancher. |
-| L2 | **Packing des enregistrements (bump `VSKMER_6`)** | **inapplicable en l'état** | `__attribute__((packed))` est refusé par clang : `-Wpacked-non-pod`, *"not packing field 'm_pair' as it is non-POD for the purposes of layout"* — `Skmer::pair` a des constructeurs utilisateur. Détail en §5. |
 | L10 | PGO (clang `-fprofile-generate/-use`) | **surapprentissage net** | +4,1 à +4,5 % sur les configurations vues à l'entraînement, mais **−6,6 % (setop k=63)** et **−9,8 % (construct k=63)** sur des configurations non vues. Le code étant massivement templaté par largeur, PGO optimise les instanciations profilées et pessimise les autres. |
 | — | Conditionner le prefetch de la dichotomie à la largeur de plage | +1,01 / −0,34 / +2,05 % | Après L19 les plages sont minuscules et le prefetch coûte 4,5 % du profil, mais le gain mesuré est incohérent et sous le plancher. |
 | L6 | E/S temporaires de phase 1 | **quantifié, non rentable** | `strace -c` : 52 635 syscalls, **0,175 s = 5,4 % du wall construct** (18 925 `openat`, 14 803 `write`, 18 907 `close`) — `flush_bucket` rouvre le fichier à chaque vidage. Mais : un cache de fd est inutile (4096 buckets touchés dans un ordre quasi aléatoire ⇒ taux de succès ~6 %), et doubler le budget d'écriture doublerait 32 Mo × n_threads de tampons. Au mieux ~3 % récupérables au prix de RAM. Détail en §5. |
@@ -421,6 +422,46 @@ trouvées ont été traitées (L18 retenu, L16/L17 rejetés).
 - oracle de requête direct : les **4 554 269** k-mers distincts d'ecoli (ensemble KMC) tous
   rapportés présents, **0 absent** ; 200 000 k-mers aléatoires ⇒ **0 présent**, sortie identique à
   la baseline.
+
+---
+
+## 5 ter. Suite : le packing, livré (`c93bc2a`, v0.15.0)
+
+Le §6.1 concluait que le packing était **techniquement bloqué** : `__attribute__((packed))` est
+refusé par clang (`-Wpacked-non-pod`) parce que `Skmer::pair` a des constructeurs utilisateur.
+C'était vrai — mais c'était la mauvaise forme de packing.
+
+Deux formes ont été instruites :
+
+- **Loger les tailles dans les bits libres de la paire.** Il y a bien la place (30 bits libres à
+  k=15, 46 à k=31, 78 à k=63). **Rejeté sur analyse, sans coder** : les enregistrements sont triés
+  par `m_pair`, donc des tailles logées dans les bits de tête **domineraient l'ordre de tri** et
+  casseraient à la fois le tri, l'extraction du préfixe de bucket et le merge.
+- **Scinder le payload (SoA)** : `n` paires puis `n` couples d'octets (préfixe, suffixe). Même
+  gain de taille, ordre de tri intact — et surtout **aligné sur la façon dont le code lit** : la
+  dichotomie lit les tailles puis une paire, le balayage `find_closest_valid_skmer` ne lit *que*
+  les tailles, le CSR par colonne des set-ops *que* les tailles, le merge *que* les paires.
+
+C'est la seconde qui est livrée. La recherche, le CSR et le merge sont templatés sur une vue
+(`SkmerSpan` pour le payload scindé, `SkmerAos` pour la liste en RAM et les tests), donc un seul
+algorithme et aucune indirection à l'exécution.
+
+| (k,m) | store | AoS | SoA | taille | bits/k-mer | query t=1 | RSS query |
+|---|---|---|---|---|---|---|---|
+| 15,7 | `uint32` | 16 o | 10 o | **−37,5 %** | 41,48 | +21,9 % | — |
+| 31,15 | `uint64` | 24 o | 18 o | **−25,0 %** | 17,12 | +12,9 % | −25,3 % |
+| 63,31 | `__uint128` | 48 o | 34 o | **−29,1 %** | 16,36 | +15,3 % | −29,6 % |
+| 95,47 | `kuint256` | 72 o | 66 o | −8,3 % | 21,43 | +0,0 % | — |
+
+construct et setop sont neutres (−1,5 % à +1,8 %, dans le bruit) : ils sont bornés par la
+compaction, pas par la taille des enregistrements. k=95 ne gagne pas en vitesse, ce qui est
+cohérent avec ses −8,3 % de taille seulement.
+
+**Format** : bump obligatoire. Le contenu, l'ordre et le répertoire sont inchangés ; seul
+l'agencement des octets du payload diffère, ce qu'un lecteur V5 ne peut pas détecter.
+`require_v6_or_throw` rejette V5 et antérieurs. **Tous les index doivent être reconstruits.**
+Porte associée : la sortie de requête est identique à celle de la v0.14.0 sur 4 largeurs × 3 taux
+de présence — le contenu est préservé, seul le layout change.
 
 ---
 
