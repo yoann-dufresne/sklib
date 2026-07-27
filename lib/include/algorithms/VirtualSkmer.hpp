@@ -260,11 +260,20 @@ inline int64_t find_closest_valid_skmer_in_span(
 // Fills `out` with one presence flag per valid k-mer position of `query`, reusing out's capacity so
 // callers can avoid a per-query heap allocation. search_kmers_in_span() is the wrapper that returns
 // a fresh vector (in-RAM list path and single-query callers).
+// `span_lo`/`span_hi` (inclusive) optionally restrict the search to a sub-range of the span. A
+// matching record must carry the query's k-mer at the same column, and every column mask covers the
+// WHOLE minimizer slot (a super-k-mer's k-mers all contain its minimizer), so any record whose
+// minimizer differs from the query's compares unequal at every column. The bucket is sorted by
+// m_pair, i.e. minimizer-major, so those records form one contiguous run and the caller can bound it
+// from a small side table without changing which records can match — the result is identical, only
+// the probed range shrinks. Defaults cover the whole span (in-RAM list, tests).
 template<typename kuint>
 inline void search_kmers_in_span_into(
     const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
-    const Skmer<kuint>& query, std::vector<uint8_t>& out)
+    const Skmer<kuint>& query, std::vector<uint8_t>& out,
+    int64_t span_lo = 0, int64_t span_hi = -1)
 {
+    if (span_hi < 0) span_hi = list_size - 1;
     auto [query_start_position, query_end_position] = manip.get_valid_kmer_bounds(query);
 
     if(query_end_position < query_start_position) {
@@ -279,7 +288,9 @@ inline void search_kmers_in_span_into(
            "super-k-mer span exceeds MAX_POSSIBLE_KMERS; enlarge the search stack arrays");
 
     // RETURN ON EDGE CASES (SKMER DOES NOT CONTAIN A KMER OR LIST/BUCKET IS EMPTY)
-    if (tot_num_kmers_to_search <= 0 || list_size == 0){
+    // An empty pre-narrowed range means no record carries the query's minimizer, so no k-mer of the
+    // query can be present: answer without a single probe (the common case for absent queries).
+    if (tot_num_kmers_to_search <= 0 || list_size == 0 || span_lo > span_hi){
         out.assign(std::max(0UL, tot_num_kmers_to_search), 0);
         return;
     }
@@ -303,7 +314,7 @@ inline void search_kmers_in_span_into(
     std::fill_n(result, tot_num_kmers_to_search, uint8_t{0});
     std::fill_n(keep_searching, tot_num_kmers_to_search, 1);
     std::fill_n(binary_search_boundaries, tot_num_kmers_to_search,
-        std::make_pair(0LL, static_cast<int64_t>(list_size - 1)));
+        std::make_pair(static_cast<int64_t>(span_lo), static_cast<int64_t>(span_hi)));
     for(size_t i {0}; i < tot_num_kmers_to_search; i++){
         positions_to_search[i] = i;
     }
@@ -441,10 +452,10 @@ inline void search_kmers_in_span_into(
 template<typename kuint>
 inline std::vector<uint8_t> search_kmers_in_span(
     const SkmerManipulator<kuint>& manip, const Skmer<kuint>* list, const int64_t list_size,
-    const Skmer<kuint>& query)
+    const Skmer<kuint>& query, int64_t span_lo = 0, int64_t span_hi = -1)
 {
     std::vector<uint8_t> out;
-    search_kmers_in_span_into<kuint>(manip, list, list_size, query, out);
+    search_kmers_in_span_into<kuint>(manip, list, list_size, query, out, span_lo, span_hi);
     return out;
 }
 
@@ -1426,6 +1437,8 @@ public:
     // and meant for sequential batch use only: it races with the lock-free cache-hit path of bucket().
     void release_bucket(uint64_t b) {
         std::vector<Skmer<kuint>>().swap(m_cache[b]);
+        std::vector<uint32_t>().swap(m_ptbl[b]);
+        m_ptbl_t[b] = 0;
         m_loaded[b].store(0, std::memory_order_relaxed);
     }
 
@@ -1466,8 +1479,9 @@ public:
         const uint64_t bid {bucket_of(query)};
         const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
         const std::vector<Skmer<kuint>>& span = bucket(bid);
+        const auto [lo, hi] {prefix_range(bid, trunc)};
         return km::sortedlist::search_kmers_in_span<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc);
+            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, lo, hi);
     }
 
     // Like query_skmer but writes flags into `out`, reusing its capacity (no per-query allocation).
@@ -1475,8 +1489,9 @@ public:
         const uint64_t bid {bucket_of(query)};
         const Skmer<kuint> trunc {km::truncate_skmer<kuint, kuint>(m_manip.k, m_manip.m, m_quotient_bits, query)};
         const std::vector<Skmer<kuint>>& span = bucket(bid);
+        const auto [lo, hi] {prefix_range(bid, trunc)};
         km::sortedlist::search_kmers_in_span_into<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, out);
+            m_manip, span.data(), static_cast<int64_t>(span.size()), trunc, out, lo, hi);
     }
 
     // Driver path for gen > store (the wide query is parsed and routed elsewhere): search a known
@@ -1484,8 +1499,9 @@ public:
     // minimizer (bucket_of_phi_min) computed before down-conversion.
     void query_into(uint64_t bucket_id, const Skmer<kuint>& truncated_query, std::vector<uint8_t>& out) {
         const std::vector<Skmer<kuint>>& span = bucket(bucket_id);
+        const auto [lo, hi] {prefix_range(bucket_id, truncated_query)};
         km::sortedlist::search_kmers_in_span_into<kuint>(
-            m_manip, span.data(), static_cast<int64_t>(span.size()), truncated_query, out);
+            m_manip, span.data(), static_cast<int64_t>(span.size()), truncated_query, out, lo, hi);
     }
 
     std::vector<std::vector<uint8_t>> query_skmer_batch(const std::vector<Skmer<kuint>>& query_skmers) {
@@ -1531,6 +1547,9 @@ private:
             off += static_cast<std::streamoff>(dir[b].count) * static_cast<std::streamoff>(sizeof(Skmer<kuint>));
         }
         m_cache.assign(m_n_buckets, {});
+        m_ptbl.assign(m_n_buckets, {});
+        m_ptbl_t.assign(m_n_buckets, 0);
+        m_mini_bits = (2 * m >= quotient_bits) ? (2 * m - quotient_bits) : 0;
         m_loaded = std::make_unique<std::atomic<uint8_t>[]>(m_n_buckets); // value-initialized to 0
         m_load_mtx = std::make_unique<std::mutex>();
 
@@ -1563,9 +1582,61 @@ private:
                 if (m_in.fail())
                     throw std::runtime_error("Error reading bucket payload from sorted skmer list");
             }
+            build_prefix_table(b);
             m_loaded[b].store(1, std::memory_order_release);
         }
         return m_cache[b];
+    }
+
+    // Per-bucket minimizer-prefix table. Records in a bucket are sorted by m_pair, whose most
+    // significant field is the (quotiented) minimizer slot, so records sharing the top `m_ptbl_t`
+    // bits of that slot form one contiguous run: m_ptbl[b][p] is the first index of run p, and
+    // m_ptbl[b][p+1] its end. A query can therefore start its per-column binary searches on that run
+    // instead of the whole bucket.
+    //
+    // Why it is worth a side table: perf attributes ~16% of stream-query wall time at k=31 to the
+    // single line that reads a probed record's prefix/suffix sizes — that is the L3 miss on the
+    // record, and the search pays ~log2(bucket) of them per column group. Narrowing by 2^t records
+    // removes t of those probes and leaves the rest inside a range of a few cache lines. The table
+    // itself is ~n/8 uint32 entries (a few KB), built in one O(n) pass at load, and is RAM-only —
+    // no on-disk format change.
+    //
+    // t is chosen so the table stays ~1/8 of the bucket and never exceeds the minimizer width; a
+    // bucket below PTBL_MIN_RECORDS keeps t=0 (whole-bucket range, i.e. exactly the old behaviour).
+    void build_prefix_table(uint64_t b) {
+        static constexpr uint64_t PTBL_MIN_RECORDS {512};
+        static constexpr uint64_t PTBL_MAX_BITS {12};
+        std::vector<uint32_t>& tbl = m_ptbl[b];
+        const uint64_t n {m_count[b]};
+        m_ptbl_t[b] = 0;
+        tbl.clear();
+        if (n < PTBL_MIN_RECORDS || m_mini_bits == 0) return;
+        uint64_t t {0};
+        while (t + 1 <= PTBL_MAX_BITS && t + 1 <= m_mini_bits && (uint64_t{1} << (t + 1)) <= n / 8) ++t;
+        if (t == 0) return;
+        const uint64_t slots {uint64_t{1} << t};
+        const uint64_t shift {m_mini_bits - t};
+        const std::vector<Skmer<kuint>>& rec = m_cache[b];
+        tbl.assign(slots + 1, 0);
+        // Counting pass, then prefix sum: records are already grouped, but counting is O(n) with a
+        // single pass either way and does not assume anything beyond the sort order.
+        for (uint64_t i {0}; i < n; ++i) {
+            const uint64_t p {static_cast<uint64_t>(m_manip.minimizer(rec[i]) >> shift)};
+            ++tbl[p + 1];
+        }
+        for (uint64_t p {0}; p < slots; ++p) tbl[p + 1] += tbl[p];
+        m_ptbl_t[b] = t;
+    }
+
+    // [lo, hi] (inclusive) of the records that can match `truncated_query` in bucket `b`, from the
+    // prefix table. Falls back to the whole bucket when the bucket has no table.
+    std::pair<int64_t, int64_t> prefix_range(uint64_t b, const Skmer<kuint>& truncated_query) const {
+        const uint64_t t {m_ptbl_t[b]};
+        if (t == 0) return {0, static_cast<int64_t>(m_count[b]) - 1};
+        const uint64_t shift {m_mini_bits - t};
+        const uint64_t p {static_cast<uint64_t>(m_manip.minimizer(truncated_query) >> shift)};
+        const std::vector<uint32_t>& tbl = m_ptbl[b];
+        return {static_cast<int64_t>(tbl[p]), static_cast<int64_t>(tbl[p + 1]) - 1};
     }
 
     SkmerManipulator<kuint> m_manip;
@@ -1579,6 +1650,9 @@ private:
     std::vector<uint64_t> m_count;        // per-bucket super-k-mer count
     std::vector<std::streamoff> m_byte_offset; // per-bucket payload offset in the file
     std::vector<std::vector<Skmer<kuint>>> m_cache; // lazily-filled per-bucket sub-lists
+    std::vector<std::vector<uint32_t>> m_ptbl;      // per-bucket minimizer-prefix table (see build_prefix_table)
+    std::vector<uint64_t> m_ptbl_t;                 // per-bucket prefix width in bits (0 = no table)
+    uint64_t m_mini_bits {0};                       // bits of the STORED minimizer slot = 2m - b
     // Per-bucket "is m_cache[b] populated" flags, atomic so query threads can check without taking
     // the lock. Held via unique_ptr (atomics aren't movable) to keep the reader move-constructible.
     std::unique_ptr<std::atomic<uint8_t>[]> m_loaded;
