@@ -782,6 +782,8 @@ class SortedVirtualSkmerList {
     // buckets a single compactor processes instead of being reallocated per bucket.
     std::vector<uint32_t> m_csr_off;
     std::vector<uint32_t> m_csr_idx;
+    struct KeyId { typename Skmer<kuint>::pair key; uint32_t id; };
+    std::vector<KeyId> m_keybuf;                           // reused (key, id) sort buffer
     std::vector<uint32_t> m_csr_cur;                       // placement cursors (pass 2)
     std::vector<int64_t>  m_csr_diff;                      // per-column count difference array (pass 1)
     // Overlap/chain buffers, reused across every column of every bucket (see
@@ -839,20 +841,30 @@ class SortedVirtualSkmerList {
      * the returned vector is identical element for element. **/
     std::vector<uint64_t> sort_column_from_csr(std::vector<Skmer<kuint>> const& enumeration, uint64_t pos) {
         const uint32_t lo {m_csr_off[pos]}, hi {m_csr_off[pos + 1]};
-        std::vector<uint64_t> valid_skmer_ids(hi - lo);
-        for (uint32_t i {lo}; i < hi; ++i) valid_skmer_ids[i - lo] = m_csr_idx[i];
-
-        const auto col_less = [this, pos, &enumeration](uint64_t id1, uint64_t id2){
-            return m_manip.kmer_compare(enumeration[id1], enumeration[id2], pos) < 0;
-        };
-        if (!std::is_sorted(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less))
-            std::sort(valid_skmer_ids.begin(), valid_skmer_ids.end(), col_less);
-
-        auto last_value = std::unique(valid_skmer_ids.begin(), valid_skmer_ids.end(),
-            [this, pos, &enumeration](uint64_t id1, uint64_t id2){
-                return m_manip.kmer_compare(enumeration[id1], enumeration[id2], pos) == 0;
-            });
-        valid_skmer_ids.erase(last_value, valid_skmer_ids.end());
+        const uint32_t n {hi - lo};
+        // Sort on PRE-EXTRACTED keys rather than through kmer_compare. The old comparator masked
+        // BOTH operands on every comparison and made two random accesses into the enumeration
+        // (24-72 B records, scattered) — O(n log n) cache-missing indirections per column. Extracting
+        // masked_kmer once per element up front turns the sort into a scan over one contiguous array.
+        //
+        // Byte-identical by construction, not by luck: element i of the key array corresponds to
+        // element i of the old id array, and the two comparators return the same boolean for
+        // corresponding elements, so introsort executes the same comparisons and the same swaps and
+        // produces the same permutation — including how it resolves equal keys, which matters
+        // because std::unique below keeps the first of each equal run and that id becomes a
+        // virtual skmer's last_id.
+        m_keybuf.resize(n);
+        for (uint32_t i {0}; i < n; ++i) {
+            const uint32_t id {m_csr_idx[lo + i]};
+            m_keybuf[i] = { m_manip.masked_kmer(enumeration[id], pos), id };
+        }
+        const auto key_less = [](const KeyId& a, const KeyId& b){ return a.key < b.key; };
+        if (!std::is_sorted(m_keybuf.begin(), m_keybuf.end(), key_less))
+            std::sort(m_keybuf.begin(), m_keybuf.end(), key_less);
+        auto last = std::unique(m_keybuf.begin(), m_keybuf.end(),
+            [](const KeyId& a, const KeyId& b){ return a.key == b.key; });
+        std::vector<uint64_t> valid_skmer_ids(static_cast<size_t>(last - m_keybuf.begin()));
+        for (size_t i {0}; i < valid_skmer_ids.size(); ++i) valid_skmer_ids[i] = m_keybuf[i].id;
         return valid_skmer_ids;
     }
 
