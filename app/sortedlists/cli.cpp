@@ -147,8 +147,11 @@ CLIResult parse_cli(int argc, char** argv) {
 
     setop->add_flag("--no-compact", setop_opts.no_compact,
         "Skip re-compacting the result into super-k-mers: emit one record per result k-mer. "
-        "Much faster (avoids the dominant cost) but a larger output file; still a valid, "
-        "queryable sorted list. Ignored by the *_size variants. Applies to every combined-mode output.");
+        "NOT faster in practice: the emitted records still have to be sorted, which costs as much as "
+        "chaining them at k=31 and more at k=63, and the output is 8x (k=31) to 15x (k=63) larger, so "
+        "the write costs more than the chaining saved (benchmark/results/journals/SETOP_RECHAIN.md). "
+        "Still a valid, queryable sorted list, for callers that want the merge output raw. "
+        "Ignored by the *_size variants. Applies to every combined-mode output.");
 
     setop->add_option("-t,--threads", setop_opts.threads,
         "Worker threads for the per-bucket merge (default 8). Buckets are processed in parallel; "

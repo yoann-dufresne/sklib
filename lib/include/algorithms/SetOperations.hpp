@@ -531,11 +531,16 @@ inline SetSizes set_sizes(BucketedSkmerListReader<store>& A, BucketedSkmerListRe
 // single-k-mer skmers -> re-compact into virtual super-k-mers via generate_sorted_list_from_enumeration
 // (the same path construction uses; safe at b>0 since it touches only the quotient-regenerated masks)
 // -> append. Records stay at the quotiented store width, so no extra truncation before writing.
-// `no_compact`: skip the per-bucket super-k-mer re-compaction (the dominant cost). The merge already
-// emits the kept k-mers; we sort that bucket's single-k-mer skmers by skmer order and write them as-is.
+// `no_compact`: skip the per-bucket super-k-mer re-compaction. The merge already emits the kept
+// k-mers; we sort that bucket's single-k-mer skmers by skmer order and write them as-is.
 // The result stays a valid, queryable sorted list (each record holds exactly one k-mer, valid at one
 // column; within a column skmer order == k-mer order, so the per-column query invariant holds), but the
-// file is larger (one record per k-mer instead of ~4-5 k-mers per super-k-mer).
+// file is larger (one record per k-mer instead of ~8 at k=31, ~16 at k=63).
+// It is NOT a speed shortcut, despite being the phase that dominates the per-bucket wall time (49% of
+// it for a difference up to 74% for a union, at -t1): the sort that replaces the chaining costs as much at k=31 and 1.3-1.6x more at k=63, and the
+// 8-15x bigger write more than eats the difference -- end to end it lost in 395 of 400 measured
+// configurations (benchmark/results/journals/SETOP_RECHAIN.md). Kept for callers that want the raw
+// merge output.
 template<typename store>
 inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkmerListReader<store>& B,
                                   const std::string& out_path,

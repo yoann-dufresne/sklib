@@ -19,13 +19,14 @@ detail: how to run each script and what knobs exist.
   `../data/tools_src/` and writes `tools.env`. Unbuilt tools are skipped automatically.
 - Figures: `python3 -m venv .venv && .venv/bin/pip install pandas matplotlib`.
 
-## The four scripts
+## The five scripts
 
 ```bash
 bash construct.sh        # exp 1 — build per (dataset,tool,k/m,threads)
 bash query_single.sh     # exp 2 — individual k-mer queries over PRESENCE
 bash query_stream.sh     # exp 3 — sequence queries over PRESENCE
 bash setop.sh            # exp 4 — set ops over JACCARD (unitary + joint, materialize + size)
+bash setop_rechain.sh    # exp 5 — sklib-only: cost of the result re-chaining (count / --no-compact / default)
 ```
 
 Each loops `dataset → tool (capability-gated) → k,m → threads`, builds/reuses a cached
@@ -92,8 +93,9 @@ generator (`plot.py`) sit at the top level. Everything else is grouped by role:
 | `producer/` | isolated super-k-mer producer throughput + bit-exact digest gate | `producer_{bench,median,setcheck,perf}.sh` |
 | `profiling/` | construct/set-op perf attribution | `flamegraph_construct.sh`, `diag_perf.sh`, `construct_scaling.sh`, `diag_plot.py`; `bottleneck/` = set-op `_size`-vs-materialize decomposition + `perf` categorisation |
 | `microbench/` | isolated single-thread set-op microbench + a focused KMC-vs-sklib joint compare | `union_bench.sh` / `union_ab.sh` (see [`../union_bench/README.md`](../union_bench/README.md)), `setop_joint_compare.sh` + `setop_joint_report.py` |
-| `verify/` | correctness vs the KMC oracle (set-equality, determinism) | `large_scale_e2e.sh`, `greedy_chaining_verif.sh` |
+| `verify/` | correctness vs the KMC oracle (set-equality, determinism) | `large_scale_e2e.sh`, `greedy_chaining_verif.sh`, `rechain_verif.sh` |
 
+- `setop_rechain.sh` + `rechain_report.py` → the re-chaining study ([journal](../results/journals/SETOP_RECHAIN.md)); `verify/rechain_verif.sh` is its correctness gate.
 - `plot.py [results_dir]` → per-experiment figures in `results/latest/figs/` (needs `.venv`).
 - `verify/large_scale_e2e.sh` is correctness, not a benchmark; `tests/setop_multi_verif.sh`
   cross-validates combined set ops vs KMC.

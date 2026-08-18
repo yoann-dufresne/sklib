@@ -14,6 +14,7 @@ baselines) and quoted in the journals.
 | `setops_scaling.csv` | scaling across k (15→51) on paired genomes. |
 | `setops_ksweep.csv` | k-mer-size sweep (15→63). |
 | `setops_threads.csv` | thread scaling (t ∈ 1,2,4,8,16,22). |
+| `setops_rechain.csv` | cost of the result re-chaining: every (dataset, k, t, op, J) timed in three modes (cardinality-only / `--no-compact` / default), with the `-t1` phase split and the output size. See [`SETOP_RECHAIN.md`](../journals/SETOP_RECHAIN.md). |
 | `setops_parallel.csv` | threaded set ops, sklib `-t` vs KMC vs FMSI (backs `SETOPS_REPORT.md` §7). |
 | `setops_multi_v1.csv` / `setops_multi_v2.csv` | combined single-pass set ops, single- / multi-thread. |
 | `setops_wide_width.csv` | wide-store (`__uint128`/`kuint256`) merge timings (backs `SETOPS_WIDE_WIDTH.md`). |

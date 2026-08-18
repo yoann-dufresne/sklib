@@ -12,6 +12,7 @@ thirdparty/FlameGraph/
 # Benchmark harness: generated outputs, genome cache, competitor builds, venv.
 # Committed under benchmark/results/: runs/ + journals/ + reference/ (curated snapshots).
 benchmark/results/latest/
+benchmark/results/rechain/
 benchmark/results/union_bench/
 benchmark/data/genomes/
 benchmark/data/tools_src/

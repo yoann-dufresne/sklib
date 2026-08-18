@@ -9,6 +9,7 @@ lives in [`../reference/`](../reference/) (plus the git-ignored microbench scrat
 - [`SETOPS_REPORT.md`](SETOPS_REPORT.md) — sklib vs KMC / CBL / FMSI on set ops: time, peak RAM, correctness; single- and multi-core, scaling, overlap, memory.
 - [`SETOPS_BOTTLENECKS.md`](SETOPS_BOTTLENECKS.md) — `perf`/callgrind breakdown of set-op time (≈85–91 % is post-merge re-compaction) and the implemented speedups.
 - [`SETOPS_MULTI_REPORT.md`](SETOPS_MULTI_REPORT.md) — combined single-pass set ops (`--*-out`/`--sizes`) vs the sequential single-op runs, sklib & KMC.
+- [`SETOP_RECHAIN.md`](SETOP_RECHAIN.md) — what materializing a result costs: phase split (the re-chaining is ~60 % of the per-bucket wall at `-t1`), why `--no-compact` is *not* a shortcut (it loses in 395/400 configs), and the closure check `A ∪ A` = A's own record count.
 - [`SETOPS_WIDE_WIDTH.md`](SETOPS_WIDE_WIDTH.md) — width-dispatched merge for the wide stores (`__uint128`/`kuint256`): cached masked k-mers, single 3-way compare.
 - [`UNION_SPEEDUP.md`](UNION_SPEEDUP.md) — single-thread `set_union` optimization journal (driven by the `microbench/union_bench` harness).
 - [`XOR_SPEEDUP.md`](XOR_SPEEDUP.md) — symmetric-difference (`xor`) tuning, incl. the identical-record drop fast path at high Jaccard.
