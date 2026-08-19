@@ -14,6 +14,8 @@ lives in [`../reference/`](../reference/) (plus the git-ignored microbench scrat
 - [`UNION_SPEEDUP.md`](UNION_SPEEDUP.md) — single-thread `set_union` optimization journal (driven by the `microbench/union_bench` harness).
 - [`XOR_SPEEDUP.md`](XOR_SPEEDUP.md) — symmetric-difference (`xor`) tuning, incl. the identical-record drop fast path at high Jaccard.
 
+- [`QUERY_V0150.md`](QUERY_V0150.md) — membership queries re-measured with v0.15.0 (+31–51 % over v0.11.0, sklib passes sbwt-rs from k=31), which version really produced the published figures, and the battery-vs-AC control that invalidated a first re-run.
+
 ### Construction & producer
 - [`CONSTRUCT_SPEEDUP.md`](CONSTRUCT_SPEEDUP.md) — parallel per-bucket phase-2 compaction (`-t`); byte-identical index at any thread count.
 - [`CONSTRUCT_SCALING_DIAG.md`](CONSTRUCT_SCALING_DIAG.md) — Amdahl analysis of construction scaling (the serial phase-1 producer caps speedup).

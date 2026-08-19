@@ -15,6 +15,9 @@ baselines) and quoted in the journals.
 | `setops_ksweep.csv` | k-mer-size sweep (15→63). |
 | `setops_threads.csv` | thread scaling (t ∈ 1,2,4,8,16,22). |
 | `setops_rechain.csv` | cost of the result re-chaining: every (dataset, k, t, op, J) timed in three modes (cardinality-only / `--no-compact` / default), with the `-t1` phase split and the output size. See [`SETOP_RECHAIN.md`](../journals/SETOP_RECHAIN.md). |
+| `query_single_v0.15.0.csv` | individual k-mer queries, sklib v0.15.0 on AC power, four datasets x the k ladder x presence sweep x t=1,8. See [`QUERY_V0150.md`](../journals/QUERY_V0150.md). |
+| `query_stream_v0.15.0.csv` | same grid, sequence (stream) queries. |
+| `query_machine_control.csv` | machine-state controls behind that campaign: sklib v0.13.2 on battery vs AC, and sshash / sbwt-rs re-measured against their June figures. |
 | `setops_parallel.csv` | threaded set ops, sklib `-t` vs KMC vs FMSI (backs `SETOPS_REPORT.md` §7). |
 | `setops_multi_v1.csv` / `setops_multi_v2.csv` | combined single-pass set ops, single- / multi-thread. |
 | `setops_wide_width.csv` | wide-store (`__uint128`/`kuint256`) merge timings (backs `SETOPS_WIDE_WIDTH.md`). |

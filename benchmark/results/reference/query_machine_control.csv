@@ -1,0 +1,25 @@
+timestamp,host,cpu,tool,tool_version,dataset,k,m,threads,presence,n_kmers,present_kmers,absent_kmers,time_s,peak_rss_kb,throughput_Mkmer_s
+2026-08-19T09:40:51+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sklib,sklib-0.13.2,chr1,31,15,1,0,200000,0,200000,0.608,617904,0.329
+2026-08-19T09:40:53+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sklib,sklib-0.13.2,chr1,31,15,1,50,200000,100000,100000,0.596,617960,0.336
+2026-08-19T09:40:55+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sklib,sklib-0.13.2,chr1,31,15,1,100,200000,200000,0,0.609,617920,0.328
+2026-08-19T09:49:37+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sshash,sshash-/home/yoann/bioinfo/sklib/benchmark/data/tools_src/sshash/build/sshash --version ,chr1,31,15,1,0,200000,0,200000,0.287,245164,0.697
+2026-08-19T09:49:38+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sshash,sshash-/home/yoann/bioinfo/sklib/benchmark/data/tools_src/sshash/build/sshash --version ,chr1,31,15,1,50,200000,100000,100000,0.303,245176,0.660
+2026-08-19T09:49:38+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sshash,sshash-/home/yoann/bioinfo/sklib/benchmark/data/tools_src/sshash/build/sshash --version ,chr1,31,15,1,100,200000,200000,0,0.305,245164,0.656
+2026-08-19T09:55:02+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,15,7,1,0,200000,0,200000,0.282,142124,0.709
+2026-08-19T09:55:03+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,15,7,1,50,200000,100000,100000,0.281,142316,0.712
+2026-08-19T09:55:04+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,15,7,1,100,200000,200000,0,0.276,142112,0.725
+2026-08-19T09:56:23+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,21,11,1,0,200000,0,200000,0.310,237468,0.645
+2026-08-19T09:56:25+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,21,11,1,50,200000,100000,100000,0.418,237380,0.478
+2026-08-19T09:56:26+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,21,11,1,100,200000,200000,0,0.499,237468,0.401
+2026-08-19T09:57:53+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,31,15,1,0,200000,0,200000,0.315,254892,0.635
+2026-08-19T09:57:55+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,31,15,1,50,200000,100000,100000,0.580,254932,0.345
+2026-08-19T09:57:58+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,31,15,1,100,200000,200000,0,0.822,255020,0.243
+2026-08-19T10:00:06+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,41,19,1,0,200000,0,200000,0.316,264880,0.633
+2026-08-19T10:00:08+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,41,19,1,50,200000,100000,100000,0.767,264836,0.261
+2026-08-19T10:00:11+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,41,19,1,100,200000,200000,0,1.145,264648,0.175
+2026-08-19T10:02:27+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,51,25,1,0,200000,0,200000,0.321,270504,0.623
+2026-08-19T10:02:30+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,51,25,1,50,200000,100000,100000,0.928,270548,0.216
+2026-08-19T10:02:34+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,51,25,1,100,200000,200000,0,1.455,270488,0.137
+2026-08-19T10:04:59+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,63,31,1,0,200000,0,200000,0.332,274308,0.602
+2026-08-19T10:05:02+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,63,31,1,50,200000,100000,100000,1.082,274160,0.185
+2026-08-19T10:05:08+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sbwtrs,sbwt-rs-0.2.0,chr1,63,31,1,100,200000,200000,0,1.818,274388,0.110
