@@ -167,6 +167,33 @@ def size_table(rows):
     return out
 
 
+# ---- view 6: the chr1 grid of the paper (operation x Jaccard, sklib vs KMC) --
+KMC_CSV = "benchmark/results/runs/full_run_2026-06/data/setop.csv"
+
+
+def grid_table(rows, dataset="chr1", k=31, threads=1, kmc_csv=KMC_CSV):
+    """Time per operation and per Jaccard target, sklib against KMC.
+
+    KMC comes from the reference campaign, the only competitor measured over
+    the whole grid; its rows are medians of the repetitions, like sklib's.
+    """
+    import os
+    sk = {}
+    for r in rows:
+        if r["dataset"] == dataset and r["k"] == k and r["threads"] == threads and r["mode"] == "compact":
+            sk[(r["op"], r["jaccard_target"])] = r["time_s"]
+    kmc = defaultdict(list)
+    if os.path.exists(kmc_csv):
+        with open(kmc_csv) as fh:
+            for r in csv.DictReader(fh):
+                if (r["tool"] == "kmc" and r["dataset"] == dataset and r["k"] == str(k)
+                        and r["threads"] == str(threads) and r["mode"] == "materialize"
+                        and r["joint"] == "0"):
+                    kmc[(r["op"], r["jaccard_target"])].append(float(r["time_s"]))
+    js = sorted({j for _, j in sk}, key=float)
+    return js, sk, {key: median(v) for key, v in kmc.items()}
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     path = args[0] if args else "benchmark/results/rechain/setop_rechain.csv"
@@ -224,6 +251,27 @@ def main():
     for ds, k, got, want in closure_check(rows):
         flag = "OK" if got == want else "MISMATCH"
         print(f"{ds:10} k={k:<3} union(A,A)={got}  index(A)={want}  {flag}")
+    print("\n== 6. chr1 grid, k=31, t=1: time (s) per operation and Jaccard target ==")
+    js, sk, kmc = grid_table(load(path, keep_empty=True))
+    if sk:
+        print(f"{'J':>5}" + "".join(f"{o:>18}" for o in OP_ORDER))
+        print(f"{'':>5}" + "".join(f"{'sklib':>9}{'kmc':>9}" for _ in OP_ORDER))
+        for j in js:
+            line = ""
+            for op in OP_ORDER:
+                s_ = sk.get((op, j))
+                k_ = kmc.get((op, j))
+                line += f"{s_:>9.2f}" if s_ is not None else f"{'--':>9}"
+                line += f"{k_:>9.2f}" if k_ is not None else f"{'--':>9}"
+            print(f"{j:>5}" + line)
+        spread = ""
+        for op in OP_ORDER:
+            sv = [sk[(op, j)] for j in js if (op, j) in sk]
+            kv = [kmc[(op, j)] for j in js if (op, j) in kmc]
+            spread += f"{max(sv)/min(sv):>8.1f}x" if sv else f"{'--':>9}"
+            spread += f"{max(kv)/min(kv):>8.2f}x" if kv else f"{'--':>9}"
+        print(f"{'spread':>5}" + spread)
+
 
 
 def closure_check(rows, idx_root=None):
@@ -245,6 +293,7 @@ def closure_check(rows, idx_root=None):
                 n = int(line.split("=", 1)[1].strip().strip("'\""))
         out.append((r["dataset"], r["k"], r["out_records"], n))
     return sorted(set(out))
+
 
 
 if __name__ == "__main__":
