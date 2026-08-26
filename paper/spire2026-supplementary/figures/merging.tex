@@ -1,0 +1,296 @@
+\documentclass[tikz,border=0mm]{standalone}
+\usepackage{xcolor}
+\usetikzlibrary{calc,arrows.meta}
+
+\begin{document}
+
+\definecolor{minimizergreen}{RGB}{0,150,70}
+\definecolor{overlapred}{RGB}{210,20,20}
+\definecolor{overlappurple}{RGB}{108,59,170}
+
+\newcommand{\minimizer}[1]{\textcolor{minimizergreen}{#1}}
+
+\tikzset{
+  kmer/.style={
+    font=\ttfamily\large,
+    inner sep=1pt,
+    outer sep=0pt
+  },
+  section title/.style={
+    font=\normalsize\bfseries,
+    align=center
+  },
+  section note/.style={
+    font=\small,
+    align=center
+  },
+  overlap/.style={
+    line width=0.8pt,
+    overlapred
+  },
+  valid overlap/.style={
+    line width=0.6pt,
+    black!40
+  },
+   woverlap/.style={
+    line width=0.8pt,
+    overlappurple
+  },
+  kmer pointer dot/.style={fill=black, draw=black},
+  kmer pointer arrow/.style={
+  -{Stealth[length=4pt,width=4pt]},
+  line width=0.4pt
+    }
+}
+
+% #1 = section id
+% #2 = x shift
+% #3 = y shift
+% #4 = title
+% #5 = note
+% #6 = number of top elements faded in LEFT column
+% #7 = number of top elements faded in RIGHT column
+% #8 = opacity for faded elements, e.g. 0.25
+\newcommand{\drawKmerSectionOne}[8]{%
+  \begin{scope}[shift={(#2,#3)}]
+
+    % compute opacities for left column
+    \pgfmathsetmacro{\opLone}{(#6>=1 ? #8 : 1)}
+    \pgfmathsetmacro{\opLtwo}{(#6>=2 ? #8 : 1)}
+    \pgfmathsetmacro{\opLthree}{(#6>=3 ? #8 : 1)}
+
+    % compute opacities for right column
+    \pgfmathsetmacro{\opRone}{(#7>=1 ? #8 : 1)}
+    \pgfmathsetmacro{\opRtwo}{(#7>=2 ? #8 : 1)}
+    \pgfmathsetmacro{\opRthree}{(#7>=3 ? #8 : 1)}
+
+    % top and bottom text
+    \node[section title] at (0.5,0.5) {#4};
+    % \node[section note, anchor=north] at (0.8,-1.4) {#5};
+
+    % left column k-mers
+    \node[kmer, opacity=\opLone]   (P#1L1) at (0,0)    {C\minimizer{AA}};
+    \node[kmer, opacity=\opLtwo]   (P#1L2) at (0,-0.6) {C\minimizer{AC}};
+    \node[kmer, opacity=\opLthree] (P#1L3) at (0,-1.2) {G\minimizer{AA}};
+
+    % right column k-mers
+    \node[kmer, opacity=\opRone]   (P#1R1) at (1,0)    {\minimizer{AA}C};
+    \node[kmer, opacity=\opRtwo]   (P#1R2) at (1,-0.6) {\minimizer{AA}G};
+    \node[kmer, opacity=\opRthree] (P#1R3) at (1,-1.2) {\minimizer{AC}T};
+
+    % named left/right coordinates
+    \coordinate (P#1L1L) at (P#1L1.west);
+    \coordinate (P#1L1R) at (P#1L1.east);
+    \coordinate (P#1L2L) at (P#1L2.west);
+    \coordinate (P#1L2R) at (P#1L2.east);
+    \coordinate (P#1L3L) at (P#1L3.west);
+    \coordinate (P#1L3R) at (P#1L3.east);
+
+    \coordinate (P#1R1L) at (P#1R1.west);
+    \coordinate (P#1R1R) at (P#1R1.east);
+    \coordinate (P#1R2L) at (P#1R2.west);
+    \coordinate (P#1R2R) at (P#1R2.east);
+    \coordinate (P#1R3L) at (P#1R3.west);
+    \coordinate (P#1R3R) at (P#1R3.east);
+
+  \end{scope}
+}
+
+\newcommand{\drawKmerSectionTwo}[8]{%
+  \begin{scope}[shift={(#2,#3)}]
+
+    % compute opacities for left column
+    \pgfmathsetmacro{\opLone}{(#6>=1 ? #8 : 1)}
+    \pgfmathsetmacro{\opLtwo}{(#6>=2 ? #8 : 1)}
+    \pgfmathsetmacro{\opLthree}{(#6>=3 ? #8 : 1)}
+
+    % compute opacities for right column
+    \pgfmathsetmacro{\opRone}{(#7>=1 ? #8 : 1)}
+    \pgfmathsetmacro{\opRtwo}{(#7>=2 ? #8 : 1)}
+    \pgfmathsetmacro{\opRthree}{(#7>=3 ? #8 : 1)}
+
+    % top and bottom text
+    \node[section title] at (0.5,0.5) {#4};
+    % \node[section note, anchor=north] at (0.8,-1.4) {#5};
+
+    % left column k-mers
+    \node[kmer, opacity=\opLone]   (P#1L1) at (0,0)    {A\minimizer{AA}};
+    \node[kmer, opacity=\opLtwo]   (P#1L2) at (0,-0.6) {T\minimizer{AG}};
+    \node[kmer, opacity=\opLthree] (P#1L3) at (0,-1.2) {G\minimizer{AG}};
+
+    % right column k-mers
+    \node[kmer, opacity=\opRone]   (P#1R1) at (1,0)    {\minimizer{AA}T};
+    \node[kmer, opacity=\opRtwo]   (P#1R2) at (1,-0.6) {\minimizer{AA}G};
+    \node[kmer, opacity=\opRthree] (P#1R3) at (1,-1.2) {\minimizer{AC}A};
+
+    % named left/right coordinates
+    \coordinate (P#1L1L) at (P#1L1.west);
+    \coordinate (P#1L1R) at (P#1L1.east);
+    \coordinate (P#1L2L) at (P#1L2.west);
+    \coordinate (P#1L2R) at (P#1L2.east);
+    \coordinate (P#1L3L) at (P#1L3.west);
+    \coordinate (P#1L3R) at (P#1L3.east);
+
+    \coordinate (P#1R1L) at (P#1R1.west);
+    \coordinate (P#1R1R) at (P#1R1.east);
+    \coordinate (P#1R2L) at (P#1R2.west);
+    \coordinate (P#1R2R) at (P#1R2.east);
+    \coordinate (P#1R3L) at (P#1R3.west);
+    \coordinate (P#1R3R) at (P#1R3.east);
+
+  \end{scope}
+}
+
+\newcommand{\drawOverlap}[3]{%
+  \draw[overlap] (P#1L#2R) -- (P#1R#3L);
+}
+
+% Draw arrow above one k-mer.
+% Usage: \drawKmerArrow{section}{L or R}{row}
+\newcommand{\drawKmerArrow}[4][]{%
+  \draw[kmer pointer arrow,#1]
+    ($(P#2#3#4.north)+(0,0.2)$) --
+    ($(P#2#3#4.north)+(0,0.01)$);
+}
+
+% Draw filled circle above one k-mer.
+% Usage: \drawKmerDot{section}{L or R}{row}
+\newcommand{\drawKmerDot}[4][]{%
+  \fill[kmer pointer dot,#1]
+    ($(P#2#3#4.north)+(0,0.1)$) circle (1.2pt);
+}
+
+\begin{tikzpicture}
+\drawKmerSectionOne{1}{0}{0}
+  {List A}
+  {Some note}
+  {0}   % fade first 2 elements of left column
+  {0}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{2}{2}{0}
+  {List B}
+  {Some note}
+  {0}   % fade first 2 elements of left column
+  {0}   % fade first 1 element of right column
+  {0.25}% opacity
+
+% \drawOverlap{1}{1}{1}
+% \drawOverlap{1}{2}{3}
+
+\drawKmerArrow{1}{L}{1}
+\drawKmerDot{1}{R}{1}
+\drawKmerArrow{2}{L}{1}
+\drawKmerDot{2}{R}{1}
+
+\drawKmerSectionOne{3}{4.5}{0}
+  {List A}
+  {Some note}
+  {0}   % fade first 2 elements of left column
+  {1}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{4}{6.5}{0}
+  {List B}
+  {Some note}
+  {1}   % fade first 2 elements of left column
+  {0}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerArrow{3}{L}{1}
+\drawKmerDot{3}{R}{2}
+\drawKmerArrow{4}{L}{2}
+\drawKmerDot{4}{R}{1}
+
+
+\drawKmerSectionOne{5}{9}{0}
+  {List A}
+  {Some note}
+  {1}   % fade first 2 elements of left column
+  {1}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{6}{11}{0}
+  {List B}
+  {Some note}
+  {1}   % fade first 2 elements of left column
+  {1}   % fade first 1 element of right column
+  {0.25}% opacity
+% \begin{scope}[shift={(\rightX,\rightY)}]
+% \end{scope}
+
+\drawKmerArrow{5}{L}{2}
+\drawKmerDot{5}{R}{2}
+\drawKmerArrow{6}{L}{2}
+\drawKmerDot{6}{R}{2}
+
+
+%%%%%%%%%%%%%%%
+% SECOND ROW
+%%%%%%%%%%%%%%%
+
+
+\drawKmerSectionOne{7}{0}{-2.5}
+  {List A}
+  {Some note}
+  {2}   % fade first 2 elements of left column
+  {2}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{8}{2}{-2.5}
+  {List B}
+  {Some note}
+  {1}   % fade first 2 elements of left column
+  {2}   % fade first 1 element of right column
+  {0.25}% opacity
+
+% \drawOverlap{1}{1}{1}
+% \drawOverlap{1}{2}{3}
+
+\drawKmerArrow{7}{L}{3}
+\drawKmerDot{7}{R}{3}
+\drawKmerArrow{8}{L}{2}
+\drawKmerDot{8}{R}{3}
+
+\drawKmerSectionOne{9}{4.5}{-2.5}
+  {List A}
+  {Some note}
+  {2}   % fade first 2 elements of left column
+  {2}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{10}{6.5}{-2.5}
+  {List B}
+  {Some note}
+  {2}   % fade first 2 elements of left column
+  {3}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerArrow{9}{L}{3}
+\drawKmerDot{9}{R}{3}
+\drawKmerArrow{10}{L}{3}
+
+
+
+\drawKmerSectionOne{11}{9}{-2.5}
+  {List A}
+  {Some note}
+  {3}   % fade first 2 elements of left column
+  {3}   % fade first 1 element of right column
+  {0.25}% opacity
+
+\drawKmerSectionTwo{12}{11}{-2.5}
+  {List B}
+  {Some note}
+  {2}   % fade first 2 elements of left column
+  {3}   % fade first 1 element of right column
+  {0.25}% opacity
+% \begin{scope}[shift={(\rightX,\rightY)}]
+% \end{scope}
+
+
+\drawKmerArrow{12}{L}{3}
+
+\end{tikzpicture}
+
+\end{document}

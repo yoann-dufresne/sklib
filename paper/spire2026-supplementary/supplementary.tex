@@ -1,0 +1,419 @@
+% =====================================================================
+%  Supplementary Material for the SPIRE 2026 paper
+%  "Binary search and set operations on compacted k-mer lists".
+%  This document is NOT part of the camera-ready: it is published in
+%  the sklib repository (https://github.com/yoann-dufresne/sklib) and
+%  cited from the paper as "supplementary material, Sect. A-J".
+%
+%  Build:  latexmk -pdf supplementary.tex
+% =====================================================================
+\documentclass[runningheads,a4paper]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{amsmath,amssymb}
+\usepackage{xspace}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, decorations.pathreplacing, calc, bending}
+\usepackage{standalone}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+% --- Handy macros (same as the paper) --------------------------------
+\newcommand{\sskm}{\texttt{sskm}\xspace}
+\newcommand{\kmer}{\emph{k}-mer\xspace}
+\newcommand{\kmers}{\emph{k}-mers\xspace}
+\newcommand{\skmer}{super-\emph{k}-mer\xspace}
+\newcommand{\vskmer}{virtual-super-\emph{k}-mer\xspace}
+\newcommand{\skmers}{super-\emph{k}-mers\xspace}
+\newcommand{\vskmers}{virtual-super-\emph{k}-mers\xspace}
+\newcommand{\smer}{\emph{s}-mers\xspace}
+% tools
+\newcommand{\sklib}{\textsf{sklib}\xspace}
+\newcommand{\kmc}{\textsf{KMC}\xspace}
+\newcommand{\sbwt}{\textsf{sbwt}\xspace}
+\newcommand{\sbwtrs}{\textsf{sbwtrs}\xspace}
+\newcommand{\sshash}{\textsf{sshash}\xspace}
+\newcommand{\cbl}{\textsf{cbl}\xspace}
+\newcommand{\fmsi}{\textsf{fmsi}\xspace}
+\newcommand{\bqf}{\textsf{bqf}\xspace}
+
+% --- Review-response markup (off) ------------------------------------
+\newif\ifrevmarkup\revmarkupfalse
+\definecolor{formviolet}{RGB}{130,0,170}
+\newcommand{\rev}[1]{\ifrevmarkup\textcolor{blue}{#1}\else#1\fi}
+\newenvironment{revblock}{\ifrevmarkup\color{blue}\fi}{}
+\newcommand{\form}[1]{\ifrevmarkup\textcolor{formviolet}{#1}\else#1\fi}
+\newenvironment{formblock}{\ifrevmarkup\color{formviolet}\fi}{}
+
+\setlength{\textfloatsep}{14pt plus 2pt minus 4pt}
+\setlength{\intextsep}{14pt plus 2pt minus 4pt}
+
+\begin{document}
+
+\title{Supplementary Material for:\\ ``Binary Search and Set Operations on Compacted $k$-mer Lists''}
+\titlerunning{Supplementary: Compacted and Sorted $k$-mer Lists}
+
+\author{Yoann Dufresne\inst{1}$^{\star}$\orcidID{0000-0002-0930-8920}\and
+Francesco Andreace\inst{2}$^{\star}$\orcidID{0009-0008-0566-200X}}
+\authorrunning{Y. Dufresne and F. Andreace}
+
+\institute{Univ. Lille, CNRS, Centrale Lille, UMR 9189 CRIStAL, F-59000 Lille, France\\
+\email{yoann.dufresne@univ-lille.fr}
+\and
+Department of Computational Biology, Institut Pasteur, Universit\'e Paris Cit\'e, F-75015 Paris, France\\
+\email{francesco.andreace@pasteur.fr}}
+
+\maketitle
+% Equal-contribution (co-first authors) footnote:
+{\renewcommand{\thefootnote}{}\footnotetext{$^{\star}$~These authors contributed equally to this work.}}
+
+\noindent This document accompanies the SPIRE 2026 paper ``Binary Search and Set Operations on Compacted $k$-mer Lists''. Its sections are lettered A--J, exactly as cited from the paper. All scripts, raw data files and further documentation are in the \sklib{} repository: \url{https://github.com/yoann-dufresne/sklib} (tool version v0.15.0, data as of commit \texttt{f10164f}).
+
+\appendix
+
+\section{Compared tools}
+\label{app:tools}
+Table~\ref{tab:tools} details the tools benchmarked in Sect.~3 of the paper.
+
+\begin{table}[h]
+\centering
+\caption{Tools compared in Sect.~3 of the paper. ``Set-ops'' marks native set operations between two \kmer sets; ``Threaded'' lists the workloads each tool parallelizes (C: construction, Q: queries, S: set operations). $^{\star}$\bqf{} is an approximate filter (false positives), shown for reference only.}
+\label{tab:tools}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcccc}
+\toprule
+Tool & Representation & $k$ range & Query & Set-ops & Threaded \\
+\midrule
+\sklib{}  & sorted virtual \skmer list & $\le 127$ & \checkmark & \checkmark & C, Q, S \\
+\kmc~\cite{kmc3}    & \kmer counter / on-disk DB  & all       & --         & \checkmark & C, S \\
+\sshash~\cite{sshash} & minimal perfect hash              & $\le 31$  & \checkmark & --         & -- \\
+\sbwt~\cite{sbwt}   & spectral BWT (C++)                & $\le 32$  & \checkmark & --         & -- \\
+\sbwtrs~\cite{sbwtrs}  & spectral BWT (Rust)               & $\le 255$ & \checkmark & \checkmark & C, S \\
+\cbl~\cite{cbl}     & Conway--Bromage--Lyndon & odd $\le 59$ & \checkmark & \checkmark & -- \\
+\fmsi~\cite{fmsi}    & masked superstring (FM-index)     & $\le 127$ & \checkmark & \checkmark & -- \\
+\bqf{}$^{\star}$~\cite{bqf} & quotient filter (approximate) & any  & \checkmark & --         & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Set operations: thread scaling on chr1}
+\label{app:setops}
+Table~\ref{tab:setops-chr1} reports thread scaling and peak memory on chr1, complementing the single-threaded results of Sect.~3 of the paper.
+
+\begin{table}[h]
+\centering
+\caption{Set operations on chr1: thread scaling and memory for \sklib{} and \kmc{}, \rev{on the union, as in Table~1 of the paper}.}
+\label{tab:setops-chr1}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{time $k=31$} & \multicolumn{2}{c}{time $k=63$} & \multicolumn{2}{c}{RAM $k=31$ (MB)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Tool & $t{=}1$ & $t{=}8$ & $t{=}1$ & $t{=}8$ & $t{=}1$ & $t{=}8$ \\
+\midrule
+\sklib{} & 12.94 & 3.21 & 13.09 &  3.60 &   24 &  107 \\
+\kmc{}   &  8.63 & 7.41 & 13.04 & 11.76 & 2525 & 2527 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{revblock}
+\paragraph{Cost across operations and overlap.}
+Table~\ref{tab:setops-grid} shows the values underlying the median in Table~1 of the paper on chr1. \sklib{}'s time follows the number of \kmers the result holds: across these targets the intersection grows from $0$ to $204$ M \kmers, the union shrinks from $435$ to $204$ M, and a difference empties from $204$ M to none. \kmc{} takes $7.6$ to $10.8$\,s because it re-reads and re-dumps its database either way; \cbl{} is flat ($1.7\times$ across the grid). The last line of the table is the ratio between the most and the least expensive target of each column, which reaches $47\times$ for \sklib{} once the two empty differences at $J=1$ are counted. Results are consistent with the other three smaller datasets.
+
+\begin{table}[h]
+\centering
+\caption{\rev{Set operations on chr1 ($k=31$, $t=1$): time (s) for each operation at each Jaccard target, \sklib{} against \kmc{}. The last line is the ratio between the most and the least expensive target of that operation---what a median over the targets summarizes.}}
+\label{tab:setops-grid}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{revblock}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{$A\cap B$} & \multicolumn{2}{c}{$A\cup B$} & \multicolumn{2}{c}{$A\setminus B$} & \multicolumn{2}{c}{$B\setminus A$} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+$J$ & \sklib{} & \kmc{} & \sklib{} & \kmc{} & \sklib{} & \kmc{} & \sklib{} & \kmc{} \\
+\midrule
+$0$   & 3.32 & 10.50 & 18.34 & 10.74 & 10.59 & 10.77 & 10.85 & 10.39 \\
+$0.1$ & 5.09 &  9.54 & 17.75 &  9.28 &  9.04 &  8.95 &  9.88 &  9.10 \\
+$0.3$ & 6.99 &  8.83 & 15.35 &  8.74 &  6.88 &  8.43 &  7.47 &  8.64 \\
+$0.5$ & 7.72 &  8.87 & 12.94 &  8.49 &  4.57 &  8.31 &  4.81 &  8.21 \\
+$0.7$ & 7.84 &  9.10 & 11.08 &  8.51 &  2.69 &  7.96 &  2.73 &  7.90 \\
+$0.9$ & 8.36 &  8.80 &  9.05 &  8.44 &  0.97 &  7.78 &  1.03 &  7.81 \\
+$1$   & 8.29 &  8.67 &  8.16 &  8.63 &  0.22 &  7.65 &  0.23 &  7.61 \\
+\midrule
+spread & $2.5\times$ & $1.2\times$ & $2.2\times$ & $1.3\times$ & $47\times$ & $1.4\times$ & $47\times$ & $1.4\times$ \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+\end{revblock}
+
+\section{Set operation merging example}
+\label{app:setopex}
+\rev{Fig.~\ref{fig:merging} shows an example of the merge-like scan of two lists computing $A\cap B$.
+Consider two lists $A$ and $B$, each made up of two columns of \kmers.} The set operation scan starts by placing pointers on top of each column to keep track of \kmers to be compared. To make comparison clear, the left column of each list is pointed, in the figure, by an arrow, while the right is pointed by a small circle. At the beginning, list $A$ exposes \texttt{CAA} and \texttt{AAC}, while list $B$ exposes \texttt{AAA} then \texttt{AAT}: \texttt{CAA} of $A$ is compared to \texttt{AAA} of $B$ and \texttt{AAC} of $A$ is compared to \texttt{AAT} of $B$. Therefore as \texttt{AAA}${\prec}$\texttt{CAA}, \texttt{AAA} is discarded and the little arrow advances in list $B$ to the next \vskmer in the column. In the same way, \texttt{AAC}${\prec}$\texttt{AAT}, so \texttt{AAC} is discarded and the little circle advances in list $A$ to the next \vskmer with a \kmer in the right column. Comparison by column continues, and in the right column both list $A$ and $B$ expose \texttt{AAG}: as the two \kmers are equal, \texttt{AAG} is emitted and the little circle pointer advances in both lists. Comparison is continued until both lists maintain elements in the same column, else the remaining elements in the list are discarded (or emitted for other set operations). Replacing the emit rule turns the same single scan into $\cup$, $A\setminus B$, or the symmetric difference.
+% \emph{Example.} Consider $A\cap B$ restricted to the column whose \kmers share minimizer \texttt{AA}, where list $A$ exposes \texttt{CAA} then \texttt{GAA}, and list $B$ exposes \texttt{CAA} then \texttt{TAA}. The scan compares the pointed \kmers: \texttt{CAA}${=}$\texttt{CAA}, so \texttt{CAA} is emitted and both pointers move to the next \vskmer carrying a \kmer in this column; then \texttt{GAA}${\prec}$\texttt{TAA}, so \texttt{GAA} is discarded and only $A$ advances; finally \texttt{TAA} is left unmatched and discarded. Replacing the emit rule turns the same single scan into $\cup$, $A\setminus B$, or the symmetric difference.
+
+\begin{figure}[t]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/merging}}
+\caption{Set operation scan of the virtual \skmer sorted list visualized as 2D sorting of \kmers.}
+\label{fig:merging}
+\end{figure}
+
+\begin{revblock}
+\section{Cost of materializing a set operation}
+\label{app:rechain}
+Per bucket, a materialized set operation reads the two operand buckets, merges them column by column to decide which \kmers the result holds, orders the kept \kmers into the output structure, and writes it. Only the third phase distinguishes the two ways of emitting a result: by default \sklib{} hands the kept \kmers to the construction routine, which chains them into \vskmers, whereas \texttt{-{}-no-compact} sorts them and keeps one record per \kmer. The \texttt{*\_size} variants stop after the merge and write nothing, so they time the merge alone. The three modes were run on the grid of Sect.~3 of the paper (four operations, seven Jaccard targets, medians of three runs), with the two differences at $J=1$ being empty and therefore excluded.
+
+Table~\ref{tab:rechain-phases} shows the single-thread wall time. The chaining is the largest phase of every operation, and its share follows how much of the operands the result keeps: $49$--$51\%$ for a difference, $63$--$64\%$ for an intersection, $73$--$74\%$ for a union, where the merge step takes only $22\%$ of the total time. In the uncompacted mode, at $k=31$, sorting the kept \kmers costs exactly the same time as chaining ($0.98$--$1.01\times$), and at $k=63$, where $k-m+1=33$ columns leave a global sort much more to order, sorting is the more expensive of the two ($1.43$--$1.54\times$). Chaining also divides the bytes written by $4.7$ to $11.9$.
+
+\begin{table}[h]
+\centering
+\caption{\rev{Materialized operation elapsed time breakdown, at $t=1$, one line per operation (medians over the four datasets and the seven Jaccard targets; dataset difference is within 2 points). The four shares are of the per-bucket wall time reported by the library's own phase timers. The last two columns give \texttt{-{}-no-compact} costs relative to default: sorting the kept \kmers instead of chaining them, and writing the result.}}
+\label{tab:rechain-phases}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{revblock}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & & \multicolumn{4}{c}{share of the per-bucket time} & \multicolumn{2}{c}{\texttt{-{}-no-compact} / default} \\
+\cmidrule(lr){3-6}\cmidrule(lr){7-8}
+Operation & $k$ & read & merge & chain & write & order & write \\
+\midrule
+$A\cap B$        & 31 & 2.7\% & 32.2\% & 62.7\% & 2.1\% & $1.01\times$ & $5.4\times$ \\
+                 & 63 & 2.6\% & 29.8\% & 64.2\% & 2.2\% & $1.51\times$ & $10.1\times$ \\
+$A\cup B$        & 31 & 1.6\% & 22.2\% & 74.0\% & 2.4\% & $1.01\times$ & $6.0\times$ \\
+                 & 63 & 1.6\% & 22.3\% & 73.3\% & 2.3\% & $1.54\times$ & $11.9\times$ \\
+$A\setminus B$   & 31 & 3.8\% & 41.7\% & 49.3\% & 2.0\% & $0.98\times$ & $4.7\times$ \\
+                 & 63 & 4.0\% & 36.5\% & 56.0\% & 2.1\% & $1.44\times$ & $8.5\times$ \\
+$B\setminus A$   & 31 & 3.7\% & 40.9\% & 51.0\% & 2.0\% & $0.98\times$ & $4.8\times$ \\
+                 & 63 & 3.9\% & 35.9\% & 56.8\% & 2.1\% & $1.43\times$ & $9.1\times$ \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+
+Table~\ref{tab:rechain-e2e} gives the end-to-end times on chr1, the largest dataset. Materializing a result costs $2.4$ to $7.2\times$ a cardinality-only pass, ordered by how much the result keeps (a difference is at the low end, a union at the high one) which is the cost of turning a count into a list. Skipping the chaining into \vskmers makes the uncompacted mode slower for every operation, by $1.1$--$2.0\times$ at one thread and $1.2$--$2.2\times$ at eight, and over the whole test grid it performed worse in $395$ of the $400$ configurations measured; the five exceptions are runs below $80$\,ms with a small result, the largest gain among them being $11\%$. Its output also holds one record per \kmer, that is exactly $144$ bits/\kmer at $k=31$ and $272$ at $k=63$, against the $17.1$--$20.6$ of the compacted result. The three smaller datasets behave the same up to scale: per operation, the uncompacted mode costs $1.09$--$2.51\times$ the compacted one and materializing costs $2.1$--$8.6\times$ a count.
+
+\begin{table}[h]
+\centering
+\caption{\rev{Set operations on chr1 in the three modes: time (s), one line per operation (medians over the seven Jaccard targets). ``count'' materializes nothing and returns the cardinality; ``uncomp.'' writes one record per result \kmer; ``comp.'' re-chains the result into \vskmers. The last column is the space of the compacted result, whereas the uncompacted one uses $144$ bits/\kmer ($k=31$) or $272$ ($k=63$).}}
+\label{tab:rechain-e2e}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{revblock}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+ & & \multicolumn{3}{c}{$t=1$} & \multicolumn{3}{c}{$t=8$} & \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+Operation & $k$ & count & uncomp. & comp. & count & uncomp. & comp. & bits/\kmer \\
+\midrule
+$A\cap B$      & 31 & 1.890 &  9.244 &  7.781 & 0.292 & 2.271 & 1.744 & 19.2 \\
+               & 63 & 1.614 & 14.587 &  8.260 & 0.284 & 4.363 & 1.970 & 17.7 \\
+$A\cup B$      & 31 & 2.109 & 14.546 & 12.943 & 0.385 & 4.075 & 3.212 & 18.7 \\
+               & 63 & 1.823 & 26.059 & 13.086 & 0.408 & 7.573 & 3.595 & 17.1 \\
+$A\setminus B$ & 31 & 2.429 &  6.439 &  5.726 & 0.482 & 1.619 & 1.310 & 20.6 \\
+               & 63 & 2.143 &  8.803 &  5.611 & 0.541 & 3.089 & 1.407 & 19.5 \\
+$B\setminus A$ & 31 & 2.427 &  6.882 &  6.136 & 0.489 & 1.749 & 1.383 & 20.3 \\
+               & 63 & 2.173 &  8.778 &  5.924 & 0.539 & 2.859 & 1.469 & 19.2 \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+
+Re-chaining $A\cup A$ returns exactly the record count of $A$'s own index, on all eight dataset/$k$ configurations, proving a chain of operations accumulates no loss. The uncompacted and compacted results were also checked to represent the same set, to answer the same queries identically, and to both feed a further set operation. The scripts, the raw table and the verification are in the repository.
+\end{revblock}
+
+\section{Implementation optimizations: bucketing and quotienting}
+\label{app:opt}
+These two optimizations complement the minimizer-centered interleaving of the paper (Sect.~2); they leave every operation described in the main text unchanged.
+
+\paragraph{Bucketing.}
+\sklib{} holds not one \kmer list but $2^b$ lists, the \emph{buckets} ($b$ is a user parameter, default $12$). The bucket of a \kmer is chosen by a hash function with good distribution properties: \rev{we hash every $m$-mer of the \kmer and keep the smallest hash (the minimizer). The record stores that hash bit-reversed, and the bucket is read off the $b$ highest bits of the reversed value, that is, the $b$ lowest bits of the hash itself. The reversal serves two purposes. First, a minimum search biases the high bits of the hash towards zero, so bucketing on them directly would leave most buckets nearly empty, whereas the low bits stay uniform. Second, it places the bucket identifier at the top of the record, hence as a prefix of the sort key: concatenating the buckets then yields a globally sorted list, and those $b$ bits become redundant in every record, which is what quotienting exploits.} So that the \kmers can still be enumerated, the hash function is reversible; we use an xor-shift from the hash-prospector project~\cite{hashprospector}. Every operation described in the main text is unchanged, except that it first selects the relevant bucket before performing the list operations.
+
+\paragraph{Quotienting.}
+Because each \kmer is sent to a deterministic bucket based on $b$ of its bits, those bits need not be stored: the bucket address holds them implicitly, since they are shared by all the \kmers it contains. \rev{This saves $b$ bits per record, i.e.\ 12 bits with the default $b{=}12$.}
+
+\begin{revblock}
+
+\section{Canonical \texorpdfstring{\kmers}{k-mers} and minimizer position}
+\label{app:canon}
+\sklib{} indexes canonical \kmers: a \kmer and its reverse complement are treated as a single element, stored in one canonical orientation. This interacts with the 2D sorting because the minimizer of a \kmer and that of its reverse complement occur at mirrored positions within the word. Choosing the orientation only at the level of the full record is therefore insufficient. When the minimal $m$-mer is self-reverse-complementary or occurs multiple times within the window, the leftmost-occurrence rule used while sliding along a sequence is not mirror-symmetric: forward and reverse-complement scans select mirrored occurrences. As a result, the same \kmer can be assigned to different columns depending on the strand from which it is read, causing queries to miss one of the representations.
+
+\rev{Fig.~\ref{fig:canonical} shows such a \kmer.} \sklib{} therefore fixes the frame per \kmer rather than per record, with a rule that is symmetric by construction: among the occurrences of the minimal $m$-mer, keep those of minimal rank, break ties by taking the most central occurrence, and break remaining ties by the smaller canonical interleaved value. Both strands then derive the same frame from their own nucleotides, so a \kmer built in the context of a sequence and the same \kmer queried in isolation reach the same column. Records whose framing is ambiguous are split into per-\kmer pieces at construction time. As a consequence the index is exact for every value of $m$.
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/canonical}}
+\caption{\rev{Why the frame is fixed per \kmer. The \kmer \texttt{ATCGATG} and its reverse complement \texttt{CATCGAT} are one canonical element; its minimal $2$-mer \texttt{AT} is its own reverse complement and occurs twice, at mirrored positions. Framing on the leftmost occurrence seen by each scan sends that single \kmer to two different columns; framing on the most central occurrence, a criterion unchanged by mirroring, sends both strands to the same one.}}
+\label{fig:canonical}
+\end{figure}
+\end{revblock}
+
+\begin{revblock}
+\section{Record layout and space accounting}
+\label{app:layout}
+A record is stored in a fixed-width slot: the two halves of the interleaved pair, at an integer width selected at run time among $4$, $8$, $16$ and $32$ bytes, plus one byte for the prefix length and one for the suffix length. A record spans at most $2k-m$ nucleotides, so its prefix and its suffix are each at most $k-m\le 127$ and one byte apiece suffices. Inside a bucket, the pairs and the length bytes are held in two separate arrays, because the binary search, the scan to the closest valid record and the set-operation merge each touch only one of the two. Quotienting removes the $b$ leading bits of every record (Sect.~\ref{app:opt}), which is what allows a narrower integer width to be selected.
+
+The index size is therefore the number of records times the slot size, plus a directory of two $64$-bit words per bucket \rev{(its lowest minimizer value and its record count)}, and the space per \kmer is entirely determined by the number of records per \kmer. At $k=31$, $m=15$ the selected width is $8$ bytes and a record occupies $18$; at $k=63$, $m=31$ it is $16$ bytes and $34$. Table~\ref{tab:records} reports the compaction measured on the four datasets: a record carries close to half of the $k-m+1$ \kmers it could hold, at both values of $k$, and these counts reproduce the space of Table~\ref{tab:bits-per-kmer} exactly. Since the greedy heuristic selects as many overlaps as the co-linear program, they are also the counts of a maximum non-crossing selection.
+
+\begin{table}[h]
+\centering
+\caption{\rev{Compaction achieved by \vskmers, at one thread. ``max'' is the largest number of \kmers a record can hold, $k-m+1$.}}
+\label{tab:records}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{revblock}
+\begin{tabular}{lrrrr}
+\toprule
+ & \multicolumn{2}{c}{$k=31$, $m=15$ (max $17$)} & \multicolumn{2}{c}{$k=63$, $m=31$ (max $33$)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Dataset & records/\kmer & \kmers/record & records/\kmer & \kmers/record \\
+\midrule
+\emph{E.~coli}    & 0.112 & 8.96 & 0.059 & 17.00 \\
+Yeast             & 0.112 & 8.91 & 0.059 & 16.95 \\
+\emph{C.~elegans} & 0.123 & 8.16 & 0.059 & 16.83 \\
+Chr1              & 0.126 & 7.91 & 0.061 & 16.40 \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+\end{revblock}
+
+\section{Construction space: bits per \texorpdfstring{\kmer}{k-mer}}
+\label{app:bits}
+Table~\ref{tab:bits-per-kmer} reports the space usage of all benchmarked tools, complementing the summary given in Sect.~3 of the paper.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{Space usage in bits per \kmer for all tools at \(k=31\)\rev{, sorted by usage on \emph{E.~coli}. $^{\star}$\bqf{} is an approximate filter, shown for reference only.}}
+\label{tab:bits-per-kmer}
+
+\begin{revblock}
+\begin{tabular}{lcccc}
+\toprule
+Tool & \textit{E.~coli} & Yeast & \textit{C.~elegans} & Chr1 \\
+\midrule
+\fmsi           &  2.13 &  2.15 &  2.20 &  2.25 \\
+\sshash         &  7.12 &  7.34 &  8.33 &  9.67 \\
+\sbwtrs         & 11.84 & 10.73 & 10.09 & 10.04 \\
+\sbwt           & 12.34 & 11.23 & 10.59 & 10.54 \\
+\textbf{\sklib} & \textbf{16.19} & \textbf{16.21} & \textbf{17.66} & \textbf{18.20} \\
+\bqf{}$^{\star}$  & 38.68 & 29.02 & 24.27 & 21.04 \\
+\cbl            & 64.90 & 60.20 & 57.34 & 56.76 \\
+\kmc            & 66.30 & 64.91 & 64.11 & 64.05 \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+
+\end{table}
+
+\section{Experimental Setup}
+\label{app:exsetup}
+Experiments were run on an Intel Core Ultra 7 165H machine with 62 GiB RAM and Linux 6.17. Wall time and peak RSS were measured with \texttt{/usr/bin/time -v}; we report median time over three runs and maximum RSS. For the threaded tools the first rep of each configuration is a cold-page-cache run: the median discards it, so the tables show warm steady-state. We benchmark \emph{E.~coli} (4.6 MB, 4.5 M distinct \kmers), yeast (12 MB, 11.6 M), \emph{C.~elegans} (98 MB, 94.0 M), and human chr1 from CHM13 (224 MB, 204.2 M) at $k=31$ ($m=15$) and $k=63$ ($m=31$), using $t=1$ and $t=8$ threads. \rev{Full tables and scripts are in the repository; Sect.~\ref{app:data} maps each result to its file.}
+
+\begin{revblock}
+\paragraph{Set-operation operands.}
+Each pair $(A,B)$ is a genome and a mutated copy of it: substitutions are applied at a rate $r$ derived from a target Jaccard index $J$ by $r = 1-\left(2J/(1+J)\right)^{1/k}$, so that the two sets reach the intended similarity. The targets are $J\in\{0,0.1,0.3,0.5,0.7,0.9,1\}$, and the Jaccard index actually obtained is recomputed from the built lists and cross-checked against \kmc{}. The times of Table~1 of the paper are medians over the four operations and over these targets, which is why they cover the whole similarity range rather than one arbitrary pair. Pairs of real genomes (\emph{E.~coli} K-12 against Sakai, UTI89 and IAI39; chr20 against chr21) are also provided in the repository.
+
+\paragraph{Tool versions and build flags.}
+Table~\ref{tab:versions} records what was built and how. Every tool was compiled through its own project's release configuration, so the flags differ between them; the two asymmetries worth stating are that \sklib{} and \bqf{} are the only ones compiled for the host CPU---the Rust tools in particular receive no \texttt{target-cpu} override---and that \fmsi{} defaults to \texttt{-O2}. A portable \sklib{} target (\texttt{-march=x86-64}) is available for reproduction on other machines.
+
+\begin{table}[h]
+\centering
+\caption{\rev{Version and build of every benchmarked tool. Flags are those the project's own release configuration enables, not flags we chose. \cbl{} is compiled per $k$ (one binary for each value).}}
+\label{tab:versions}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{revblock}
+\begin{tabular}{llll}
+\toprule
+Tool & Version / commit & Lang. & Optimization flags \\
+\midrule
+\sklib{}  & v0.15.0              & C++  & \texttt{-O3 -march=native}, LTO \\
+\kmc{}    & 3.2.4                & C++  & official release binary \\
+\sshash{} & \texttt{3e4f90b}     & C++  & \texttt{-O3 -mbmi2 -mavx2} \\
+\sbwt{}   & \texttt{b6e6830}     & C++  & \texttt{-O3}, \texttt{MAX\_KMER\_LENGTH=32} \\
+\sbwtrs{} & \texttt{7c5fcc0}     & Rust & \texttt{cargo build -{}-release} \\
+\cbl{}    & \texttt{986d57e}     & Rust & \texttt{cargo +nightly build -{}-release} \\
+\fmsi{}   & \texttt{39c71a1}     & C++  & \texttt{-O2} \\
+\bqf{}    & \texttt{c9ff280}     & C++  & \texttt{-Ofast -march=native -mtune=native} \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+
+\end{revblock}
+
+\begin{revblock}
+\section{Raw data and reproduction}
+\label{app:data}
+Every metric shown in this manuscript has been computed and stored in a table in the \sklib{} repository, \url{https://github.com/yoann-dufresne/sklib} (tool version v0.15.0; data as of commit \texttt{f10164f}). Each CSV holds one row per measurement (tool version, host, dataset, $k$, $m$, threads, and the raw timing). Table~\ref{tab:data} maps each result to its file and to the script that produced it.
+
+\begin{table}[h]
+\centering
+\caption{Source of each result reported in this manuscript. Data files are relative to \texttt{benchmark/results/} in the repository, scripts to \texttt{benchmark/scripts/}; \texttt{runs/.../} abbreviates \texttt{runs/full\_run\_2026-06/data/}, the campaign that produced every competitor figure.}
+\label{tab:data}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{revblock}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.9cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule
+Reported in & Data file & Script \\
+\midrule
+Table~1 of the paper; Tables~\ref{tab:setops-chr1}, \ref{tab:setops-grid}; Sect.~\ref{app:rechain} (\sklib)
+  & \texttt{reference/\allowbreak setops\_rechain.csv}
+  & \texttt{setop\_rechain.sh} \\
+Table~1 of the paper; Tables~\ref{tab:setops-chr1}, \ref{tab:setops-grid} (other tools)
+  & \texttt{runs/.../setop.csv}
+  & \texttt{setop.sh} \\
+\addlinespace
+Sect.~3 of the paper, construction and space; Tables~\ref{tab:records}, \ref{tab:bits-per-kmer} (\sklib)
+  & \texttt{reference/\allowbreak construct\_v0.15.0.csv}
+  & \texttt{construct.sh} \\
+Table~\ref{tab:bits-per-kmer} (other tools)
+  & \texttt{runs/.../construct.csv}
+  & \texttt{construct.sh} \\
+\addlinespace
+Sect.~3 of the paper, membership queries (\sklib)
+  & \texttt{reference/\allowbreak query\_single\_v0.15.0.csv}
+  & \texttt{query\_single.sh} \\
+Sect.~3 of the paper, membership queries (other tools)
+  & \texttt{runs/.../\allowbreak query\_single.csv}
+  & \texttt{query\_single.sh} \\
+\addlinespace
+Sect.~\ref{app:rechain}, correctness of the two emission modes
+  & --- (checks only, no table)
+  & \texttt{verify/\allowbreak rechain\_verif.sh} \\
+Sect.~2 of the paper, greedy versus co-linear chaining
+  & \texttt{journals/\allowbreak GREEDY\_DEFAULT.md}
+  & \texttt{verify/\allowbreak greedy\_\allowbreak chaining\_verif.sh} \\
+\bottomrule
+\end{tabular}
+\end{revblock}
+\end{table}
+
+The operands of the set-operation grid are generated by \path{scripts/mutate.py} at the substitution rate that \path{scripts/lib.sh} derives from each Jaccard target, and the raw rows are aggregated into the medians of Tables~\ref{tab:setops-grid}--\ref{tab:rechain-e2e} by \path{scripts/rechain_report.py}. Re-running a campaign is one command, for instance
+\begin{center}
+\small\texttt{DATASETS="ecoli yeast celegans chr1" KM="31,15 63,31"}\\
+\small\texttt{bash benchmark/scripts/setop\_rechain.sh}
+\end{center}
+which rebuilds the indexes it needs, skips the rows already present in the CSV, and appends the new ones. Two write-ups in \path{results/journals/} record how the campaigns behind Sect.~\ref{app:rechain} and behind the query figures were run and what they found: \path{SETOP_RECHAIN.md} and \path{QUERY_V0150.md}.
+\end{revblock}
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}

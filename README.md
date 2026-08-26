@@ -2,6 +2,8 @@
 
 A C++23 library for sorting and querying k-mers in a compact representation. sklib packs k-mers and super-k-mers (skmers) as 2-bit-per-nucleotide integers, builds a disk-backed, **bucketed** sorted skmer list (`VirtualSkmer`), answers membership queries — each routed to a single minimizer bucket — and computes **set operations** (intersection / union / difference / symmetric difference, and their cardinalities) between two lists, all through the `sskm` CLI.
 
+The data structure and its evaluation are described in *Binary search and set operations on compacted k-mer lists* ([bioRxiv, 2026](https://www.biorxiv.org/content/10.64898/2026.06.29.735436v3)), to appear at **SPIRE 2026** — see [Citation](#citation). The paper's supplementary material (Sect. A–J) is in [`paper/spire2026-supplementary/`](paper/spire2026-supplementary/).
+
 ## Documentation
 
 A page-by-page walkthrough of the internals lives in the [project wiki](https://github.com/yoann-dufresne/sklib/wiki): the 2-bit nucleotide encoding, the minimizer-centered interleaved super-k-mer layout, super-k-mer generation (k-mers are canonicalized at yield so a k-mer is always stored under a single orientation), sorted-list construction (with the Fenwick-tree colinear chaining), the bucketed on-disk format (the list is split into minimizer-prefix sub-lists, with width-selectable and minimizer-prefix-quotiented records), the k-mer search algorithm (each query is routed to one bucket; file queries run in parallel), the **set operations** between two lists (a **parallel per-bucket merge**, with a faster patience-sort chaining on the re-compaction path), and **complete cross-tool benchmarks** (set operations vs KMC / CBL / FMSI; construction & membership queries vs sshash / SBWT (C++ & Rust) / CBL / BQF / FMSI).
@@ -180,3 +182,27 @@ sshash, **SBWT** (C++ & Rust), **CBL**, **BQF** and **FMSI**.
 
 Benchmarking needs `kmc`/`kmc_tools` on `PATH` (membership-query oracle + set-op baseline);
 optional competitors build via `bash benchmark/scripts/tools/setup.sh`.
+
+## Citation
+
+If you use sklib, please cite the preprint:
+
+> Dufresne, Y., Andreace, F.: Binary search and set operations on compacted k-mer lists.
+> bioRxiv (2026). <https://doi.org/10.64898/2026.06.29.735436>
+
+```bibtex
+@article{sklib2026,
+  author  = {Dufresne, Yoann and Andreace, Francesco},
+  title   = {Binary search and set operations on compacted k-mer lists},
+  journal = {bioRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.06.29.735436},
+  url     = {https://www.biorxiv.org/content/10.64898/2026.06.29.735436v3},
+  note    = {To appear in the proceedings of SPIRE 2026 (LNCS, Springer)}
+}
+```
+
+A revised version appears in the proceedings of **SPIRE 2026** (LNCS, Springer). That
+version carries no appendix: the supplementary material it cites as Sect. A–J is in
+[`paper/spire2026-supplementary/`](paper/spire2026-supplementary/), and Sect. J maps every
+reported number to the CSV and script that produced it under [`benchmark/`](benchmark/).

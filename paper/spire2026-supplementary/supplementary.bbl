@@ -1,0 +1,48 @@
+\begin{thebibliography}{1}
+\providecommand{\url}[1]{\texttt{#1}}
+\providecommand{\urlprefix}{URL }
+\providecommand{\doi}[1]{https://doi.org/#1}
+
+\bibitem{sbwtrs}
+Alanko, J.N.: {sbwt-rs}: a rust implementation of the {SBWT}.
+  \url{https://github.com/jnalanko/sbwt-rs} (2024)
+
+\bibitem{sbwt}
+Alanko, J.N., Puglisi, S.J., Vuohtoniemi, J.: Small searchable $k$-spectra via
+  subset rank queries on the spectral {Burrows-Wheeler} transform. In: SIAM
+  Conference on Applied and Computational Discrete Algorithms (ACDA). pp.
+  225--236 (2023). \doi{10.1137/1.9781611977714.20}
+
+\bibitem{kmc3}
+Kokot, M., D{\l}ugosz, M., Deorowicz, S.: {KMC 3}: counting and manipulating
+  k-mer statistics. Bioinformatics  \textbf{33}(17),  2759--2761 (2017).
+  \doi{10.1093/bioinformatics/btx304}
+
+\bibitem{bqf}
+Levallois, V., Andreace, F., Le~Gal, B., Dufresne, Y., Peterlongo, P.: The
+  {Backpack} quotient filter: a dynamic and space-efficient data structure for
+  querying $k$-mers with abundance. iScience  \textbf{27}(12),  111435 (2024).
+  \doi{10.1016/j.isci.2024.111435}
+
+\bibitem{cbl}
+Martayan, I., Cazaux, B., Limasset, A., Marchet, C.: Conway-bromage-lyndon
+  ({CBL}): an exact, dynamic representation of k-mer sets. Bioinformatics
+  \textbf{40}(Supplement\_1),  i48--i57 (2024).
+  \doi{10.1093/bioinformatics/btae217}
+
+\bibitem{sshash}
+Pibiri, G.E.: Sparse and skew hashing of k-mers. Bioinformatics
+  \textbf{38}(Supplement\_1),  i185--i194 (2022).
+  \doi{10.1093/bioinformatics/btac245}
+
+\bibitem{fmsi}
+Sladk{\'y}, O., Vesel{\'y}, P., B{\v{r}}inda, K.: {FroM} superstring to
+  indexing: a space-efficient index for unconstrained k-mer sets using the
+  masked {Burrows-Wheeler} transform ({MBWT}). Bioinformatics Advances
+  \textbf{6}(1),  vbaf290 (2026). \doi{10.1093/bioadv/vbaf290}
+
+\bibitem{hashprospector}
+Wellons, C.: {hash-prospector}: Automated integer hash function discovery.
+  \url{https://github.com/skeeto/hash-prospector} (2018)
+
+\end{thebibliography}
