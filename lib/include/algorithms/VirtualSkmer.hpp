@@ -1169,6 +1169,13 @@ class SortedVirtualSkmerList {
         }
     }
 
+    // Every list element passed through below is NOT extended at column_pos, so it is closed, as in
+    // CASE C / CASE D above. Leaving it expandable is a bug: one raw super-k-mer contributes k-mers to
+    // several columns under the SAME enumeration id, so a later column's overlap whose left id is
+    // that id would match this stale record (is_left compares last_id only) before the record that
+    // really ends at the left column, extend it past a gap and leave it at a list position that is no
+    // longer sorted for its new columns. The k-mer set stays exact, but the per-column sorted
+    // invariant breaks, so set-op merges miss shared k-mers (seen on ocean k=63 --buckets 262144).
     // Handle remaining elements when overlaps are exhausted but both lists have elements
     while (list_idx < list.size() && col_idx < column.size()) {
         assert(column[col_idx] < skmer_enumeration.size());
@@ -1176,6 +1183,7 @@ class SortedVirtualSkmerList {
             skmer_enumeration[column[col_idx]], column_pos);
 
         if (list[list_idx].skmer <= col_skmer) {
+            list[list_idx].expandable = false;
             merged.push_back(std::move(list[list_idx]));
             list_idx++;
         } else {
@@ -1202,8 +1210,9 @@ class SortedVirtualSkmerList {
         col_idx++;
     }
 
-    // Append any remaining list elements
+    // Append any remaining list elements (not extended at column_pos either: close them)
     while (list_idx < list.size()) {
+        list[list_idx].expandable = false;
         merged.push_back(std::move(list[list_idx]));
         list_idx++;
     }
