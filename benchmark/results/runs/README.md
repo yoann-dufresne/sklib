@@ -6,6 +6,7 @@ methodology), `RESULTS.md` (tables + analysis), and `data/*.csv` (raw measuremen
 
 | Run | Window | Machine | sklib | Tools compared | Datasets | k grid | Status | Docs |
 |---|---|---|---|---|---|---|:--:|---|
+| [`setop_reads_2026-10/`](setop_reads_2026-10/) | 2026-10-05 → 10-06 | Precision-5490 · Core Ultra 7 165H · 22c / 62 GiB | 0.15.0 | sklib, KMC (set ops only) + sklib `--buckets` sweep | real read pairs: HG002 ×2, HMP2 gut ×2, Tara ocean ×2 (13.5–15.8 Gbp each) | 31·63 | ✅ current (set ops at scale) | [EXPERIMENT](setop_reads_2026-10/EXPERIMENT.md) · [RESULTS](setop_reads_2026-10/RESULTS.md) · [BUCKET_SWEEP](setop_reads_2026-10/BUCKET_SWEEP.md) · [data/](setop_reads_2026-10/data/) |
 | [`full_run_2026-06/`](full_run_2026-06/) | 2026-06-08 → 06-16 | Precision-5490 · Core Ultra 7 165H · 22c / 62 GiB | 0.11.0 | sklib, KMC, CBL, sshash, SBWT (C++), sbwtrs (Rust), FMSI, BQF | ecoli, yeast, celegans, chr21, chr1 | 15·21·31·41·51·63 | ✅ **current** | [EXPERIMENT](full_run_2026-06/EXPERIMENT.md) · [RESULTS](full_run_2026-06/RESULTS.md) · [data/](full_run_2026-06/data/) |
 | _cluster chm13 (Zeus)_ | _in progress_ | Lille HPC (Zeus), Slurm | 0.13.x | same set | + **chm13** (3 GB T2T) | 15…63 | 🚧 planned | — |
 

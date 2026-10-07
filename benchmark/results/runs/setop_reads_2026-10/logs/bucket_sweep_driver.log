@@ -1,0 +1,12 @@
+[sweep 10-06 06:01:16] ocean k31: pairs=[ocean_SRF:ocean_DCM] km=31,15 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 07:17:57] chr1 k31: pairs=[chr1:chr1_mutJ05] km=31,15 tools=[sklib@b256 sklib@b1024 sklib sklib@b16384 sklib@b65536] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 07:22:06] hg002 k31: pairs=[hg002_A:hg002_B] km=31,15 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 07:25:28] killed by user request (laptop power-off)
+[sweep 10-06 18:20:11] ocean k31: pairs=[ocean_SRF:ocean_DCM] km=31,15 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 18:20:11] hg002 k31: pairs=[hg002_A:hg002_B] km=31,15 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 19:12:41] gut k31: pairs=[gut_A:gut_B] km=31,15 tools=[sklib@b1024 sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 19:46:23] ocean k63: pairs=[ocean_SRF:ocean_DCM] km=63,31 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 21:01:47] ocean k31 t1: pairs=[ocean_SRF:ocean_DCM] km=31,15 tools=[sklib sklib@b16384 sklib@b65536 sklib@b262144] ops=[union@1]
+[sweep 10-06 22:13:41] chr1 k31: pairs=[chr1:chr1_mutJ05] km=31,15 tools=[sklib@b256 sklib@b1024 sklib sklib@b16384 sklib@b65536] ops=[union@8 joint@8 sizes@8]
+[sweep 10-06 22:17:24] chr1 k31 t1: pairs=[chr1:chr1_mutJ05] km=31,15 tools=[sklib@b256 sklib@b1024 sklib sklib@b16384 sklib@b65536] ops=[union@1]
+[sweep 10-06 22:21:06] bucket sweep done

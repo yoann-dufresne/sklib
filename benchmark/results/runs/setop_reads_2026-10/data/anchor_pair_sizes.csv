@@ -1,0 +1,2 @@
+timestamp,host,tool_version,pair,set_a,set_b,k,m,sk_a,sk_b,kmc_a,kmc_b,inter,union,diff_ab,diff_ba,xor,jaccard,check
+2026-10-05T18:31:07+02:00,yoann-Precision-5490,sklib-0.15.0,chr1:chr1_mutJ05,chr1,chr1_mutJ05,31,15,204155258,211711300,204155258,211711300,138010389,277856169,66144869,73700911,139845780,0.4967,ok

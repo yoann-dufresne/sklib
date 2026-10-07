@@ -1,0 +1,5 @@
+timestamp,host,cpu,tool,tool_version,set,k,m,threads,pin,cache,time_s,peak_rss_kb,cpu_pct,fs_in_blocks,fs_out_blocks,index_bytes,n_superkmers,input_bytes
+2026-10-05T18:30:57+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sklib,sklib-0.15.0,chr1,31,15,8,0;1;3;6;8;10;12;17,cold,3.515,314468,756,460784,2142360,464576580,25806166,234324012
+2026-10-05T18:31:00+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,kmc,kmc-3.2.4,chr1,31,15,8,0;1;3;6;8;10;12;17,cold,2.550,3411472,547,457672,3632664,1634552884,NA,234324012
+2026-10-05T18:31:04+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,sklib,sklib-0.15.0,chr1_mutJ05,31,15,8,0;1;3;6;8;10;12;17,cold,3.771,315416,755,456600,2175008,481649814,26754679,43
+2026-10-05T18:31:06+02:00,yoann-Precision-5490,Intel(R) Core(TM) Ultra 7 165H,kmc,kmc-3.2.4,chr1_mutJ05,31,15,8,0;1;3;6;8;10;12;17,cold,2.514,3364536,557,456600,3749984,1695001220,NA,43

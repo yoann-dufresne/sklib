@@ -1,0 +1,4 @@
+2026-10-06T18:20:02+02:00 chr1 sweep rows of 2026-10-06 07:18-07:22 moved to bucket_sweep_runs_chr1_discarded.csv (laptop in use; union t8 at b4096 = 4.06 s vs 2.9 s in the anchor) — re-measured
+2026-10-06T20:17:18+02:00 pause
+2026-10-06T20:22:18+02:00 resume
+2026-10-06 sweep paused ~20:17-20:45 to diagnose MISMATCH at k=63 --buckets 262144 (ocean): |A|,|B| exact but the merge misses 6 shared k-mers, all in coarse bucket 58990 (b=16) -> fine buckets 235960-235963 (b=18), columns 27-32 of one A record; b<=16 (4096/16384/65536) exact. Debug tools: benchmark/results/latest/setop_reads/tmp/debug/{bucket_diff,kmer_diff}.cpp

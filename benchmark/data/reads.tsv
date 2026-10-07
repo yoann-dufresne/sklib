@@ -1,0 +1,23 @@
+# sklib benchmark read-set catalogue — the single source of truth for real read sets.
+# Read by benchmark/scripts/fetch_reads.sh. Lines starting with '#' and blank lines are ignored.
+#
+# Columns are whitespace-separated; the description is the trailing free-text field:
+#   name   short id used in PAIRS= / on the fetch_reads.sh CLI; the sanitized FASTA lands in
+#          benchmark/data/genomes/<name>.sanitized.fa, where the harness caches genomes
+#   runs   comma-separated ENA/SRA run accessions, pooled into one set (R1 and R2 of every
+#          paired run are concatenated: a k-mer set ignores pairing)
+#   gbp    total bases (ENA base_count, informational only)
+#   description  free text
+#
+# Pairs used by the set-operation campaign (setop_pairs.sh):
+#   hg002_A:hg002_B     same individual, two independent runs (other library, other flowcell)
+#   gut_A:gut_B         same gut, ~1 year apart (HMP2/IBDMDB subject M2042, PRJNA398089)
+#   ocean_SRF:ocean_DCM same Tara Oceans station, two depths (PRJEB1787)
+#
+# name       runs                                                     gbp    description
+hg002_A      SRR1766566                                               14.5   HG002/NA24385 GIAB HiSeq2500 2x148, flowcell 140528_0018 library 2L1 (PRJNA200694)
+hg002_B      SRR1766554                                               13.8   HG002/NA24385 GIAB HiSeq2500 2x148, flowcell 140616_0029 library 2F1 (PRJNA200694)
+gut_A        SRR5935833,SRR5935914,SRR5946985,SRR5935938,SRR5946671   13.5   HMP2 stool, subject M2042, visits C2-C6, HiSeq2000 2x~93
+gut_B        SRR5946847,SRR5936115,SRR5946776,SRR5935989,SRR5950520   15.4   HMP2 stool, subject M2042, visits C19-C23, HiSeq2000 2x~93
+ocean_SRF    ERR315858,ERR315861                                      15.8   Tara Oceans station 023 (Mediterranean), surface 5-7 m, 0.22-1.6 um, HiSeq2000 2x~106
+ocean_DCM    ERR315859,ERR315860                                      15.6   Tara Oceans station 023 (Mediterranean), DCM 55-57 m, 0.22-1.6 um, HiSeq2000 2x~106

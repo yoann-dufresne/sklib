@@ -1,0 +1,416 @@
+[bench] resume: 0 row(s) already in anchor_start_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 0 row(s) already in anchor_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[chr1:chr1_mutJ05] km=[31,15] threads=[1 8] ops=[union] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/anchor_start_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == chr1:chr1_mutJ05 k=31 m=15
+[bench] construct sklib chr1 k=31 m=15 (t=8)
+[bench]   -> 3.515s, 464 MB
+[bench] construct kmc chr1 k=31 m=15 (t=8)
+[bench]   -> 2.550s, 1634 MB
+[bench] construct sklib chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 3.771s, 481 MB
+[bench] construct kmc chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 2.514s, 1695 MB
+[bench]    |A|=204155258 |B|=211711300 |A∩B|=138010389 |A∪B|=277856169 J=0.4967
+[bench]    union t=1 rep 1 sklib: 14.227s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 1 kmc: 8.236s  rss=2513MB  cpu=261%  out=1700MB  ok
+[bench]    union t=1 rep 2 kmc: 8.567s  rss=2513MB  cpu=254%  out=1700MB  ok
+[bench]    union t=1 rep 2 sklib: 13.834s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib: 13.696s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 kmc: 8.154s  rss=2513MB  cpu=258%  out=1700MB  ok
+[bench]    union t=8 rep 1 sklib: 2.791s  rss=82MB  cpu=736%  out=660MB  ok
+[bench]    union t=8 rep 1 kmc: 7.171s  rss=2516MB  cpu=335%  out=1700MB  ok
+[bench]    union t=8 rep 2 kmc: 7.294s  rss=2516MB  cpu=328%  out=1700MB  ok
+[bench]    union t=8 rep 2 sklib: 2.890s  rss=87MB  cpu=739%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib: 2.943s  rss=83MB  cpu=732%  out=660MB  ok
+[bench]    union t=8 rep 3 kmc: 7.666s  rss=2516MB  cpu=325%  out=1700MB  ok
+[bench]    chr1:chr1_mutJ05 k=31 complete: removing its KMC databases
+[bench] setop_pairs: done
+[bench] resume: 0 row(s) already in setop_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 0 row(s) already in construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[hg002_A:hg002_B gut_A:gut_B ocean_SRF:ocean_DCM] km=[31,15] threads=[1 8] ops=[union joint sizes inter@8 diffab@8 diffba@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/setop_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == hg002_A:hg002_B k=31 m=15
+[bench] construct sklib hg002_A k=31 m=15 (t=8)
+[bench]   -> 224.981s, 8698 MB
+[bench] construct kmc hg002_A k=31 m=15 (t=8)
+[bench]   -> 79.747s, 21215 MB
+[bench] construct sklib hg002_B k=31 m=15 (t=8)
+[bench]   -> 222.245s, 8939 MB
+[bench] construct kmc hg002_B k=31 m=15 (t=8)
+[bench]   -> 78.364s, 21725 MB
+[bench]    |A|=3020982541 |B|=3093906732 |A∩B|=2340608514 |A∪B|=3774280759 J=0.6201
+[bench]    union t=1 rep 1 sklib: 235.170s  rss=153MB  cpu=96%  out=11189MB  ok
+[bench]    union t=1 rep 1 kmc: 106.069s  rss=2915MB  cpu=269%  out=22679MB  ok
+[bench]    union t=1 rep 2 kmc: 124.269s  rss=2915MB  cpu=233%  out=22679MB  ok
+[bench]    union t=1 rep 2 sklib: 233.692s  rss=154MB  cpu=96%  out=11189MB  ok
+[bench]    union t=1 rep 3 sklib: 229.967s  rss=154MB  cpu=96%  out=11189MB  ok
+[bench]    union t=1 rep 3 kmc: 103.887s  rss=2915MB  cpu=270%  out=22679MB  ok
+[bench]    union t=8 rep 1 sklib: 54.696s  rss=899MB  cpu=772%  out=11189MB  ok
+[bench]    union t=8 rep 1 kmc: 89.106s  rss=2918MB  cpu=369%  out=22679MB  ok
+[bench]    union t=8 rep 2 kmc: 89.163s  rss=2917MB  cpu=368%  out=22679MB  ok
+[bench]    union t=8 rep 2 sklib: 55.758s  rss=886MB  cpu=773%  out=11189MB  ok
+[bench]    union t=8 rep 3 sklib: 59.537s  rss=881MB  cpu=769%  out=11189MB  ok
+[bench]    union t=8 rep 3 kmc: 89.609s  rss=2917MB  cpu=371%  out=22679MB  ok
+[bench]    joint t=1 rep 1 sklib: 402.246s  rss=269MB  cpu=98%  out=21953MB  ok
+[bench]    joint t=1 rep 1 kmc: 111.208s  rss=3108MB  cpu=316%  out=45425MB  ok
+[bench]    joint t=1 rep 2 kmc: 112.663s  rss=3108MB  cpu=318%  out=45425MB  ok
+[bench]    joint t=1 rep 2 sklib: 402.208s  rss=269MB  cpu=98%  out=21953MB  ok
+[bench]    joint t=1 rep 3 sklib: 395.420s  rss=269MB  cpu=98%  out=21953MB  ok
+[bench]    joint t=1 rep 3 kmc: 108.465s  rss=3107MB  cpu=318%  out=45425MB  ok
+[bench]    joint t=8 rep 1 sklib: 85.320s  rss=1522MB  cpu=774%  out=21953MB  ok
+[bench]    joint t=8 rep 1 kmc: 92.970s  rss=3111MB  cpu=410%  out=45425MB  ok
+[bench]    joint t=8 rep 2 kmc: 92.574s  rss=3111MB  cpu=406%  out=45425MB  ok
+[bench]    joint t=8 rep 2 sklib: 89.037s  rss=1562MB  cpu=770%  out=21953MB  ok
+[bench]    joint t=8 rep 3 sklib: 93.439s  rss=1521MB  cpu=775%  out=21953MB  ok
+[bench]    joint t=8 rep 3 kmc: 93.860s  rss=3111MB  cpu=413%  out=45425MB  ok
+[bench]    sizes t=1 rep 1 sklib: 41.566s  rss=34MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 40.837s  rss=34MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 40.588s  rss=34MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 7.451s  rss=167MB  cpu=702%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 7.848s  rss=167MB  cpu=701%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 8.020s  rss=159MB  cpu=705%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 34.920s  rss=608MB  cpu=754%  out=6552MB  ok
+[bench]    inter t=8 rep 1 kmc: 88.582s  rss=2917MB  cpu=357%  out=14077MB  ok
+[bench]    inter t=8 rep 2 kmc: 87.849s  rss=2917MB  cpu=354%  out=14077MB  ok
+[bench]    inter t=8 rep 2 sklib: 34.386s  rss=594MB  cpu=760%  out=6552MB  ok
+[bench]    inter t=8 rep 3 sklib: 35.581s  rss=604MB  cpu=759%  out=6552MB  ok
+[bench]    inter t=8 rep 3 kmc: 89.468s  rss=2917MB  cpu=354%  out=14077MB  ok
+[bench]    diffab t=8 rep 1 sklib: 14.515s  rss=335MB  cpu=744%  out=2000MB  ok
+[bench]    diffab t=8 rep 1 kmc: 87.318s  rss=2918MB  cpu=333%  out=4115MB  ok
+[bench]    diffab t=8 rep 2 kmc: 87.732s  rss=2917MB  cpu=331%  out=4115MB  ok
+[bench]    diffab t=8 rep 2 sklib: 17.070s  rss=311MB  cpu=617%  out=2000MB  ok
+[bench]    diffab t=8 rep 3 sklib: 15.290s  rss=323MB  cpu=739%  out=2000MB  ok
+[bench]    diffab t=8 rep 3 kmc: 89.491s  rss=2917MB  cpu=333%  out=4115MB  ok
+[bench]    diffba t=8 rep 1 sklib: 15.759s  rss=319MB  cpu=747%  out=2211MB  ok
+[bench]    diffba t=8 rep 1 kmc: 88.774s  rss=2917MB  cpu=333%  out=4553MB  ok
+[bench]    diffba t=8 rep 2 kmc: 88.075s  rss=2917MB  cpu=333%  out=4553MB  ok
+[bench]    diffba t=8 rep 2 sklib: 15.797s  rss=326MB  cpu=723%  out=2211MB  ok
+[bench]    diffba t=8 rep 3 sklib: 16.475s  rss=313MB  cpu=710%  out=2211MB  ok
+[bench]    diffba t=8 rep 3 kmc: 88.598s  rss=2917MB  cpu=334%  out=4553MB  ok
+[bench]    hg002_A:hg002_B k=31 complete: removing its KMC databases
+[bench] == gut_A:gut_B k=31 m=15
+[bench] construct sklib gut_A k=31 m=15 (t=8)
+[bench]   -> 194.668s, 1547 MB
+[bench] construct kmc gut_A k=31 m=15 (t=8)
+[bench]   -> 66.478s, 4420 MB
+[bench] construct sklib gut_B k=31 m=15 (t=8)
+[bench]   -> 224.454s, 1734 MB
+[bench] construct kmc gut_B k=31 m=15 (t=8)
+[bench]   -> 74.597s, 4925 MB
+[bench]    |A|=621722235 |B|=693866978 |A∩B|=368443864 |A∪B|=947145349 J=0.3890
+[bench]    union t=1 rep 1 sklib: 67.028s  rss=23MB  cpu=76%  out=2452MB  ok
+[bench]    union t=1 rep 1 kmc: 27.764s  rss=2607MB  cpu=258%  out=5716MB  ok
+[bench]    union t=1 rep 2 kmc: 25.600s  rss=2607MB  cpu=268%  out=5716MB  ok
+[bench]    union t=1 rep 2 sklib: 67.201s  rss=23MB  cpu=75%  out=2452MB  ok
+[bench]    union t=1 rep 3 sklib: 61.891s  rss=23MB  cpu=80%  out=2452MB  ok
+[bench]    union t=1 rep 3 kmc: 27.497s  rss=2606MB  cpu=254%  out=5716MB  ok
+[bench]    union t=8 rep 1 sklib: 11.236s  rss=141MB  cpu=759%  out=2452MB  ok
+[bench]    union t=8 rep 1 kmc: 22.375s  rss=2610MB  cpu=359%  out=5716MB  ok
+[bench]    union t=8 rep 2 kmc: 22.468s  rss=2609MB  cpu=358%  out=5716MB  ok
+[bench]    union t=8 rep 2 sklib: 11.721s  rss=142MB  cpu=764%  out=2452MB  ok
+[bench]    union t=8 rep 3 sklib: 12.094s  rss=149MB  cpu=762%  out=2452MB  ok
+[bench]    union t=8 rep 3 kmc: 23.088s  rss=2609MB  cpu=359%  out=5716MB  ok
+[bench]    joint t=1 rep 1 sklib: 92.995s  rss=35MB  cpu=96%  out=4900MB  ok
+[bench]    joint t=1 rep 1 kmc: 27.090s  rss=2800MB  cpu=319%  out=11499MB  ok
+[bench]    joint t=1 rep 2 kmc: 28.286s  rss=2800MB  cpu=318%  out=11499MB  ok
+[bench]    joint t=1 rep 2 sklib: 92.923s  rss=35MB  cpu=96%  out=4900MB  ok
+[bench]    joint t=1 rep 3 sklib: 90.978s  rss=35MB  cpu=96%  out=4900MB  ok
+[bench]    joint t=1 rep 3 kmc: 26.823s  rss=2800MB  cpu=319%  out=11499MB  ok
+[bench]    joint t=8 rep 1 sklib: 17.093s  rss=233MB  cpu=766%  out=4900MB  ok
+[bench]    joint t=8 rep 1 kmc: 23.642s  rss=2803MB  cpu=397%  out=11499MB  ok
+[bench]    joint t=8 rep 2 kmc: 23.906s  rss=2803MB  cpu=398%  out=11499MB  ok
+[bench]    joint t=8 rep 2 sklib: 17.676s  rss=231MB  cpu=776%  out=4900MB  ok
+[bench]    joint t=8 rep 3 sklib: 18.155s  rss=233MB  cpu=773%  out=4900MB  ok
+[bench]    joint t=8 rep 3 kmc: 24.275s  rss=2803MB  cpu=398%  out=11499MB  ok
+[bench]    sizes t=1 rep 1 sklib: 10.644s  rss=8MB  cpu=94%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 10.370s  rss=8MB  cpu=93%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 10.238s  rss=8MB  cpu=93%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 1.795s  rss=23MB  cpu=677%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 1.846s  rss=23MB  cpu=679%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 1.915s  rss=23MB  cpu=677%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 5.461s  rss=67MB  cpu=737%  out=859MB  ok
+[bench]    inter t=8 rep 1 kmc: 22.751s  rss=2610MB  cpu=332%  out=2244MB  ok
+[bench]    inter t=8 rep 2 kmc: 22.621s  rss=2610MB  cpu=332%  out=2244MB  ok
+[bench]    inter t=8 rep 2 sklib: 5.400s  rss=69MB  cpu=737%  out=859MB  ok
+[bench]    inter t=8 rep 3 sklib: 5.506s  rss=70MB  cpu=741%  out=859MB  ok
+[bench]    inter t=8 rep 3 kmc: 22.648s  rss=2610MB  cpu=336%  out=2244MB  ok
+[bench]    diffab t=8 rep 1 sklib: 4.248s  rss=56MB  cpu=734%  out=701MB  ok
+[bench]    diffab t=8 rep 1 kmc: 22.548s  rss=2610MB  cpu=327%  out=1553MB  ok
+[bench]    diffab t=8 rep 2 kmc: 22.441s  rss=2610MB  cpu=326%  out=1553MB  ok
+[bench]    diffab t=8 rep 2 sklib: 4.257s  rss=55MB  cpu=732%  out=701MB  ok
+[bench]    diffab t=8 rep 3 sklib: 4.530s  rss=54MB  cpu=730%  out=701MB  ok
+[bench]    diffab t=8 rep 3 kmc: 22.787s  rss=2610MB  cpu=324%  out=1553MB  ok
+[bench]    diffba t=8 rep 1 sklib: 4.985s  rss=65MB  cpu=735%  out=886MB  ok
+[bench]    diffba t=8 rep 1 kmc: 22.713s  rss=2610MB  cpu=329%  out=1986MB  ok
+[bench]    diffba t=8 rep 2 kmc: 22.619s  rss=2610MB  cpu=325%  out=1986MB  ok
+[bench]    diffba t=8 rep 2 sklib: 4.988s  rss=64MB  cpu=732%  out=886MB  ok
+[bench]    diffba t=8 rep 3 sklib: 5.198s  rss=65MB  cpu=734%  out=886MB  ok
+[bench]    diffba t=8 rep 3 kmc: 22.956s  rss=2610MB  cpu=329%  out=1986MB  ok
+[bench]    gut_A:gut_B k=31 complete: removing its KMC databases
+[bench] == ocean_SRF:ocean_DCM k=31 m=15
+[bench] construct sklib ocean_SRF k=31 m=15 (t=8)
+[bench]   -> 313.746s, 11620 MB
+[bench] construct kmc ocean_SRF k=31 m=15 (t=8)
+[bench]   -> 90.832s, 28292 MB
+[bench] construct sklib ocean_DCM k=31 m=15 (t=8)
+[bench]   -> 304.589s, 10883 MB
+[bench] construct kmc ocean_DCM k=31 m=15 (t=8)
+[bench]   -> 90.910s, 26606 MB
+[bench]    |A|=4032100798 |B|=3791129053 |A∩B|=1228763395 |A∪B|=6594466456 J=0.1863
+[bench]    union t=1 rep 1 sklib: 439.072s  rss=192MB  cpu=98%  out=19939MB  ok
+[bench]    union t=1 rep 1 kmc: 156.775s  rss=2842MB  cpu=275%  out=39600MB  ok
+[bench]    union t=1 rep 2 kmc: 150.061s  rss=2842MB  cpu=287%  out=39600MB  ok
+[bench]    union t=1 rep 2 sklib: 436.982s  rss=192MB  cpu=98%  out=19939MB  ok
+[bench]    union t=1 rep 3 sklib: 434.614s  rss=192MB  cpu=98%  out=19939MB  ok
+[bench]    union t=1 rep 3 kmc: 148.444s  rss=2842MB  cpu=287%  out=39600MB  ok
+[bench]    union t=8 rep 1 sklib: 119.080s  rss=1052MB  cpu=785%  out=19939MB  ok
+[bench]    union t=8 rep 1 kmc: 134.563s  rss=2844MB  cpu=371%  out=39600MB  ok
+[bench]    union t=8 rep 2 kmc: 132.602s  rss=2845MB  cpu=370%  out=39600MB  ok
+[bench]    union t=8 rep 2 sklib: 123.450s  rss=1047MB  cpu=787%  out=19939MB  ok
+[bench]    union t=8 rep 3 sklib: 132.153s  rss=998MB  cpu=787%  out=19939MB  ok
+[bench]    union t=8 rep 3 kmc: 136.164s  rss=2844MB  cpu=371%  out=39600MB  ok
+[bench]    joint t=1 rep 1 sklib: 743.644s  rss=286MB  cpu=98%  out=38862MB  ok
+[bench]    joint t=1 rep 1 kmc: 157.372s  rss=3034MB  cpu=345%  out=79267MB  ok
+[bench]    joint t=1 rep 2 kmc: 158.125s  rss=3035MB  cpu=348%  out=79267MB  ok
+[bench]    joint t=1 rep 2 sklib: 704.238s  rss=285MB  cpu=98%  out=38862MB  ok
+[bench]    joint t=1 rep 3 sklib: 666.427s  rss=286MB  cpu=98%  out=38862MB  ok
+[bench]    joint t=1 rep 3 kmc: 158.351s  rss=3035MB  cpu=286%  out=79267MB  ok
+[bench]    joint t=8 rep 1 sklib: 143.676s  rss=1691MB  cpu=785%  out=38862MB  ok
+[bench]    joint t=8 rep 1 kmc: 116.243s  rss=3038MB  cpu=407%  out=79267MB  ok
+[bench]    joint t=8 rep 2 kmc: 117.223s  rss=3038MB  cpu=401%  out=79267MB  ok
+[bench]    joint t=8 rep 2 sklib: 144.909s  rss=1711MB  cpu=783%  out=38862MB  ok
+[bench]    joint t=8 rep 3 sklib: 145.503s  rss=1686MB  cpu=785%  out=38862MB  ok
+[bench]    joint t=8 rep 3 kmc: 140.946s  rss=3183MB  cpu=332%  out=79267MB  ok
+[bench]    sizes t=1 rep 1 sklib: 68.083s  rss=31MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 67.823s  rss=31MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 68.098s  rss=31MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 12.155s  rss=152MB  cpu=729%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 12.438s  rss=152MB  cpu=730%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 12.499s  rss=150MB  cpu=731%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 23.631s  rss=284MB  cpu=762%  out=3340MB  ok
+[bench]    inter t=8 rep 1 kmc: 107.763s  rss=2845MB  cpu=323%  out=7406MB  ok
+[bench]    inter t=8 rep 2 kmc: 107.929s  rss=2845MB  cpu=320%  out=7406MB  ok
+[bench]    inter t=8 rep 2 sklib: 23.081s  rss=285MB  cpu=760%  out=3340MB  ok
+[bench]    inter t=8 rep 3 sklib: 23.519s  rss=272MB  cpu=765%  out=3340MB  ok
+[bench]    inter t=8 rep 3 kmc: 108.467s  rss=2845MB  cpu=321%  out=7406MB  ok
+[bench]    diffab t=8 rep 1 sklib: 40.241s  rss=529MB  cpu=765%  out=8171MB  ok
+[bench]    diffab t=8 rep 1 kmc: 109.094s  rss=2844MB  cpu=331%  out=16853MB  ok
+[bench]    diffab t=8 rep 2 kmc: 108.635s  rss=2845MB  cpu=329%  out=16853MB  ok
+[bench]    diffab t=8 rep 2 sklib: 40.161s  rss=541MB  cpu=768%  out=8171MB  ok
+[bench]    diffab t=8 rep 3 sklib: 40.872s  rss=508MB  cpu=768%  out=8171MB  ok
+[bench]    diffab t=8 rep 3 kmc: 109.297s  rss=2844MB  cpu=331%  out=16853MB  ok
+[bench]    diffba t=8 rep 1 sklib: 37.103s  rss=491MB  cpu=772%  out=7410MB  ok
+[bench]    diffba t=8 rep 1 kmc: 108.994s  rss=2844MB  cpu=330%  out=15407MB  ok
+[bench]    diffba t=8 rep 2 kmc: 107.962s  rss=2845MB  cpu=329%  out=15407MB  ok
+[bench]    diffba t=8 rep 2 sklib: 37.098s  rss=487MB  cpu=772%  out=7410MB  ok
+[bench]    diffba t=8 rep 3 sklib: 37.539s  rss=496MB  cpu=772%  out=7410MB  ok
+[bench]    diffba t=8 rep 3 kmc: 109.200s  rss=2845MB  cpu=329%  out=15407MB  ok
+[bench]    ocean_SRF:ocean_DCM k=31 complete: removing its KMC databases
+[bench] setop_pairs: done
+[bench] resume: 144 row(s) already in setop_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 12 row(s) already in construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[hg002_A:hg002_B gut_A:gut_B ocean_SRF:ocean_DCM] km=[63,31] threads=[1 8] ops=[union joint sizes inter@8 diffab@8 diffba@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/setop_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == hg002_A:hg002_B k=63 m=31
+[bench] construct sklib hg002_A k=63 m=31 (t=8)
+[bench]   -> 272.013s, 7619 MB
+[bench] construct kmc hg002_A k=63 m=31 (t=8)
+[bench]   -> 77.382s, 49066 MB
+[bench] construct sklib hg002_B k=63 m=31 (t=8)
+[bench]   -> 266.375s, 7799 MB
+[bench] construct kmc hg002_B k=63 m=31 (t=8)
+[bench]   -> 74.358s, 49688 MB
+[bench]    |A|=3266523683 |B|=3308009223 |A∩B|=2261455778 |A∪B|=4313077128 J=0.5243
+[bench]    union t=1 rep 1 sklib: 258.160s  rss=357MB  cpu=97%  out=10268MB  ok
+[bench]    union t=1 rep 1 kmc: 148.753s  rss=2452MB  cpu=293%  out=60416MB  ok
+[bench]    union t=1 rep 2 kmc: 148.478s  rss=2452MB  cpu=294%  out=60416MB  ok
+[bench]    union t=1 rep 2 sklib: 256.575s  rss=357MB  cpu=97%  out=10268MB  ok
+[bench]    union t=1 rep 3 sklib: 256.949s  rss=357MB  cpu=97%  out=10268MB  ok
+[bench]    union t=1 rep 3 kmc: 149.141s  rss=2452MB  cpu=292%  out=60416MB  ok
+[bench]    union t=8 rep 1 sklib: 65.139s  rss=1324MB  cpu=775%  out=10268MB  ok
+[bench]    union t=8 rep 1 kmc: 147.345s  rss=2456MB  cpu=325%  out=60416MB  ok
+[bench]    union t=8 rep 2 kmc: 146.097s  rss=2456MB  cpu=325%  out=60416MB  ok
+[bench]    union t=8 rep 2 sklib: 65.683s  rss=1362MB  cpu=774%  out=10268MB  ok
+[bench]    union t=8 rep 3 sklib: 66.457s  rss=1329MB  cpu=775%  out=10268MB  ok
+[bench]    union t=8 rep 3 kmc: 147.482s  rss=2456MB  cpu=325%  out=60416MB  ok
+[bench]    joint t=1 rep 1 sklib: 432.200s  rss=623MB  cpu=98%  out=21442MB  ok
+[bench]    joint t=1 rep 1 kmc: 154.179s  rss=2645MB  cpu=360%  out=120900MB  ok
+[bench]    joint t=1 rep 2 kmc: 154.169s  rss=2645MB  cpu=361%  out=120900MB  ok
+[bench]    joint t=1 rep 2 sklib: 431.388s  rss=623MB  cpu=98%  out=21442MB  ok
+[bench]    joint t=1 rep 3 sklib: 431.828s  rss=623MB  cpu=98%  out=21442MB  ok
+[bench]    joint t=1 rep 3 kmc: 202.231s  rss=2645MB  cpu=273%  out=120900MB  ok
+[bench]    joint t=8 rep 1 sklib: 98.831s  rss=2345MB  cpu=777%  out=21442MB  ok
+[bench]    joint t=8 rep 1 kmc: 152.989s  rss=2649MB  cpu=376%  out=120900MB  ok
+[bench]    joint t=8 rep 2 kmc: 151.526s  rss=2649MB  cpu=378%  out=120900MB  ok
+[bench]    joint t=8 rep 2 sklib: 99.239s  rss=2323MB  cpu=778%  out=21442MB  ok
+[bench]    joint t=8 rep 3 sklib: 99.806s  rss=2316MB  cpu=780%  out=21442MB  ok
+[bench]    joint t=8 rep 3 kmc: 152.239s  rss=2649MB  cpu=377%  out=120900MB  ok
+[bench]    sizes t=1 rep 1 sklib: 40.384s  rss=53MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 39.726s  rss=53MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 39.898s  rss=53MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 7.408s  rss=154MB  cpu=709%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 7.582s  rss=152MB  cpu=712%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 7.634s  rss=150MB  cpu=712%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 34.902s  rss=754MB  cpu=764%  out=5267MB  ok
+[bench]    inter t=8 rep 1 kmc: 143.904s  rss=2456MB  cpu=306%  out=31693MB  ok
+[bench]    inter t=8 rep 2 kmc: 143.214s  rss=2455MB  cpu=304%  out=31693MB  ok
+[bench]    inter t=8 rep 2 sklib: 34.489s  rss=742MB  cpu=763%  out=5267MB  ok
+[bench]    inter t=8 rep 3 sklib: 35.099s  rss=716MB  cpu=768%  out=5267MB  ok
+[bench]    inter t=8 rep 3 kmc: 144.041s  rss=2456MB  cpu=306%  out=31693MB  ok
+[bench]    diffab t=8 rep 1 sklib: 17.551s  rss=497MB  cpu=748%  out=2880MB  ok
+[bench]    diffab t=8 rep 1 kmc: 141.276s  rss=2456MB  cpu=291%  out=14104MB  ok
+[bench]    diffab t=8 rep 2 kmc: 141.462s  rss=2456MB  cpu=289%  out=14104MB  ok
+[bench]    diffab t=8 rep 2 sklib: 17.869s  rss=494MB  cpu=727%  out=2880MB  ok
+[bench]    diffab t=8 rep 3 sklib: 18.041s  rss=501MB  cpu=745%  out=2880MB  ok
+[bench]    diffab t=8 rep 3 kmc: 142.356s  rss=2456MB  cpu=289%  out=14104MB  ok
+[bench]    diffba t=8 rep 1 sklib: 18.052s  rss=519MB  cpu=747%  out=3025MB  ok
+[bench]    diffba t=8 rep 1 kmc: 141.692s  rss=2455MB  cpu=291%  out=14685MB  ok
+[bench]    diffba t=8 rep 2 kmc: 141.017s  rss=2456MB  cpu=290%  out=14685MB  ok
+[bench]    diffba t=8 rep 2 sklib: 18.041s  rss=543MB  cpu=747%  out=3025MB  ok
+[bench]    diffba t=8 rep 3 sklib: 18.353s  rss=491MB  cpu=750%  out=3025MB  ok
+[bench]    diffba t=8 rep 3 kmc: 142.434s  rss=2456MB  cpu=290%  out=14685MB  ok
+[bench]    hg002_A:hg002_B k=63 complete: removing its KMC databases
+[bench] == gut_A:gut_B k=63 m=31
+[bench] construct sklib gut_A k=63 m=31 (t=8)
+[bench]   -> 154.588s, 1448 MB
+[bench] construct kmc gut_A k=63 m=31 (t=8)
+[bench]   -> 48.384s, 7895 MB
+[bench] construct sklib gut_B k=63 m=31 (t=8)
+[bench]   -> 175.079s, 1613 MB
+[bench] construct kmc gut_B k=63 m=31 (t=8)
+[bench]   -> 51.211s, 8882 MB
+[bench]    |A|=521813431 |B|=587595979 |A∩B|=279368341 |A∪B|=830041069 J=0.3366
+[bench]    union t=1 rep 1 sklib: 52.336s  rss=27MB  cpu=83%  out=2366MB  ok
+[bench]    union t=1 rep 1 kmc: 26.612s  rss=1820MB  cpu=284%  out=11654MB  ok
+[bench]    union t=1 rep 2 kmc: 26.397s  rss=1820MB  cpu=288%  out=11654MB  ok
+[bench]    union t=1 rep 2 sklib: 48.201s  rss=27MB  cpu=89%  out=2366MB  ok
+[bench]    union t=1 rep 3 sklib: 45.642s  rss=27MB  cpu=95%  out=2366MB  ok
+[bench]    union t=1 rep 3 kmc: 26.348s  rss=1820MB  cpu=289%  out=11654MB  ok
+[bench]    union t=8 rep 1 sklib: 9.933s  rss=171MB  cpu=763%  out=2366MB  ok
+[bench]    union t=8 rep 1 kmc: 23.821s  rss=1824MB  cpu=342%  out=11654MB  ok
+[bench]    union t=8 rep 2 kmc: 24.019s  rss=1824MB  cpu=339%  out=11654MB  ok
+[bench]    union t=8 rep 2 sklib: 9.992s  rss=172MB  cpu=763%  out=2366MB  ok
+[bench]    union t=8 rep 3 sklib: 10.157s  rss=166MB  cpu=762%  out=2366MB  ok
+[bench]    union t=8 rep 3 kmc: 24.284s  rss=1824MB  cpu=339%  out=11654MB  ok
+[bench]    joint t=1 rep 1 sklib: 81.095s  rss=44MB  cpu=95%  out=5000MB  ok
+[bench]    joint t=1 rep 1 kmc: 34.147s  rss=2013MB  cpu=288%  out=23375MB  ok
+[bench]    joint t=1 rep 2 kmc: 28.479s  rss=2014MB  cpu=353%  out=23375MB  ok
+[bench]    joint t=1 rep 2 sklib: 81.028s  rss=44MB  cpu=95%  out=5000MB  ok
+[bench]    joint t=1 rep 3 sklib: 80.948s  rss=44MB  cpu=95%  out=5000MB  ok
+[bench]    joint t=1 rep 3 kmc: 26.914s  rss=2014MB  cpu=365%  out=23375MB  ok
+[bench]    joint t=8 rep 1 sklib: 14.197s  rss=290MB  cpu=772%  out=5000MB  ok
+[bench]    joint t=8 rep 1 kmc: 25.011s  rss=2018MB  cpu=404%  out=23375MB  ok
+[bench]    joint t=8 rep 2 kmc: 25.714s  rss=2018MB  cpu=392%  out=23375MB  ok
+[bench]    joint t=8 rep 2 sklib: 14.484s  rss=288MB  cpu=770%  out=5000MB  ok
+[bench]    joint t=8 rep 3 sklib: 14.713s  rss=287MB  cpu=765%  out=5000MB  ok
+[bench]    joint t=8 rep 3 kmc: 25.462s  rss=2018MB  cpu=400%  out=23375MB  ok
+[bench]    sizes t=1 rep 1 sklib: 8.876s  rss=8MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 8.772s  rss=7MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 8.649s  rss=7MB  cpu=92%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 1.629s  rss=19MB  cpu=656%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 1.668s  rss=19MB  cpu=648%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 1.680s  rss=19MB  cpu=648%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 4.204s  rss=69MB  cpu=731%  out=708MB  ok
+[bench]    inter t=8 rep 1 kmc: 23.513s  rss=1824MB  cpu=303%  out=3944MB  ok
+[bench]    inter t=8 rep 2 kmc: 23.426s  rss=1824MB  cpu=303%  out=3944MB  ok
+[bench]    inter t=8 rep 2 sklib: 4.117s  rss=72MB  cpu=737%  out=708MB  ok
+[bench]    inter t=8 rep 3 sklib: 4.210s  rss=69MB  cpu=734%  out=708MB  ok
+[bench]    inter t=8 rep 3 kmc: 23.610s  rss=1824MB  cpu=303%  out=3944MB  ok
+[bench]    diffab t=8 rep 1 sklib: 3.846s  rss=66MB  cpu=733%  out=868MB  ok
+[bench]    diffab t=8 rep 1 kmc: 23.412s  rss=1824MB  cpu=301%  out=3427MB  ok
+[bench]    diffab t=8 rep 2 kmc: 23.522s  rss=1824MB  cpu=298%  out=3427MB  ok
+[bench]    diffab t=8 rep 2 sklib: 3.836s  rss=71MB  cpu=727%  out=868MB  ok
+[bench]    diffab t=8 rep 3 sklib: 3.932s  rss=66MB  cpu=726%  out=868MB  ok
+[bench]    diffab t=8 rep 3 kmc: 23.580s  rss=1824MB  cpu=300%  out=3427MB  ok
+[bench]    diffba t=8 rep 1 sklib: 4.413s  rss=80MB  cpu=729%  out=1057MB  ok
+[bench]    diffba t=8 rep 1 kmc: 23.539s  rss=1824MB  cpu=303%  out=4348MB  ok
+[bench]    diffba t=8 rep 2 kmc: 23.800s  rss=1824MB  cpu=300%  out=4348MB  ok
+[bench]    diffba t=8 rep 2 sklib: 4.401s  rss=79MB  cpu=733%  out=1057MB  ok
+[bench]    diffba t=8 rep 3 sklib: 4.494s  rss=82MB  cpu=729%  out=1057MB  ok
+[bench]    diffba t=8 rep 3 kmc: 23.759s  rss=1824MB  cpu=302%  out=4348MB  ok
+[bench]    gut_A:gut_B k=63 complete: removing its KMC databases
+[bench] == ocean_SRF:ocean_DCM k=63 m=31
+[bench] construct sklib ocean_SRF k=63 m=31 (t=8)
+[bench]   -> 282.614s, 9211 MB
+[bench] construct kmc ocean_SRF k=63 m=31 (t=8)
+[bench]   -> 63.188s, 50827 MB
+[bench] construct sklib ocean_DCM k=63 m=31 (t=8)
+[bench]   -> 278.430s, 8452 MB
+[bench] construct kmc ocean_DCM k=63 m=31 (t=8)
+[bench]   -> 63.202s, 47462 MB
+[bench]    |A|=3383945573 |B|=3159634195 |A∩B|=844222931 |A∪B|=5699356837 J=0.1481
+[bench]    union t=1 rep 1 sklib: 341.670s  rss=284MB  cpu=97%  out=15458MB  ok
+[bench]    union t=1 rep 1 kmc: 173.387s  rss=2114MB  cpu=265%  out=79824MB  ok
+[bench]    union t=1 rep 2 kmc: 177.219s  rss=2115MB  cpu=259%  out=79824MB  ok
+[bench]    union t=1 rep 2 sklib: 366.739s  rss=284MB  cpu=90%  out=15458MB  ok
+[bench]    union t=1 rep 3 sklib: 341.473s  rss=284MB  cpu=97%  out=15458MB  ok
+[bench]    union t=1 rep 3 kmc: 178.520s  rss=2114MB  cpu=259%  out=79824MB  ok
+[bench]    union t=8 rep 1 sklib: 93.999s  rss=1227MB  cpu=774%  out=15458MB  ok
+[bench]    union t=8 rep 1 kmc: 146.788s  rss=2118MB  cpu=341%  out=79824MB  ok
+[bench]    union t=8 rep 2 kmc: 145.859s  rss=2118MB  cpu=341%  out=79824MB  ok
+[bench]    union t=8 rep 2 sklib: 97.085s  rss=1197MB  cpu=721%  out=15458MB  ok
+[bench]    union t=8 rep 3 sklib: 95.316s  rss=1228MB  cpu=770%  out=15458MB  ok
+[bench]    union t=8 rep 3 kmc: 147.414s  rss=2118MB  cpu=340%  out=79824MB  ok
+[bench]    joint t=1 rep 1 sklib: 582.368s  rss=493MB  cpu=98%  out=32094MB  ok
+[bench]    joint t=1 rep 1 kmc: 186.600s  rss=2308MB  cpu=328%  out=159716MB  ok
+[bench]    joint t=1 rep 2 kmc: 167.020s  rss=2308MB  cpu=370%  out=159716MB  ok
+[bench]    joint t=1 rep 2 sklib: 584.039s  rss=493MB  cpu=98%  out=32094MB  ok
+[bench]    joint t=1 rep 3 sklib: 584.982s  rss=493MB  cpu=98%  out=32094MB  ok
+[bench]    joint t=1 rep 3 kmc: 157.346s  rss=2308MB  cpu=391%  out=159716MB  ok
+[bench]    joint t=8 rep 1 sklib: 146.932s  rss=2239MB  cpu=765%  out=32094MB  ok
+[bench]    joint t=8 rep 1 kmc: 154.796s  rss=2312MB  cpu=402%  out=159716MB  ok
+[bench]    joint t=8 rep 2 kmc: 154.642s  rss=2312MB  cpu=402%  out=159716MB  ok
+[bench]    joint t=8 rep 2 sklib: 147.543s  rss=2200MB  cpu=771%  out=32094MB  ok
+[bench]    joint t=8 rep 3 sklib: 146.461s  rss=2262MB  cpu=784%  out=32094MB  ok
+[bench]    joint t=8 rep 3 kmc: 154.381s  rss=2312MB  cpu=404%  out=159716MB  ok
+[bench]    sizes t=1 rep 1 sklib: 62.791s  rss=37MB  cpu=89%  out=0MB  ok
+[bench]    sizes t=1 rep 2 sklib: 60.853s  rss=37MB  cpu=91%  out=0MB  ok
+[bench]    sizes t=1 rep 3 sklib: 60.765s  rss=37MB  cpu=91%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 12.092s  rss=128MB  cpu=737%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 12.376s  rss=131MB  cpu=734%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 12.521s  rss=128MB  cpu=736%  out=0MB  ok
+[bench]    inter t=8 rep 1 sklib: 19.367s  rss=255MB  cpu=754%  out=2381MB  ok
+[bench]    inter t=8 rep 1 kmc: 141.219s  rss=2118MB  cpu=287%  out=11852MB  ok
+[bench]    inter t=8 rep 2 kmc: 140.118s  rss=2118MB  cpu=286%  out=11852MB  ok
+[bench]    inter t=8 rep 2 sklib: 20.786s  rss=258MB  cpu=661%  out=2381MB  ok
+[bench]    inter t=8 rep 3 sklib: 20.367s  rss=260MB  cpu=695%  out=2381MB  ok
+[bench]    inter t=8 rep 3 kmc: 140.810s  rss=2118MB  cpu=288%  out=11852MB  ok
+[bench]    diffab t=8 rep 1 sklib: 42.020s  rss=699MB  cpu=768%  out=7513MB  ok
+[bench]    diffab t=8 rep 1 kmc: 142.642s  rss=2118MB  cpu=303%  out=35589MB  ok
+[bench]    diffab t=8 rep 2 kmc: 141.923s  rss=2118MB  cpu=302%  out=35589MB  ok
+[bench]    diffab t=8 rep 2 sklib: 42.325s  rss=686MB  cpu=769%  out=7513MB  ok
+[bench]    diffab t=8 rep 3 sklib: 43.025s  rss=683MB  cpu=772%  out=7513MB  ok
+[bench]    diffab t=8 rep 3 kmc: 142.951s  rss=2118MB  cpu=304%  out=35589MB  ok
+[bench]    diffba t=8 rep 1 sklib: 38.833s  rss=591MB  cpu=764%  out=6741MB  ok
+[bench]    diffba t=8 rep 1 kmc: 142.909s  rss=2118MB  cpu=301%  out=32449MB  ok
+[bench]    diffba t=8 rep 2 kmc: 142.014s  rss=2118MB  cpu=299%  out=32449MB  ok
+[bench]    diffba t=8 rep 2 sklib: 38.628s  rss=596MB  cpu=766%  out=6741MB  ok
+[bench]    diffba t=8 rep 3 sklib: 39.698s  rss=604MB  cpu=757%  out=6741MB  ok
+[bench]    diffba t=8 rep 3 kmc: 142.182s  rss=2118MB  cpu=302%  out=32449MB  ok
+[bench]    ocean_SRF:ocean_DCM k=63 complete: removing its KMC databases
+[bench] setop_pairs: done
+[bench] resume: 0 row(s) already in anchor_end_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 4 row(s) already in anchor_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[chr1:chr1_mutJ05] km=[31,15] threads=[1 8] ops=[union] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/anchor_end_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == chr1:chr1_mutJ05 k=31 m=15
+[bench] construct kmc chr1 k=31 m=15 (t=8)
+[bench]   -> 2.391s, 1634 MB
+[bench] construct kmc chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 2.326s, 1695 MB
+[bench]    |A|=204155258 |B|=211711300 |A∩B|=138010389 |A∪B|=277856169 J=0.4967
+[bench]    union t=1 rep 1 sklib: 12.970s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 1 kmc: 7.739s  rss=2513MB  cpu=258%  out=1700MB  ok
+[bench]    union t=1 rep 2 kmc: 7.921s  rss=2513MB  cpu=255%  out=1700MB  ok
+[bench]    union t=1 rep 2 sklib: 13.013s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib: 12.851s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 kmc: 7.863s  rss=2513MB  cpu=254%  out=1700MB  ok
+[bench]    union t=8 rep 1 sklib: 2.691s  rss=83MB  cpu=701%  out=660MB  ok
+[bench]    union t=8 rep 1 kmc: 7.309s  rss=2516MB  cpu=306%  out=1700MB  ok
+[bench]    union t=8 rep 2 kmc: 7.199s  rss=2516MB  cpu=309%  out=1700MB  ok
+[bench]    union t=8 rep 2 sklib: 2.744s  rss=86MB  cpu=715%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib: 2.687s  rss=87MB  cpu=721%  out=660MB  ok
+[bench]    union t=8 rep 3 kmc: 6.807s  rss=2516MB  cpu=332%  out=1700MB  ok
+[bench]    chr1:chr1_mutJ05 k=31 complete: removing its KMC databases
+[bench] setop_pairs: done

@@ -1,0 +1,419 @@
+[bench] resume: 0 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 0 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[ocean_SRF:ocean_DCM] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == ocean_SRF:ocean_DCM k=31 m=15
+[bench] construct sklib@b16384 ocean_SRF k=31 m=15 (t=8)
+[bench]   -> 246.842s, 11621 MB
+[bench] construct sklib@b65536 ocean_SRF k=31 m=15 (t=8)
+[bench]   -> 244.478s, 11621 MB
+[bench] construct sklib@b262144 ocean_SRF k=31 m=15 (t=8)
+[bench]   -> 269.532s, 11625 MB
+[bench] construct sklib@b16384 ocean_DCM k=31 m=15 (t=8)
+[bench]   -> 253.009s, 10883 MB
+[bench] construct sklib@b65536 ocean_DCM k=31 m=15 (t=8)
+[bench]   -> 255.269s, 10884 MB
+[bench] construct sklib@b262144 ocean_DCM k=31 m=15 (t=8)
+[bench]   -> 291.722s, 10887 MB
+[bench]    |A|=4032100798 |B|=3791129053 |A∩B|=1228763395 |A∪B|=6594466456 J=0.1863
+[bench]    union t=8 rep 1 sklib: 113.462s  rss=975MB  cpu=757%  out=19939MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 95.262s  rss=351MB  cpu=757%  out=19940MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 91.438s  rss=224MB  cpu=721%  out=19940MB  ok
+[bench]    union t=8 rep 1 sklib@b262144: 94.244s  rss=221MB  cpu=639%  out=19944MB  ok
+[bench]    union t=8 rep 2 sklib@b262144: 82.952s  rss=200MB  cpu=730%  out=19944MB  ok
+[bench]    union t=8 rep 2 sklib@b65536: 86.421s  rss=202MB  cpu=750%  out=19940MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 97.005s  rss=369MB  cpu=724%  out=19940MB  ok
+[bench]    union t=8 rep 2 sklib: 113.377s  rss=1010MB  cpu=754%  out=19939MB  ok
+[bench]    union t=8 rep 3 sklib: 114.189s  rss=1048MB  cpu=759%  out=19939MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 96.192s  rss=359MB  cpu=755%  out=19940MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 87.317s  rss=185MB  cpu=750%  out=19940MB  ok
+[bench]    union t=8 rep 3 sklib@b262144: 85.170s  rss=225MB  cpu=705%  out=19944MB  ok
+[bench]    joint t=8 rep 1 sklib: 170.329s  rss=1674MB  cpu=775%  out=38862MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 137.552s  rss=582MB  cpu=770%  out=38863MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 130.456s  rss=336MB  cpu=756%  out=38866MB  ok
+[bench]    joint t=8 rep 1 sklib@b262144: 124.597s  rss=345MB  cpu=724%  out=38879MB  ok
+[bench]    joint t=8 rep 2 sklib@b262144: 125.944s  rss=319MB  cpu=709%  out=38879MB  ok
+[bench]    joint t=8 rep 2 sklib@b65536: 117.033s  rss=345MB  cpu=753%  out=38866MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 124.211s  rss=591MB  cpu=765%  out=38863MB  ok
+[bench]    joint t=8 rep 2 sklib: 148.885s  rss=1649MB  cpu=779%  out=38862MB  ok
+[bench]    joint t=8 rep 3 sklib: 148.204s  rss=1732MB  cpu=780%  out=38862MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 122.714s  rss=605MB  cpu=762%  out=38863MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 116.158s  rss=343MB  cpu=750%  out=38866MB  ok
+[bench]    joint t=8 rep 3 sklib@b262144: 111.964s  rss=344MB  cpu=711%  out=38879MB  ok
+[bench]    sizes t=8 rep 1 sklib: 13.264s  rss=152MB  cpu=733%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 13.558s  rss=55MB  cpu=696%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 14.021s  rss=47MB  cpu=660%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b262144: 16.141s  rss=80MB  cpu=581%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b262144: 16.345s  rss=79MB  cpu=587%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b65536: 14.971s  rss=47MB  cpu=674%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 15.246s  rss=54MB  cpu=709%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 16.390s  rss=148MB  cpu=713%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 16.521s  rss=154MB  cpu=724%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 16.179s  rss=52MB  cpu=712%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 16.497s  rss=47MB  cpu=686%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b262144: 17.788s  rss=77MB  cpu=614%  out=0MB  ok
+[bench] setop_pairs: done
+[bench] resume: 36 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 6 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[chr1:chr1_mutJ05] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == chr1:chr1_mutJ05 k=31 m=15
+[bench] construct sklib@b256 chr1 k=31 m=15 (t=8)
+[bench]   -> 6.353s, 464 MB
+[bench] construct sklib@b1024 chr1 k=31 m=15 (t=8)
+[bench]   -> 5.026s, 464 MB
+[bench] construct sklib@b16384 chr1 k=31 m=15 (t=8)
+[bench]   -> 4.706s, 464 MB
+[bench] construct sklib@b65536 chr1 k=31 m=15 (t=8)
+[bench]   -> 5.879s, 465 MB
+[bench] construct sklib@b256 chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 6.504s, 481 MB
+[bench] construct sklib@b1024 chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 5.215s, 481 MB
+[bench] construct sklib@b16384 chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 5.010s, 481 MB
+[bench] construct sklib@b65536 chr1_mutJ05 k=31 m=15 (t=8)
+[bench]   -> 5.963s, 482 MB
+[bench]    |A|=204155258 |B|=211711300 |A∩B|=138010389 |A∪B|=277856169 J=0.4967
+[bench]    union t=8 rep 1 sklib@b256: 4.629s  rss=614MB  cpu=766%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b1024: 4.147s  rss=191MB  cpu=761%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib: 4.063s  rss=82MB  cpu=721%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 3.997s  rss=59MB  cpu=685%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 4.376s  rss=66MB  cpu=622%  out=661MB  ok
+[bench]    union t=8 rep 2 sklib@b65536: 4.313s  rss=68MB  cpu=630%  out=661MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 4.015s  rss=61MB  cpu=691%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib: 3.860s  rss=84MB  cpu=740%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib@b1024: 4.214s  rss=190MB  cpu=761%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib@b256: 4.944s  rss=657MB  cpu=770%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b256: 4.979s  rss=628MB  cpu=773%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b1024: 4.434s  rss=191MB  cpu=765%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib: 4.180s  rss=85MB  cpu=732%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 4.179s  rss=61MB  cpu=696%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 4.641s  rss=63MB  cpu=590%  out=661MB  ok
+[bench]    joint t=8 rep 1 sklib@b256: 7.130s  rss=1031MB  cpu=776%  out=1356MB  ok
+[bench]    joint t=8 rep 1 sklib@b1024: 8.946s  rss=311MB  cpu=769%  out=1356MB  ok
+[bench]    joint t=8 rep 1 sklib: 9.139s  rss=136MB  cpu=741%  out=1357MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 7.718s  rss=94MB  cpu=680%  out=1357MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 8.124s  rss=100MB  cpu=608%  out=1361MB  ok
+[bench]    joint t=8 rep 2 sklib@b65536: 6.400s  rss=102MB  cpu=605%  out=1361MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 5.862s  rss=98MB  cpu=684%  out=1357MB  ok
+[bench]    joint t=8 rep 2 sklib: 6.184s  rss=138MB  cpu=746%  out=1357MB  ok
+[bench]    joint t=8 rep 2 sklib@b1024: 6.817s  rss=304MB  cpu=770%  out=1356MB  ok
+[bench]    joint t=8 rep 2 sklib@b256: 7.557s  rss=1039MB  cpu=773%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib@b256: 8.311s  rss=1058MB  cpu=768%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib@b1024: 9.914s  rss=307MB  cpu=771%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib: 8.850s  rss=145MB  cpu=738%  out=1357MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 7.338s  rss=95MB  cpu=696%  out=1357MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 6.480s  rss=100MB  cpu=622%  out=1361MB  ok
+[bench]    sizes t=8 rep 1 sklib@b256: 0.577s  rss=72MB  cpu=705%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b1024: 0.616s  rss=26MB  cpu=698%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 0.671s  rss=18MB  cpu=633%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 0.688s  rss=17MB  cpu=595%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 0.820s  rss=26MB  cpu=485%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b65536: 0.830s  rss=26MB  cpu=480%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 0.678s  rss=18MB  cpu=583%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 0.646s  rss=19MB  cpu=645%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b1024: 0.606s  rss=26MB  cpu=704%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b256: 0.665s  rss=73MB  cpu=704%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b256: 0.685s  rss=75MB  cpu=715%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b1024: 0.649s  rss=26MB  cpu=707%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 0.675s  rss=18MB  cpu=638%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 0.697s  rss=17MB  cpu=599%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 0.853s  rss=26MB  cpu=489%  out=0MB  ok
+[bench] setop_pairs: done
+[bench] resume: 81 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 14 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[hg002_A:hg002_B] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == hg002_A:hg002_B k=31 m=15
+[bench] construct sklib@b16384 hg002_A k=31 m=15 (t=8)
+[bench] resume: 36 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 14 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[ocean_SRF:ocean_DCM] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == ocean_SRF:ocean_DCM k=31: all cells done
+[bench] setop_pairs: done
+[bench] resume: 36 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 14 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[hg002_A:hg002_B] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == hg002_A:hg002_B k=31 m=15
+[bench] construct sklib@b16384 hg002_A k=31 m=15 (t=8)
+[bench]   -> 215.911s, 8698 MB
+[bench] construct sklib@b65536 hg002_A k=31 m=15 (t=8)
+[bench]   -> 186.203s, 8699 MB
+[bench] construct sklib@b262144 hg002_A k=31 m=15 (t=8)
+[bench]   -> 227.979s, 8702 MB
+[bench] construct sklib@b16384 hg002_B k=31 m=15 (t=8)
+[bench]   -> 192.878s, 8939 MB
+[bench] construct sklib@b65536 hg002_B k=31 m=15 (t=8)
+[bench]   -> 181.646s, 8940 MB
+[bench] construct sklib@b262144 hg002_B k=31 m=15 (t=8)
+[bench]   -> 219.697s, 8943 MB
+[bench]    |A|=3020982541 |B|=3093906732 |A∩B|=2340608514 |A∪B|=3774280759 J=0.6201
+[bench]    union t=8 rep 1 sklib: 55.391s  rss=851MB  cpu=765%  out=11189MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 50.672s  rss=550MB  cpu=683%  out=11189MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 56.385s  rss=485MB  cpu=577%  out=11190MB  ok
+[bench]    union t=8 rep 1 sklib@b262144: 56.770s  rss=491MB  cpu=545%  out=11193MB  ok
+[bench]    union t=8 rep 2 sklib@b262144: 61.289s  rss=472MB  cpu=491%  out=11193MB  ok
+[bench]    union t=8 rep 2 sklib@b65536: 67.317s  rss=431MB  cpu=449%  out=11190MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 48.744s  rss=572MB  cpu=689%  out=11189MB  ok
+[bench]    union t=8 rep 2 sklib: 54.994s  rss=879MB  cpu=737%  out=11189MB  ok
+[bench]    union t=8 rep 3 sklib: 54.390s  rss=880MB  cpu=755%  out=11189MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 48.765s  rss=521MB  cpu=696%  out=11189MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 50.113s  rss=458MB  cpu=614%  out=11190MB  ok
+[bench]    union t=8 rep 3 sklib@b262144: 124.655s  rss=483MB  cpu=232%  out=11193MB  ok
+[bench]    joint t=8 rep 1 sklib: 78.196s  rss=1498MB  cpu=764%  out=21953MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 74.387s  rss=907MB  cpu=699%  out=21953MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 75.754s  rss=805MB  cpu=632%  out=21956MB  ok
+[bench]    joint t=8 rep 1 sklib@b262144: 113.556s  rss=732MB  cpu=389%  out=21969MB  ok
+[bench]    joint t=8 rep 2 sklib@b262144: 81.009s  rss=803MB  cpu=541%  out=21969MB  ok
+[bench]    joint t=8 rep 2 sklib@b65536: 103.810s  rss=740MB  cpu=448%  out=21956MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 72.693s  rss=913MB  cpu=694%  out=21953MB  ok
+[bench]    joint t=8 rep 2 sklib: 81.045s  rss=1597MB  cpu=767%  out=21953MB  ok
+[bench]    joint t=8 rep 3 sklib: 80.561s  rss=1556MB  cpu=770%  out=21953MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 73.536s  rss=896MB  cpu=711%  out=21953MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 75.951s  rss=824MB  cpu=629%  out=21956MB  ok
+[bench]    joint t=8 rep 3 sklib@b262144: 111.687s  rss=796MB  cpu=389%  out=21969MB  ok
+[bench]    sizes t=8 rep 1 sklib: 7.404s  rss=163MB  cpu=692%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 7.425s  rss=106MB  cpu=635%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 8.367s  rss=101MB  cpu=552%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b262144: 11.306s  rss=144MB  cpu=406%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b262144: 11.265s  rss=151MB  cpu=405%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b65536: 8.294s  rss=99MB  cpu=551%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 7.547s  rss=93MB  cpu=635%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 7.755s  rss=166MB  cpu=699%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 7.638s  rss=162MB  cpu=696%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 7.591s  rss=109MB  cpu=638%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 8.487s  rss=113MB  cpu=558%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b262144: 11.337s  rss=154MB  cpu=412%  out=0MB  ok
+[bench] setop_pairs: done
+[bench] resume: 72 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 20 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[gut_A:gut_B] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == gut_A:gut_B k=31 m=15
+[bench] construct sklib@b1024 gut_A k=31 m=15 (t=8)
+[bench]   -> 185.246s, 1547 MB
+[bench] construct sklib@b16384 gut_A k=31 m=15 (t=8)
+[bench]   -> 170.306s, 1547 MB
+[bench] construct sklib@b65536 gut_A k=31 m=15 (t=8)
+[bench]   -> 168.050s, 1548 MB
+[bench] construct sklib@b262144 gut_A k=31 m=15 (t=8)
+[bench]   -> 182.104s, 1551 MB
+[bench] construct sklib@b1024 gut_B k=31 m=15 (t=8)
+[bench]   -> 215.607s, 1734 MB
+[bench] construct sklib@b16384 gut_B k=31 m=15 (t=8)
+[bench]   -> 195.415s, 1734 MB
+[bench] construct sklib@b65536 gut_B k=31 m=15 (t=8)
+[bench]   -> 197.125s, 1735 MB
+[bench] construct sklib@b262144 gut_B k=31 m=15 (t=8)
+[bench]   -> 213.102s, 1738 MB
+[bench]    |A|=621722235 |B|=693866978 |A∩B|=368443864 |A∪B|=947145349 J=0.3890
+[bench]    union t=8 rep 1 sklib@b1024: 14.629s  rss=513MB  cpu=700%  out=2452MB  ok
+[bench]    union t=8 rep 1 sklib: 13.925s  rss=146MB  cpu=581%  out=2452MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 10.509s  rss=47MB  cpu=746%  out=2452MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 10.231s  rss=30MB  cpu=731%  out=2453MB  ok
+[bench]    union t=8 rep 1 sklib@b262144: 11.214s  rss=66MB  cpu=678%  out=2456MB  ok
+[bench]    union t=8 rep 2 sklib@b262144: 10.740s  rss=67MB  cpu=692%  out=2456MB  ok
+[bench]    union t=8 rep 2 sklib@b65536: 10.208s  rss=29MB  cpu=725%  out=2453MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 10.235s  rss=46MB  cpu=740%  out=2452MB  ok
+[bench]    union t=8 rep 2 sklib: 11.805s  rss=143MB  cpu=676%  out=2452MB  ok
+[bench]    union t=8 rep 2 sklib@b1024: 13.861s  rss=543MB  cpu=731%  out=2452MB  ok
+[bench]    union t=8 rep 3 sklib@b1024: 13.756s  rss=526MB  cpu=732%  out=2452MB  ok
+[bench]    union t=8 rep 3 sklib: 12.255s  rss=140MB  cpu=651%  out=2452MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 10.427s  rss=47MB  cpu=745%  out=2452MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 10.136s  rss=29MB  cpu=737%  out=2453MB  ok
+[bench]    union t=8 rep 3 sklib@b262144: 10.753s  rss=67MB  cpu=694%  out=2456MB  ok
+[bench]    joint t=8 rep 1 sklib@b1024: 18.872s  rss=833MB  cpu=748%  out=4900MB  ok
+[bench]    joint t=8 rep 1 sklib: 18.607s  rss=232MB  cpu=642%  out=4900MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 15.421s  rss=70MB  cpu=755%  out=4901MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 15.147s  rss=39MB  cpu=731%  out=4904MB  ok
+[bench]    joint t=8 rep 1 sklib@b262144: 16.611s  rss=84MB  cpu=705%  out=4917MB  ok
+[bench]    joint t=8 rep 2 sklib@b262144: 16.094s  rss=84MB  cpu=698%  out=4917MB  ok
+[bench]    joint t=8 rep 2 sklib@b65536: 14.738s  rss=39MB  cpu=746%  out=4904MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 14.959s  rss=72MB  cpu=759%  out=4901MB  ok
+[bench]    joint t=8 rep 2 sklib: 18.565s  rss=233MB  cpu=627%  out=4900MB  ok
+[bench]    joint t=8 rep 2 sklib@b1024: 19.786s  rss=862MB  cpu=704%  out=4900MB  ok
+[bench]    joint t=8 rep 3 sklib@b1024: 19.850s  rss=872MB  cpu=703%  out=4900MB  ok
+[bench]    joint t=8 rep 3 sklib: 18.839s  rss=237MB  cpu=631%  out=4900MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 15.379s  rss=71MB  cpu=759%  out=4901MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 15.377s  rss=40MB  cpu=720%  out=4904MB  ok
+[bench]    joint t=8 rep 3 sklib@b262144: 16.168s  rss=85MB  cpu=693%  out=4917MB  ok
+[bench]    sizes t=8 rep 1 sklib@b1024: 1.901s  rss=65MB  cpu=690%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 1.834s  rss=22MB  cpu=655%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 2.038s  rss=13MB  cpu=580%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 2.448s  rss=19MB  cpu=488%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b262144: 3.123s  rss=60MB  cpu=392%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b262144: 3.121s  rss=60MB  cpu=390%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b65536: 2.433s  rss=19MB  cpu=483%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 2.061s  rss=13MB  cpu=574%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 1.862s  rss=22MB  cpu=660%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b1024: 1.897s  rss=66MB  cpu=689%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b1024: 1.899s  rss=65MB  cpu=689%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 1.857s  rss=23MB  cpu=656%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 2.050s  rss=13MB  cpu=589%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 2.464s  rss=19MB  cpu=490%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b262144: 3.130s  rss=60MB  cpu=391%  out=0MB  ok
+[bench] setop_pairs: done
+[bench] resume: 117 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 28 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[ocean_SRF:ocean_DCM] km=[63,31] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == ocean_SRF:ocean_DCM k=63 m=31
+[bench] construct sklib@b16384 ocean_SRF k=63 m=31 (t=8)
+[bench]   -> 263.535s, 9211 MB
+[bench] construct sklib@b65536 ocean_SRF k=63 m=31 (t=8)
+[bench]   -> 230.754s, 9212 MB
+[bench] construct sklib@b262144 ocean_SRF k=63 m=31 (t=8)
+[bench]   -> 239.562s, 9215 MB
+[bench] construct sklib@b16384 ocean_DCM k=63 m=31 (t=8)
+[bench]   -> 254.766s, 8452 MB
+[bench] construct sklib@b65536 ocean_DCM k=63 m=31 (t=8)
+[bench]   -> 226.546s, 8453 MB
+[bench] construct sklib@b262144 ocean_DCM k=63 m=31 (t=8)
+[bench]   -> 257.036s, 8456 MB
+[bench]    |A|=3383945573 |B|=3159634195 |A∩B|=844222931 |A∪B|=5699356837 J=0.1481
+[bench]    union t=8 rep 1 sklib: 97.534s  rss=1129MB  cpu=774%  out=15458MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 79.556s  rss=491MB  cpu=737%  out=15458MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 70.373s  rss=319MB  cpu=749%  out=15459MB  ok
+[bench] sklib@b262144 union k=63 t=8: MISMATCH:u=5699356843 (expected per sizes pass)
+[bench]    union t=8 rep 1 sklib@b262144: 65.970s  rss=298MB  cpu=730%  out=15462MB  MISMATCH:u=5699356843
+[bench] run discarded (paused or on battery during the measurement): /home/yoann/bioinfo/sklib/build-bench/bin/sskm setop --op union -a /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/idx/sklib/sklib-0.15.0/ocean_SRF.k63.m31.b262144/index.sskm -b /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/idx/sklib/sklib-0.15.0/ocean_DCM.k63.m31.b262144/index.sskm -o /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/out/sklib@b262144.union/u.sskm -t 8
+[bench] waiting: paused by user
+[bench] resuming
+[bench] run discarded (paused or on battery during the measurement): /home/yoann/bioinfo/sklib/build-bench/bin/sskm setop --op union -a /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/idx/sklib/sklib-0.15.0/ocean_SRF.k63.m31.b262144/index.sskm -b /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/idx/sklib/sklib-0.15.0/ocean_DCM.k63.m31.b262144/index.sskm -o /home/yoann/bioinfo/sklib/benchmark/results/latest/setop_reads/out/sklib@b262144.union/u.sskm -t 8
+[bench] sklib@b262144 union k=63 t=8: MISMATCH:u=5699356843 (expected per sizes pass)
+[bench]    union t=8 rep 2 sklib@b262144: 90.845s  rss=315MB  cpu=495%  out=15462MB  MISMATCH:u=5699356843
+[bench]    union t=8 rep 2 sklib@b65536: 67.092s  rss=317MB  cpu=755%  out=15459MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 77.140s  rss=486MB  cpu=761%  out=15458MB  ok
+[bench]    union t=8 rep 2 sklib: 97.292s  rss=1221MB  cpu=779%  out=15458MB  ok
+[bench]    union t=8 rep 3 sklib: 96.548s  rss=1237MB  cpu=782%  out=15458MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 75.752s  rss=488MB  cpu=763%  out=15458MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 69.730s  rss=313MB  cpu=744%  out=15459MB  ok
+[bench] sklib@b262144 union k=63 t=8: MISMATCH:u=5699356843 (expected per sizes pass)
+[bench]    union t=8 rep 3 sklib@b262144: 109.077s  rss=314MB  cpu=425%  out=15462MB  MISMATCH:u=5699356843
+[bench]    joint t=8 rep 1 sklib: 148.405s  rss=2204MB  cpu=782%  out=32094MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 110.926s  rss=885MB  cpu=759%  out=32095MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 101.836s  rss=559MB  cpu=749%  out=32098MB  ok
+[bench] sklib@b262144 joint k=63 t=8: MISMATCH:dba=2315411270 (expected per sizes pass)
+[bench]    joint t=8 rep 1 sklib@b262144: 98.844s  rss=537MB  cpu=719%  out=32110MB  MISMATCH:dba=2315411270
+[bench] sklib@b262144 joint k=63 t=8: MISMATCH:dba=2315411270 (expected per sizes pass)
+[bench]    joint t=8 rep 2 sklib@b262144: 97.968s  rss=506MB  cpu=728%  out=32110MB  MISMATCH:dba=2315411270
+[bench]    joint t=8 rep 2 sklib@b65536: 101.275s  rss=536MB  cpu=751%  out=32098MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 111.787s  rss=858MB  cpu=762%  out=32095MB  ok
+[bench]    joint t=8 rep 2 sklib: 149.094s  rss=2253MB  cpu=777%  out=32094MB  ok
+[bench]    joint t=8 rep 3 sklib: 148.097s  rss=2173MB  cpu=782%  out=32094MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 109.664s  rss=888MB  cpu=769%  out=32095MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 102.086s  rss=523MB  cpu=746%  out=32098MB  ok
+[bench] sklib@b262144 joint k=63 t=8: MISMATCH:dba=2315411270 (expected per sizes pass)
+[bench]    joint t=8 rep 3 sklib@b262144: 98.568s  rss=521MB  cpu=715%  out=32110MB  MISMATCH:dba=2315411270
+[bench]    sizes t=8 rep 1 sklib: 13.574s  rss=128MB  cpu=733%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 12.977s  rss=56MB  cpu=716%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 12.800s  rss=49MB  cpu=677%  out=0MB  ok
+[bench] sklib@b262144 sizes k=63 t=8: MISMATCH:sizes (expected per sizes pass)
+[bench]    sizes t=8 rep 1 sklib@b262144: 13.822s  rss=79MB  cpu=574%  out=0MB  MISMATCH:sizes
+[bench] sklib@b262144 sizes k=63 t=8: MISMATCH:sizes (expected per sizes pass)
+[bench]    sizes t=8 rep 2 sklib@b262144: 13.752s  rss=78MB  cpu=567%  out=0MB  MISMATCH:sizes
+[bench]    sizes t=8 rep 2 sklib@b65536: 12.624s  rss=49MB  cpu=675%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 12.882s  rss=56MB  cpu=715%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 14.173s  rss=131MB  cpu=693%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 14.856s  rss=132MB  cpu=674%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 13.076s  rss=56MB  cpu=718%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 12.924s  rss=49MB  cpu=679%  out=0MB  ok
+[bench] sklib@b262144 sizes k=63 t=8: MISMATCH:sizes (expected per sizes pass)
+[bench]    sizes t=8 rep 3 sklib@b262144: 13.897s  rss=81MB  cpu=576%  out=0MB  MISMATCH:sizes
+[bench] setop_pairs: done
+[bench] resume: 153 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 34 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[ocean_SRF:ocean_DCM] km=[31,15] threads=[1 2 4 8 16] ops=[union@1] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == ocean_SRF:ocean_DCM k=31 m=15
+[bench]    |A|=4032100798 |B|=3791129053 |A∩B|=1228763395 |A∪B|=6594466456 J=0.1863
+[bench]    union t=1 rep 1 sklib: 399.887s  rss=192MB  cpu=97%  out=19939MB  ok
+[bench]    union t=1 rep 1 sklib@b16384: 375.008s  rss=74MB  cpu=94%  out=19940MB  ok
+[bench]    union t=1 rep 1 sklib@b65536: 333.890s  rss=64MB  cpu=98%  out=19940MB  ok
+[bench]    union t=1 rep 1 sklib@b262144: 319.516s  rss=102MB  cpu=99%  out=19944MB  ok
+[bench]    union t=1 rep 2 sklib@b262144: 320.212s  rss=102MB  cpu=99%  out=19944MB  ok
+[bench]    union t=1 rep 2 sklib@b65536: 334.112s  rss=64MB  cpu=98%  out=19940MB  ok
+[bench]    union t=1 rep 2 sklib@b16384: 374.095s  rss=74MB  cpu=94%  out=19940MB  ok
+[bench]    union t=1 rep 2 sklib: 399.150s  rss=192MB  cpu=97%  out=19939MB  ok
+[bench]    union t=1 rep 3 sklib: 398.019s  rss=192MB  cpu=97%  out=19939MB  ok
+[bench]    union t=1 rep 3 sklib@b16384: 377.052s  rss=75MB  cpu=93%  out=19940MB  ok
+[bench]    union t=1 rep 3 sklib@b65536: 334.985s  rss=64MB  cpu=98%  out=19940MB  ok
+[bench]    union t=1 rep 3 sklib@b262144: 319.877s  rss=102MB  cpu=99%  out=19944MB  ok
+[bench] setop_pairs: done
+[bench] resume: 165 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 34 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[chr1:chr1_mutJ05] km=[31,15] threads=[1 2 4 8 16] ops=[union@8 joint@8 sizes@8] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == chr1:chr1_mutJ05 k=31 m=15
+[bench]    |A|=204155258 |B|=211711300 |A∩B|=138010389 |A∪B|=277856169 J=0.4967
+[bench]    union t=8 rep 1 sklib@b256: 3.540s  rss=636MB  cpu=758%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b1024: 2.943s  rss=194MB  cpu=756%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib: 2.776s  rss=80MB  cpu=734%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b16384: 2.971s  rss=63MB  cpu=685%  out=660MB  ok
+[bench]    union t=8 rep 1 sklib@b65536: 3.282s  rss=58MB  cpu=611%  out=661MB  ok
+[bench]    union t=8 rep 2 sklib@b65536: 18.078s  rss=66MB  cpu=102%  out=661MB  ok
+[bench]    union t=8 rep 2 sklib@b16384: 7.110s  rss=60MB  cpu=263%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib: 2.633s  rss=83MB  cpu=730%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib@b1024: 3.264s  rss=195MB  cpu=684%  out=660MB  ok
+[bench]    union t=8 rep 2 sklib@b256: 3.792s  rss=588MB  cpu=734%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b256: 3.881s  rss=657MB  cpu=722%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b1024: 3.542s  rss=188MB  cpu=636%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib: 2.805s  rss=81MB  cpu=731%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b16384: 3.008s  rss=58MB  cpu=666%  out=660MB  ok
+[bench]    union t=8 rep 3 sklib@b65536: 6.828s  rss=64MB  cpu=291%  out=661MB  ok
+[bench]    joint t=8 rep 1 sklib@b256: 5.573s  rss=1036MB  cpu=748%  out=1356MB  ok
+[bench]    joint t=8 rep 1 sklib@b1024: 4.846s  rss=307MB  cpu=747%  out=1356MB  ok
+[bench]    joint t=8 rep 1 sklib: 4.429s  rss=134MB  cpu=741%  out=1357MB  ok
+[bench]    joint t=8 rep 1 sklib@b16384: 4.444s  rss=94MB  cpu=687%  out=1357MB  ok
+[bench]    joint t=8 rep 1 sklib@b65536: 5.048s  rss=95MB  cpu=608%  out=1361MB  ok
+[bench]    joint t=8 rep 2 sklib@b65536: 31.758s  rss=98MB  cpu=91%  out=1361MB  ok
+[bench]    joint t=8 rep 2 sklib@b16384: 4.160s  rss=97MB  cpu=672%  out=1357MB  ok
+[bench]    joint t=8 rep 2 sklib: 4.130s  rss=135MB  cpu=739%  out=1357MB  ok
+[bench]    joint t=8 rep 2 sklib@b1024: 4.555s  rss=308MB  cpu=758%  out=1356MB  ok
+[bench]    joint t=8 rep 2 sklib@b256: 5.468s  rss=1030MB  cpu=761%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib@b256: 5.473s  rss=1045MB  cpu=763%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib@b1024: 4.672s  rss=309MB  cpu=755%  out=1356MB  ok
+[bench]    joint t=8 rep 3 sklib: 4.386s  rss=144MB  cpu=734%  out=1357MB  ok
+[bench]    joint t=8 rep 3 sklib@b16384: 4.515s  rss=94MB  cpu=670%  out=1357MB  ok
+[bench]    joint t=8 rep 3 sklib@b65536: 34.779s  rss=94MB  cpu=81%  out=1361MB  ok
+[bench]    sizes t=8 rep 1 sklib@b256: 0.480s  rss=73MB  cpu=652%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b1024: 0.468s  rss=28MB  cpu=609%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib: 0.522s  rss=17MB  cpu=554%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b16384: 0.679s  rss=16MB  cpu=417%  out=0MB  ok
+[bench]    sizes t=8 rep 1 sklib@b65536: 0.847s  rss=26MB  cpu=346%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b65536: 0.856s  rss=26MB  cpu=343%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b16384: 0.685s  rss=17MB  cpu=418%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib: 0.515s  rss=19MB  cpu=568%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b1024: 0.481s  rss=27MB  cpu=617%  out=0MB  ok
+[bench]    sizes t=8 rep 2 sklib@b256: 0.475s  rss=74MB  cpu=666%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b256: 0.484s  rss=75MB  cpu=663%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b1024: 0.484s  rss=26MB  cpu=620%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib: 0.518s  rss=19MB  cpu=567%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b16384: 0.690s  rss=17MB  cpu=422%  out=0MB  ok
+[bench]    sizes t=8 rep 3 sklib@b65536: 7.033s  rss=27MB  cpu=41%  out=0MB  ok
+[bench] setop_pairs: done
+[bench] resume: 210 row(s) already in bucket_sweep_runs.csv; matching (tool,version,host,…) skipped
+[bench] resume: 34 row(s) already in bucket_sweep_construct_runs.csv; matching (tool,version,host,…) skipped
+[bench] setop_pairs: pairs=[chr1:chr1_mutJ05] km=[31,15] threads=[1 2 4 8 16] ops=[union@1] reps=3 cache=cold sklib=sklib-0.15.0 kmc=kmc-3.2.4
+[bench]   pins: t1='none' t8='0,1,3,6,8,10,12,17'; csv=/home/yoann/bioinfo/sklib/benchmark/results/runs/setop_reads_2026-10/data/bucket_sweep_runs.csv; pause with: /home/yoann/bioinfo/sklib/benchmark/scripts/setop_pairs.sh pause
+[bench] == chr1:chr1_mutJ05 k=31 m=15
+[bench]    |A|=204155258 |B|=211711300 |A∩B|=138010389 |A∪B|=277856169 J=0.4967
+[bench]    union t=1 rep 1 sklib@b256: 15.586s  rss=99MB  cpu=97%  out=660MB  ok
+[bench]    union t=1 rep 1 sklib@b1024: 19.349s  rss=31MB  cpu=68%  out=660MB  ok
+[bench]    union t=1 rep 1 sklib: 13.066s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 1 sklib@b16384: 12.584s  rss=21MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 1 sklib@b65536: 12.580s  rss=28MB  cpu=99%  out=661MB  ok
+[bench]    union t=1 rep 2 sklib@b65536: 12.430s  rss=28MB  cpu=99%  out=661MB  ok
+[bench]    union t=1 rep 2 sklib@b16384: 12.544s  rss=21MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 2 sklib: 12.972s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 2 sklib@b1024: 18.415s  rss=31MB  cpu=72%  out=660MB  ok
+[bench]    union t=1 rep 2 sklib@b256: 15.451s  rss=99MB  cpu=96%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib@b256: 15.486s  rss=99MB  cpu=96%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib@b1024: 20.604s  rss=31MB  cpu=64%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib: 13.145s  rss=19MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib@b16384: 12.670s  rss=21MB  cpu=99%  out=660MB  ok
+[bench]    union t=1 rep 3 sklib@b65536: 12.563s  rss=28MB  cpu=99%  out=661MB  ok
+[bench] setop_pairs: done

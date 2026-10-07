@@ -66,6 +66,13 @@ Defined mock — ZymoBIOMICS, or any assembled metagenome. Example: assembled co
 gut WGS sample. To use raw reads as the indexed set, sanitize the reads FASTA the same way.
 For a controlled diversity sweep, mix M bacterial genomes from the pangenome step.
 
+## Real read sets (set-operation pairs, catalogued)
+[`reads.tsv`](reads.tsv) catalogues six read sets: two HG002 runs, two HMP2 gut visit pools and two
+Tara Oceans depths, each pooling ENA runs. Each is turned into `genomes/<set>.sanitized.fa` by
+`bash benchmark/scripts/fetch_reads.sh [--list|--download-only] [sets…]`, a ranged, resumable ENA
+download with md5 checks: ENA throttles each connection, not the aggregate. They feed
+`setop_pairs.sh` (`PAIRS="hg002_A:hg002_B …"`); see `results/runs/setop_reads_2026-10/`.
+
 ## Real reads (query workload, mixed status)
 Instead of `simreads`, query a real read set of the indexed organism. ENA gives direct
 FASTQ URLs (no SRA toolkit); convert to FASTA and point the query at it:

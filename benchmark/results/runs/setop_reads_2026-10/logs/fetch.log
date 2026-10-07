@@ -1,0 +1,13 @@
+[fetch_reads 18:11:50] 6 sets, 32 files, 64.4 GB to fetch (minus what is already there); PAR=4 CHUNKS=4
+[fetch_reads 18:11:50] hg002_A: sanitizing 2 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/hg002_A.sanitized.fa
+[fetch_reads 18:14:51] hg002_A: done, 14859 MB
+[fetch_reads 18:14:51] hg002_B: sanitizing 2 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/hg002_B.sanitized.fa
+[fetch_reads 18:17:49] hg002_B: done, 14189 MB
+[fetch_reads 18:17:49] gut_A: sanitizing 10 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/gut_A.sanitized.fa
+[fetch_reads 18:20:24] gut_A: done, 14111 MB
+[fetch_reads 18:20:24] gut_B: sanitizing 10 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/gut_B.sanitized.fa
+[fetch_reads 18:23:16] gut_B: done, 16063 MB
+[fetch_reads 18:23:16] ocean_SRF: sanitizing 4 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/ocean_SRF.sanitized.fa
+[fetch_reads 18:26:52] ocean_SRF: done, 16454 MB
+[fetch_reads 18:26:52] ocean_DCM: sanitizing 4 files -> /home/yoann/bioinfo/sklib/benchmark/data/genomes/ocean_DCM.sanitized.fa
+[fetch_reads 18:30:53] ocean_DCM: done, 16234 MB

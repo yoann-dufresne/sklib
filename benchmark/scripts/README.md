@@ -19,7 +19,7 @@ detail: how to run each script and what knobs exist.
   `../data/tools_src/` and writes `tools.env`. Unbuilt tools are skipped automatically.
 - Figures: `python3 -m venv .venv && .venv/bin/pip install pandas matplotlib`.
 
-## The five scripts
+## The six scripts
 
 ```bash
 bash construct.sh        # exp 1 — build per (dataset,tool,k/m,threads)
@@ -27,7 +27,21 @@ bash query_single.sh     # exp 2 — individual k-mer queries over PRESENCE
 bash query_stream.sh     # exp 3 — sequence queries over PRESENCE
 bash setop.sh            # exp 4 — set ops over JACCARD (unitary + joint, materialize + size)
 bash setop_rechain.sh    # exp 5 — sklib-only: cost of the result re-chaining (count / --no-compact / default)
+bash setop_pairs.sh      # exp 6 — sklib vs KMC set ops on real PAIRS (read sets), cold cache, per-rep rows
 ```
+
+`setop_pairs.sh` takes `PAIRS="a:b …"` of datasets in the genome cache. Its read sets are
+catalogued in [`../data/reads.tsv`](../data/reads.tsv) and fetched by `fetch_reads.sh`: a ranged,
+resumable ENA download with md5 checks, sanitized into one FASTA per set. The script is
+laptop-oriented:
+- cold cache by `posix_fadvise` eviction;
+- sklib and KMC alternated run by run, with `PIN_T<th>` cpu lists;
+- an AC-power guard;
+- `setop_pairs.sh pause|resume|status`, where a run overlapping a pause is discarded and redone;
+- cardinalities checked against KMC.
+
+A sklib variant `sklib@b<N>` in `TOOLS_SO` is built with `--buckets N` (the bucket sweep). See
+[`../results/runs/setop_reads_2026-10/`](../results/runs/setop_reads_2026-10/).
 
 Each loops `dataset → tool (capability-gated) → k,m → threads`, builds/reuses a cached
 index, and appends one row per measurement to its CSV in `../results/latest/`. Run them in
