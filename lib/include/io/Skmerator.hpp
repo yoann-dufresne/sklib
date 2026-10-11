@@ -603,16 +603,24 @@ public:
 
                     if (candidate_minimizer == m_current_minimizer)
                     {
-                        Skmer<kuint> & mini_skmer {m_skmer_buffer_array[m_ptr_min & m_buffer_mask]};
-                        auto const mini_orient {m_skmer_orientation[m_ptr_min & m_buffer_mask]};
-                        // cout << mini_skmer << endl;
-
-                        update_skmer_left_size(mini_skmer, mini_orient, m_ptr_min - buff_start);
-                        if (idx != first_equal_mini)
-                            this->update_on_equal_mini(idx);
-                        else
+                        if (idx == first_equal_mini)
+                        {
+                            // First occurrence: it owns every k-mer on its left whose window no longer
+                            // contains the out-of-context minimizer, i.e. a left flank of idx - buff_start.
+                            auto const orient {m_skmer_orientation[idx & m_buffer_mask]};
+                            update_skmer_left_size(candidate, orient, idx - buff_start);
                             m_ptr_min = idx;
-                        // cout << mini_skmer << endl << endl;
+                        }
+                        else
+                        {
+                            // Later occurrence: update_on_equal_mini splits the k-mers shared with the
+                            // previous occurrence (m_ptr_min) and sets both sides of the cut. Nothing may
+                            // widen the previous occurrence's left flank afterwards: resetting it to
+                            // m_ptr_min - buff_start before each split (as this loop used to) undid, from
+                            // the 3rd occurrence on, the cut the previous split had just made, so two raw
+                            // super-k-mers claimed the same k-mers and they were emitted twice.
+                            this->update_on_equal_mini(idx);
+                        }
                     }
                 }
                 // We now only have to update the left part of remaining skmers

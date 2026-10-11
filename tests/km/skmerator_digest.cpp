@@ -93,11 +93,17 @@ struct Case { uint64_t k, m; std::size_t len; uint64_t seed; uint64_t golden; };
 // Golden values regenerated for the ψ-permuted slot (VSKMER_5): the stored minimizer is now
 // reverse_2m(φ(min)) instead of φ(min), so the producer stream's bytes (and order) change while the
 // underlying k-mer content is unchanged (the query-equivalence tests guard that).
+// k15m4 and k11m2 regenerated for the duplicate-emission fix (bug08_skmerator_duplicate_emission.cpp):
+// on these inputs the old producer emitted 12 and 317 k-mers twice (>= 3 occurrences of a minimizer
+// in a window rescanned after an out-of-context event). The new streams differ from the old ones only
+// in the regions that held those duplicates (every differing region had more k-mers in the old
+// stream; k15m4 is a pure removal of 10 records) and emit each k-mer exactly once. The four other
+// cases had no duplicate and their digests are unchanged.
 const Case kCases[] = {
     {21, 11, 300000, 0xC0FFEEu,    0x6fded3230087a10bULL},
     {21,  7, 200000, 0x1234567u,   0xa7e7701c4ff3a5d6ULL},
-    {15,  4, 200000, 0xABCDEFu,    0x0c59b67225cc1049ULL},
-    {11,  2, 100000, 0x55AA55AAu,  0x620c546e4cf8005eULL},
+    {15,  4, 200000, 0xABCDEFu,    0x1c1826fd26ca2012ULL},
+    {11,  2, 100000, 0x55AA55AAu,  0xba2091c773a1b198ULL},
     {31, 15, 150000, 0xDEADBEEFu,  0x099c054d5a7a9bbfULL},
     {63, 31,  80000, 0x99887766u,  0x44e91f0d9174adc1ULL},
 };
