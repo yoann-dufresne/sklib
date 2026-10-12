@@ -59,10 +59,9 @@ std::set<std::string> kmer_set(uint64_t k, const std::vector<std::string>& seqs)
     return out;
 }
 
-// k == m for every CLI generation width: 4 bytes (k <= 16), 8 (k <= 32), 16 (k <= 64), 32 (above).
-// k stays <= 96: decoding a record (unpermute_minimizer_slot, the ASCII dump) inverts phi, whose
-// multiplicative inverses are exact for 2m <= 192 only; the index and the query never invert phi.
-const uint64_t kKs[] = {2, 3, 4, 5, 8, 11, 16, 17, 21, 32, 33, 47, 64, 65, 96};
+// k == m for every CLI generation width: 4 bytes (k <= 16), 8 (k <= 32), 16 (k <= 64), 32 (above),
+// up to k = m = 128, the widest minimizer (2m = 256 bits).
+const uint64_t kKs[] = {2, 3, 4, 5, 8, 11, 16, 17, 21, 32, 33, 47, 64, 65, 96, 97, 127, 128};
 
 } // namespace
 
@@ -103,7 +102,8 @@ TEST(MinimizerEqualsK, ProducerYieldsEachKmerAsItsOwnSuperKmer) {
 TEST(MinimizerEqualsK, IndexQueryAndSetOperationsAreExact) {
     std::mt19937_64 rng(11);
     for (const uint64_t k : {uint64_t{2}, uint64_t{3}, uint64_t{5}, uint64_t{8}, uint64_t{16}, uint64_t{21},
-                             uint64_t{31}, uint64_t{33}, uint64_t{64}, uint64_t{65}, uint64_t{96}}) {
+                             uint64_t{31}, uint64_t{33}, uint64_t{64}, uint64_t{65}, uint64_t{96},
+                             uint64_t{128}}) {
         const uint64_t m {k};
         std::vector<std::string> a {random_seq(rng, 300), std::string(2 * k, 'A'), random_seq(rng, 40)};
         std::vector<std::string> b {a[0].substr(50, 120), revcomp(a[1]), random_seq(rng, 200)};

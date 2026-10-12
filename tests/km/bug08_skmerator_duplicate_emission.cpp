@@ -179,9 +179,9 @@ void expect_producer_contract(uint64_t k, uint64_t m, const std::string& seq) {
 }
 
 // The (k, m) pairs used below: every CLI generation width (4/8/16/32 bytes), small m, m ~ k/2 and
-// m close to k, even and odd k. m stays <= 96: decoding a record (unpermute_minimizer_slot) needs
-// phi's inverse, whose multiplicative inverses (mul_inverse, 6 Newton steps = 192 exact bits) are
-// only exact for 2m <= 192; the producer itself never inverts phi.
+// m close to k, even and odd k. m stays <= 96 because these tests predate the exact phi inverse
+// at 2m > 192 (bug12_phi_inverse_wide.cpp), which decoding a record needs; the producer itself
+// never inverts phi.
 struct KM { uint64_t k, m; };
 const KM kGrid[] = {
     {5, 2}, {9, 3}, {11, 5}, {12, 4}, {15, 7}, {16, 13}, {21, 11},        // 4-byte generation width

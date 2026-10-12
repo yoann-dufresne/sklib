@@ -776,12 +776,16 @@ public:
         return phi(minimizer(skmer));
     }
 
-    // Multiplicative inverse of an odd constant mod 2^bits(kuint) (Newton iteration:
-    // each step doubles the number of correct low bits; 6 steps reach ≥ 64 bits).
+    // Multiplicative inverse of an odd constant mod 2^bits(kuint) (Newton iteration: x = a is
+    // correct to 3 low bits for odd a, and each step doubles the number of correct low bits).
+    // Iterate until they cover the whole word: 4 steps at uint32_t, ..., 7 at kuint256
+    // (3 -> 384 bits). A fixed 6 steps reached only 192 bits, so phi_inv was wrong for 2m > 192
+    // (m >= 97) and the ASCII dump, its production caller, printed wrong minimizer nucleotides.
+    // Once exact, a further step is the identity, so the narrower widths get the same constants.
     static kuint mul_inverse(kuint a)
     {
-        kuint x = a; // correct to 3 low bits for odd a
-        for (int i = 0; i < 6; i++)
+        kuint x = a;
+        for (uint64_t exact_bits {3}; exact_bits < sizeof(kuint) * 8; exact_bits *= 2)
             x *= static_cast<kuint>(2) - a * x;
         return x;
     }
