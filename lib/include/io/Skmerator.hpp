@@ -192,6 +192,18 @@ public:
 
         void init_seq()
         {
+            // Start every sequence from the same encoder state. The manipulator outlives a sequence:
+            // FileSkmerator reuses it record after record, and every ParallelConstruct/ParallelQuery
+            // worker reuses its own across work items. Its window still holds the previous
+            // sequence's tail in the slots before this sequence's start. Those slots are masked at
+            // yield, but add_nucleotide picks each candidate's orientation on the unmasked pair, so
+            // for an RC-palindromic minimizer the stale flank decided the orientation, hence the
+            // equal-minimizer cuts, hence the super-k-mer boundaries. A record's stream (and the
+            // line grouping of `sskm query`) then depended on which record the same manipulator had
+            // processed before it, which differs between -t 1 and -t N. Clearing it makes the stream
+            // a function of the sequence alone: what a fresh manipulator yields.
+            m_manip.init_skmer();
+
             // Init the first kmer
             for (uint64_t idx{0} ; idx<m_manip.k-1 ; idx++)
             {
