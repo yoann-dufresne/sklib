@@ -3,6 +3,8 @@
 #include <array>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+#include <string>
 #include <assert.h>
 #include <io/wide_int.hpp>
 
@@ -503,7 +505,7 @@ public:
     // not stored. Default 0 = full-width list (unchanged behaviour). The retained skmer is the low
     // 2*sk_size - b bits, so m_mask is narrowed accordingly and every generator-built mask follows.
     SkmerManipulator(const uint64_t k, const uint64_t m, const uint64_t b = 0)
-        : k(k), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
+        : k(checked_k(k, m)), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
         // Central-nucleotide transfer slots (members m_cA_*/m_cB_*). Computed here in the init list
         // (not the body) because generate_masks_*() below call add_nucleotide, which reads them, while
@@ -592,6 +594,20 @@ public:
 
         // Skmer and skmer buffers init
         this->init_skmer();
+    }
+
+    // Valid parameters: 1 <= m <= k (the minimizer is an m-mer of the k-mer; m == k is the
+    // degenerate window of one m-mer, where every k-mer is its own super-k-mer) and k >= 2. The
+    // interleaved layout needs a super-k-mer of 2k-m >= 2 nucleotides, one prefix and one suffix
+    // slot, for add_nucleotide's central transfer: at k = m = 1 the suffix slot index
+    // (m_suff_size * 4 - 2) wraps and add_nucleotide indexes the pair out of bounds. Checked in the
+    // init list, ahead of the members whose initializers (the mask generators) call add_nucleotide.
+    static uint64_t checked_k(const uint64_t k, const uint64_t m)
+    {
+        if (k < 2 || m < 1 || m > k)
+            throw std::invalid_argument("invalid k-mer parameters k=" + std::to_string(k) + ", m=" + std::to_string(m)
+                                        + ": require k >= 2 and 1 <= m <= k");
+        return k;
     }
 
     ~SkmerManipulator()

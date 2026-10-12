@@ -325,6 +325,10 @@ public:
             const uint64_t m {m_manip.m};
             // km::SkmerPrettyPrinter<kuint> pp {k, m};
 
+            // w = 1 (m == k): the window holds a single m-mer, the k-mer itself.
+            if (k == m)
+                return this->yield_whole_kmer();
+
             // End of the sequence => final yieldings
             if (m_remaining_nucleotides + k - m <= 0)
             {
@@ -436,6 +440,37 @@ public:
                 return *this;
             else
                 return this->operator++();
+        }
+
+        // Degenerate window w = k-m+1 = 1 (m == k): every k-mer is its own minimizer, hence its own
+        // super-k-mer, with empty flanks. The sliding-window machinery below cannot express it:
+        //   * its out-of-context test (m_ptr_current - m_ptr_min >= k - m) fires on every base, and
+        //     recompute_minimizer then runs on the EMPTY window [m_ptr_min+1, m_ptr_current]. It reads
+        //     the stale rank of the slot about to be overwritten; when the next k-mer's rank equals
+        //     it, update_on_equal_mini compares a candidate with itself and sets its left flank to
+        //     k-m+pos_diff-cut = -1, which wraps to 65535 in the uint16_t size and indexes the
+        //     per-size mask tables out of bounds (`sskm construct -k 5 -m 5` segfaulted);
+        //   * a buffer slot means "no k-mer" by pref + suff < k - m, impossible when k - m = 0, so
+        //     the zeroed slots ahead of the sequence would be yielded as phantom k-mers.
+        // So yield each k-mer directly. Its creation index (TrackPos) is the position of its last
+        // base, the slot-write position the window path would use, so the parallel chunk tiling
+        // still assigns it to exactly one chunk.
+        Iterator& yield_whole_kmer()
+        {
+            if (m_remaining_nucleotides <= 0) {
+                m_consumed = true;
+                m_isend = true;
+                return *this;
+            }
+            m_remaining_nucleotides -= 1;
+            m_ptr_current += 1;
+            const kuint nucl {static_cast<kuint>((m_seq[m_ptr_current] >> 1) & 0b11U)};
+            m_rator.m_yielded_skmer = m_manip.add_nucleotide(nucl);
+            m_rator.m_yielded_skmer.m_pref_size = m_rator.m_yielded_skmer.m_suff_size = 0;
+            if constexpr (TrackPos)
+                m_yield_pos = static_cast<int64_t>(m_ptr_current);
+            finalize_and_yield();
+            return *this;
         }
 
         void solve_out_of_context()

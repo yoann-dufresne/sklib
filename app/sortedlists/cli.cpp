@@ -40,8 +40,9 @@ CLIResult parse_cli(int argc, char** argv) {
         ->required();
 
     construct->add_option("-m,--minimizer-size", construct_opts.m,
-        "Minimizer length in nucleotides (1 <= m <= k). Smaller m yields longer skmers (more "
-        "shared central nucleotides per group); typical values sit around m ~ k/2.")
+        "Minimizer length in nucleotides (1 <= m <= k, k >= 2). Smaller m yields longer skmers (more "
+        "shared central nucleotides per group); typical values sit around m ~ k/2. m == k is "
+        "accepted: every k-mer is then its own super-k-mer (a plain sorted k-mer list).")
         ->required();
 
     construct->add_flag("--ascii", construct_opts.ascii,

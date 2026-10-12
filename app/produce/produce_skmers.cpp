@@ -86,8 +86,8 @@ int main(int argc, char** argv)
         else { std::fprintf(stderr, "unknown argument: %s\n", a.c_str()); usage(argv[0], 2); }
     }
 
-    if (args.k == 0 || args.m == 0 || args.m > args.k || args.file.empty()) {
-        std::fprintf(stderr, "error: require 1 <= m <= k and -f <fasta>\n");
+    if (args.k < 2 || args.m == 0 || args.m > args.k || args.file.empty()) {
+        std::fprintf(stderr, "error: require k >= 2, 1 <= m <= k and -f <fasta>\n");
         usage(argv[0], 2);
     }
     if (args.reps < 1) args.reps = 1;

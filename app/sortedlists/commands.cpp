@@ -81,8 +81,8 @@ int run_construct(const ConstructOptions& opts) {
     try {
         const uint64_t k = params.k;
         const uint64_t m = params.m;
-        if (k == 0 || m == 0 || m > k) {
-            std::cerr << "Require 1 <= m <= k" << std::endl;
+        if (k < 2 || m == 0 || m > k) {
+            std::cerr << "Require k >= 2 and 1 <= m <= k" << std::endl;
             return 1;
         }
         // Generation needs the full 2*(2k-m) bits (the whole minimizer drives selection + bucket);
