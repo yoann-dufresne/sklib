@@ -35,8 +35,8 @@ bool kmer_is_queryable(km::sortedlist::SortedVirtualSkmerList<kuint>& list,
 
 // Coverage invariant: build the list from `seq`, then every length-k substring
 // of `seq` (a k-mer that IS present) must be queryable as a bare k-mer.
-void expect_all_kmers_queryable(uint64_t k, uint64_t m, std::string seq) {
-    km::SkmerManipulator<kuint> manip{k, m};
+void expect_all_kmers_queryable(uint64_t k, uint64_t m, std::string seq, km::SchemeParams sp = {}) {
+    km::SkmerManipulator<kuint> manip{k, m, 0, sp};
     km::SeqSkmerator<kuint> gen{manip, seq};
     std::vector<km::Skmer<kuint>> enumeration;
     for (const km::Skmer<kuint>& s : gen) enumeration.push_back(s);
@@ -74,4 +74,24 @@ TEST(FramingPerKmer, MixedSequences) {
     expect_all_kmers_queryable(5, 2, "ACGTACGTACGT");
     expect_all_kmers_queryable(7, 3, "ACGTTGCAACGTTGCA");
     expect_all_kmers_queryable(11, 5, "ACGTACGTACGTACGTACGT");
+}
+
+// The same coverage invariant under the open-closed scheme (m >= 3: an s-mer must fit strictly
+// inside the m-mer). Repeated / palindromic minimizers reach the ambiguous path, whose rank adds the
+// reference class_of; the fast path ranks with the streaming class. Both must frame alike.
+TEST(FramingPerKmer, OpenClosed_RepeatAndPalindromeMinimizers) {
+    const auto oc = [](uint64_t m) { return km::SchemeParams::open_closed(m); };
+    expect_all_kmers_queryable(7, 3, "GCGCGCGCGCGC", oc(3));
+    expect_all_kmers_queryable(9, 4, "ATATATATATATAT", oc(4));
+    expect_all_kmers_queryable(7, 3, "ACGCGCGCGTA", oc(3));
+    expect_all_kmers_queryable(9, 4, "GCGCGCGCGCGCAAAAAAAAAAAC", oc(4));
+    expect_all_kmers_queryable(11, 5, "AAAAAAAAAAAAAAAAACCCCCCCCCCCCCT", oc(5));
+}
+
+TEST(FramingPerKmer, OpenClosed_MixedSequences) {
+    const auto oc = [](uint64_t m) { return km::SchemeParams::open_closed(m); };
+    expect_all_kmers_queryable(7, 3, "ACGTTGCAACGTTGCA", oc(3));
+    expect_all_kmers_queryable(11, 5, "ACGTACGTACGTACGTACGT", oc(5));
+    expect_all_kmers_queryable(15, 7, "ACGGTTACGATTACAGGATCCATTGACGGATAC", oc(7));
+    expect_all_kmers_queryable(12, 6, "ACGGTTACGATTACAGGATCCATTGACGGATAC", oc(6));
 }

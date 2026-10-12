@@ -1,7 +1,10 @@
 #include "cli.hpp"
 
 #include <CLI/CLI.hpp>
+#include <algorithm>
 #include <string>
+
+#include <io/MinimizerScheme.hpp>
 
 CLIResult parse_cli(int argc, char** argv) {
     CLI::App app{
@@ -69,9 +72,27 @@ CLIResult parse_cli(int argc, char** argv) {
         "for any thread count. 1 = sequential. Binary output to a regular file only.")
         ->check(CLI::PositiveNumber);
 
+    construct->add_option("--minimizer", construct_opts.minimizer,
+        "Minimizer scheme (default random). open-closed ranks each m-mer first by its canonical "
+        "open-closed syncmer class (open < closed < other), then by the same random hash: it selects "
+        "fewer, longer super-k-mers -- about 13-20% fewer records at m ~ k/2 (measured -16% / -20% on "
+        "E. coli and -13% / -19% on human chr21 at k=31,m=15 / k=63,m=31) -- for the same exact k-mer "
+        "set and query answers, at a few % more construction time. "
+        "Needs m >= 3. The scheme is recorded in the index: query and setop read it from there, and "
+        "setop requires both lists to share it.")
+        ->check(CLI::IsMember({"random", "open-closed"}));
+
+    construct->add_option("--oc-s", construct_opts.oc_s,
+        "Expert, open-closed only: the s-mer length of the syncmer test. Default automatic from m: 3 "
+        "for odd m <= 17, 5 for odd m >= 19, 4 for even m >= 8, 2 for even m < 8. Must satisfy "
+        "1 <= s <= m-2 and have the SAME PARITY as m (s = m mod 2): the open test looks at the s-mer "
+        "at offset (m-s)/2, the exact centre of the m-mer only when m-s is even; with the other parity "
+        "the scheme is not strand-symmetric and reverse-complement queries would be missed.");
+
     construct->footer(
         "Example:\n"
         "  sskm construct -k 21 -m 11 -f genome.fa -o genome.sskm\n"
+        "  sskm construct -k 31 -m 15 --minimizer open-closed -f genome.fa -o genome.sskm\n"
     );
 
     construct->callback([&]() {
@@ -195,6 +216,36 @@ CLIResult parse_cli(int argc, char** argv) {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
         std::exit(app.exit(e));
+    }
+
+    // -----------------------
+    // construct subcommand
+    // -----------------------
+    // Minimizer-scheme validation, reported like a parse error (message + CLI11's exit code).
+    if (result.construct) {
+        try {
+            const bool oc = construct_opts.minimizer == "open-closed";
+            if (construct_opts.oc_s && !oc) {
+                throw CLI::ValidationError("construct: --oc-s only applies to --minimizer open-closed");
+            }
+            if (oc) {
+                const uint64_t m {static_cast<uint64_t>(std::max(construct_opts.m, 0))};
+                km::SchemeParams sp;
+                sp.scheme = km::MinimizerScheme::open_closed;
+                if (construct_opts.oc_s) {
+                    if (*construct_opts.oc_s < 1 || *construct_opts.oc_s > 255)
+                        throw CLI::ValidationError("construct: --oc-s must be between 1 and m-2 (got " +
+                                                   std::to_string(*construct_opts.oc_s) + ")");
+                    sp.s = static_cast<uint8_t>(*construct_opts.oc_s);
+                } else {
+                    sp.s = static_cast<uint8_t>(km::SchemeParams::default_s(m));
+                }
+                const std::string err {sp.validation_error(m)};
+                if (!err.empty()) throw CLI::ValidationError("construct: " + err);
+            }
+        } catch (const CLI::ParseError& e) {
+            std::exit(app.exit(e));
+        }
     }
 
     // -----------------------

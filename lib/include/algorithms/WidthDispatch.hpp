@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <io/wide_int.hpp>
+#include <io/MinimizerScheme.hpp>
 
 #ifndef SKLIB_WIDTH_DISPATCH_HPP
 #define SKLIB_WIDTH_DISPATCH_HPP
@@ -64,10 +65,22 @@ inline uint64_t select_width_bytes(uint64_t need_bits) {
 // Taking the max of the two constraints removes all three at once. It cannot affect any k/m where
 // the minimizer already fitted: 2m <= 8*bytes implies 4m <= 16*bytes, so select_width_bytes(4m)
 // is then <= the width constraint (1) already picked, and the max is that same width.
-inline uint64_t select_generation_width_bytes(uint64_t k, uint64_t m) {
+//
+// The minimizer SCHEME adds a third, related constraint: the selection rank lives in one word too,
+// and the open-closed rank is (class << 2m) | φ, i.e. 2m + 2 bits (SchemeParams::class_bits). That
+// can bump the generation width (never the store width) for the few k/m whose 2m sits within 2 bits
+// of a word, e.g. (40,32): 64 bits for random, 66 -> __uint128_t for open-closed. Random adds 0 bits,
+// so its width is unchanged. Construction and query must pass the same scheme (query: the header's).
+inline uint64_t select_generation_width_bytes(uint64_t k, uint64_t m,
+                                              const km::SchemeParams& scheme = {}) {
     const uint64_t for_skmer {select_width_bytes(2 * (2 * k - m))};
-    // pair capacity 16*bytes >= 4m  <=>  word capacity 8*bytes >= 2m
-    const uint64_t for_minimizer {select_width_bytes(4 * m)};
+    // pair capacity 16*bytes >= 2*(2m + class)  <=>  word capacity 8*bytes >= 2m + class
+    const uint64_t rank_bits {2 * m + scheme.class_bits()};
+    if (scheme.is_open_closed() && 2 * rank_bits > pair_capacity_bits(32))
+        throw std::runtime_error(
+            "m too large for the open-closed minimizer rank: it needs 2m+2 = " + std::to_string(rank_bits) +
+            " bits in one word but the widest backend (kuint256) has 256. Lower m, or use --minimizer random.");
+    const uint64_t for_minimizer {select_width_bytes(2 * rank_bits)};
     return std::max(for_skmer, for_minimizer);
 }
 

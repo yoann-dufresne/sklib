@@ -247,7 +247,8 @@ void parallel_query(BucketedSkmerListReader<store>& reader, const std::string& f
 
     auto worker = [&]() {
         try {
-            km::SkmerManipulator<gen> manip{k, m};
+            // Framed with the list's minimizer scheme (from its header), as the stored k-mers were.
+            km::SkmerManipulator<gen> manip{k, m, 0, reader.scheme()};
             std::string buf_whole, buf_big;
             km::SeqSkmerator<gen, false> rator_whole{manip, buf_whole};
             km::SeqSkmerator<gen, true>  rator_big{manip, buf_big};
@@ -372,7 +373,7 @@ void sequential_query(BucketedSkmerListReader<store>& reader, const std::string&
                       std::ostream& os) {
     using namespace parallel_detail;
     const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
-    km::SkmerManipulator<gen> manip{k, m};
+    km::SkmerManipulator<gen> manip{k, m, 0, reader.scheme()};   // the list's scheme (header)
     km::FileSkmerator<gen> file_skmerator{manip, filename};
 
     std::vector<uint8_t> buf;

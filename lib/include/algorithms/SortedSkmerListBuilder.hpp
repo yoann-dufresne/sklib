@@ -42,6 +42,9 @@ struct SortedListBuildParams {
     bool has_output_file = false;  // gates the bucketed (seekable regular file) path
     std::string tmp_dir;           // empty => next to the output file
     unsigned int n_threads = 1;    // phase-2 (per-bucket compaction) worker threads; 1 => sequential
+    // Minimizer scheme driving the selection (random = historical default). Recorded in the header.
+    // `gen` must hold its rank: size it with select_generation_width_bytes(k, m, scheme).
+    km::SchemeParams scheme {};
 };
 
 // Sort by the total key (m_pair, pref_size, suff_size) then drop strictly-equal
@@ -130,14 +133,15 @@ void build_in_ram(const SortedListBuildParams& params) {
     const uint64_t k = params.k;
     const uint64_t m = params.m;
 
-    km::SkmerManipulator<kuint> manip{k, m};
+    km::SkmerManipulator<kuint> manip{k, m, 0, params.scheme};
     km::FileSkmerator<kuint> file_skmerator{manip, params.input_path};
 
     std::vector<km::Skmer<kuint>> skmer_enumeration;
     for (const km::Skmer<kuint>& skmer : file_skmerator)
         skmer_enumeration.push_back(skmer);
 
-    km::sortedlist::SortedVirtualSkmerList<kuint> sorted_list(k, m);
+    // The list carries the scheme only so save() records it in the header (compaction never selects).
+    km::sortedlist::SortedVirtualSkmerList<kuint> sorted_list(k, m, 0, params.scheme);
     // greedy_chaining by default (see build_bucketed); SKLIB_CONSTRUCT_COLINEAR=1 forces colinear.
     const bool greedy = std::getenv("SKLIB_CONSTRUCT_COLINEAR") == nullptr;
     sorted_list.generate_sorted_list_from_enumeration(skmer_enumeration, greedy);
@@ -364,8 +368,9 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
 
     // Generation always runs at the full `gen` width (it needs every minimizer bit to pick the
     // minimizer and compute its bucket); only the final per-bucket records are down-converted to
-    // the narrower `store` type before they hit disk.
-    km::SkmerManipulator<gen> manip{k, m};
+    // the narrower `store` type before they hit disk. The scheme drives the selection (and the
+    // --max-ram histogram pass, which re-runs the same producer).
+    km::SkmerManipulator<gen> manip{k, m, 0, params.scheme};
 
     // ---- choose the minimizer -> bucket mapping ----
     // Adaptive bucketing (A v2) reads the input twice; the caller only sets
@@ -399,11 +404,13 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
     // exactness outright (measured on ecoli at k=21 m=20: 8 884 false positives out of 200 000
     // random k-mers). The CLI sizes `gen` with select_generation_width_bytes, which enforces this;
     // a direct library caller choosing its own widths can still get it wrong, so say so loudly.
+    // (The open-closed rank needs 2 more bits; a too-narrow `gen` is a hard error there, raised by
+    // the Skmerator, because the class would wrap into φ.)
     if (2 * m > sizeof(gen) * 8) {
         std::cerr << "[sklib] WARNING: generation width too narrow for the minimizer: 2m = " << (2 * m)
                   << " bits > " << (sizeof(gen) * 8) << "-bit work integer (k=" << k << ", m=" << m
                   << "). The minimizer is truncated, so the bucketing degenerates AND query results"
-                     " may be wrong. Size the generation type with select_generation_width_bytes(k, m)."
+                     " may be wrong. Size the generation type with select_generation_width_bytes(k, m, scheme)."
                   << std::endl;
     }
 
@@ -448,7 +455,7 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
     if (parallel_phase1) {
         km::sortedlist::parallel_build_phase1<gen>(
             input_path, k, m, n_buckets, bucket_of, params.n_threads,
-            writer_budget, tmp_dir, shard_dirs, counts);
+            writer_budget, tmp_dir, shard_dirs, counts, params.scheme);
     } else {
         km::sortedlist::SkmerBucketWriter<gen> writer{tmp_dir, n_buckets, writer_budget};
         km::FileSkmerator<gen> file_skmerator{manip, input_path};
@@ -477,7 +484,8 @@ void build_bucketed(const SortedListBuildParams& params, uint64_t quotient_bits 
         std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
         if (out.fail())
             throw std::runtime_error("Error opening output file for writing: " + output_path);
-        km::sortedlist::VirtualSkmerSerializer<store>::write_header(out, k, m, 0, n_buckets_f, sizeof(store), b_f);
+        km::sortedlist::VirtualSkmerSerializer<store>::write_header(out, k, m, 0, n_buckets_f, sizeof(store), b_f,
+                                                                    params.scheme);
         if (out.fail())
             throw std::runtime_error("Error writing header to file: " + output_path);
 

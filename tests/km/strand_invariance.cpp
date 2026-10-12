@@ -53,8 +53,8 @@ bool kmer_is_queryable(km::sortedlist::SortedVirtualSkmerList<kuint>& list,
     return false;
 }
 
-void expect_strand_invariant(uint64_t k, uint64_t m, const std::string& seq) {
-    km::SkmerManipulator<kuint> manip{k, m};
+void expect_strand_invariant(uint64_t k, uint64_t m, const std::string& seq, km::SchemeParams sp = {}) {
+    km::SkmerManipulator<kuint> manip{k, m, 0, sp};
     std::string s = seq;
     km::SeqSkmerator<kuint> gen{manip, s};
     std::vector<km::Skmer<kuint>> enumeration;
@@ -155,6 +155,41 @@ TEST(StrandInvariance, TandemRepeatNonPalindromeMinimizers) {
                                             std::string("ATG"), std::string("AAAC"),
                                             std::string("ACGT"), std::string("AACG")}) {
                 expect_strand_invariant(k, m, tile(unit, 6 * k));
+            }
+        }
+    }
+}
+
+// (3) The same strand-invariance property under the open-closed scheme. Its class is a symmetric
+// function of the canonical s-mer keys only when s has m's parity (validated), so every k-mer and its
+// reverse complement must still frame to the same record, on random input and on tandem repeats.
+TEST(StrandInvariance, OpenClosedRandomSequences) {
+    std::mt19937_64 rng(54321);
+    const char nt[4] = {'A', 'C', 'T', 'G'};
+    for (uint64_t m : {3UL, 4UL, 5UL, 6UL, 7UL, 9UL}) {
+        for (uint64_t k : {m + 3, 2 * m, 2 * m + 1}) {
+            std::uniform_int_distribution<int> d(0, 3);
+            for (int rep = 0; rep < 4; rep++) {
+                std::string seq;
+                for (uint64_t i = 0; i < 6 * k; i++) seq += nt[d(rng)];
+                expect_strand_invariant(k, m, seq, km::SchemeParams::open_closed(m));
+            }
+        }
+    }
+}
+
+TEST(StrandInvariance, OpenClosedTandemRepeats) {
+    auto tile = [](const std::string& unit, size_t len) {
+        std::string s;
+        while (s.size() < len) s += unit;
+        return s.substr(0, len);
+    };
+    for (uint64_t m : {3UL, 4UL, 5UL, 7UL}) {
+        for (uint64_t k : {2 * m, 2 * m + 1, 3 * m}) {
+            for (const std::string& unit : {std::string("ACG"), std::string("AAC"), std::string("A"),
+                                            std::string("ATG"), std::string("AAAC"), std::string("GC"),
+                                            std::string("ACGT"), std::string("AACG")}) {
+                expect_strand_invariant(k, m, tile(unit, 6 * k), km::SchemeParams::open_closed(m));
             }
         }
     }

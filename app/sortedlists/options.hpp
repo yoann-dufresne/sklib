@@ -18,6 +18,10 @@ struct ConstructOptions {
     std::optional<std::string> max_ram;
     std::optional<std::string> tmp_dir;
     unsigned int threads = 8;
+    // Minimizer scheme: "random" (default) or "open-closed". oc_s = the open-closed s-mer length
+    // (--oc-s, expert); unset => automatic from m (SchemeParams::default_s).
+    std::string minimizer = "random";
+    std::optional<int> oc_s;
 };
 
 struct QueryOptions {

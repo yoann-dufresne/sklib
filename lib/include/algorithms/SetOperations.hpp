@@ -37,10 +37,11 @@
 // single pass yields all three relations (A∩B, A\B, B\A). The variants that only need a count never
 // materialize anything.
 //
-// Both lists must have been built with identical k, m and bucket layout (check_compatible): then
-// bucket i of A and bucket i of B cover the same φ-minimizer range and store records at the same
-// (quotiented) width, so records compare directly. This always holds for default-bucketed lists
-// built with the same parameters.
+// Both lists must have been built with identical k, m, minimizer scheme and bucket layout
+// (check_compatible): then bucket i of A and bucket i of B cover the same φ-minimizer range, frame
+// every k-mer the same way and store records at the same (quotiented) width, so records compare
+// directly. This always holds for default-bucketed lists built with the same parameters. Results
+// carry A's (= B's) scheme in their header.
 
 namespace km {
 namespace sortedlist {
@@ -359,8 +360,8 @@ struct OrderedPayloadWriter {
     }
 };
 
-// Reject inputs the direct merge can't align. k and m must match for k-mers/columns to be comparable
-// at all; n_buckets, quotient_bits and the per-bucket φ-minimizer lower bounds must match so bucket i
+// Reject inputs the direct merge can't align. k, m and the minimizer scheme must match for
+// k-mers/columns to be comparable at all (the scheme decides each k-mer's frame); n_buckets, quotient_bits and the per-bucket φ-minimizer lower bounds must match so bucket i
 // of A and bucket i of B cover the same range and store records identically. All hold by construction
 // for default-bucketed lists built with the same parameters.
 template<typename store>
@@ -371,6 +372,13 @@ inline void check_compatible(const BucketedSkmerListReader<store>& A,
             "set operation: both lists must share k and m (A: k=" + std::to_string(A.k()) +
             ",m=" + std::to_string(A.m()) + " ; B: k=" + std::to_string(B.k()) +
             ",m=" + std::to_string(B.m()) + ")");
+    // Same k-mer set, different minimizer scheme => different framings (records, columns, buckets):
+    // a direct merge would compare unrelated records and silently return wrong sets.
+    if (A.scheme() != B.scheme())
+        throw std::runtime_error(
+            "set operation: A was built with the " + A.scheme().to_string() + " minimizer scheme, B with " +
+            B.scheme().to_string() + "; both lists must share the scheme. Rebuild one of them with the "
+            "other's --minimizer (and --oc-s)");
     if (A.n_buckets() != B.n_buckets() || A.quotient_bits() != B.quotient_bits())
         throw std::runtime_error(
             "set operation: both lists must share the bucket layout (n_buckets/quotient_bits differ); "
@@ -553,7 +561,7 @@ inline uint64_t materialize_setop(BucketedSkmerListReader<store>& A, BucketedSkm
     std::ofstream out(out_path, std::ios::binary | std::ios::trunc);
     if (out.fail())
         throw std::runtime_error("Error opening output file for writing: " + out_path);
-    VirtualSkmerSerializer<store>::write_header(out, k, m, /*count*/ 0, nb, sizeof(store), b);
+    VirtualSkmerSerializer<store>::write_header(out, k, m, /*count*/ 0, nb, sizeof(store), b, A.scheme());
     if (out.fail())
         throw std::runtime_error("Error writing header to file: " + out_path);
 
@@ -976,7 +984,7 @@ inline MultiSetOpResult multi_setop(BucketedSkmerListReader<store>& A, BucketedS
         outs[ci].open(*specs[ci].path, std::ios::binary | std::ios::trunc);
         if (outs[ci].fail())
             throw std::runtime_error("Error opening output file for writing: " + *specs[ci].path);
-        VirtualSkmerSerializer<store>::write_header(outs[ci], k, m, /*count*/ 0, nb, sizeof(store), b);
+        VirtualSkmerSerializer<store>::write_header(outs[ci], k, m, /*count*/ 0, nb, sizeof(store), b, A.scheme());
         if (outs[ci].fail())
             throw std::runtime_error("Error writing header to file: " + *specs[ci].path);
         for (uint64_t i {0}; i < nb; ++i)

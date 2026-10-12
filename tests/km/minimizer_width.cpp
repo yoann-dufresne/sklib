@@ -65,7 +65,8 @@ std::string canonical(const std::string& s) {
 // query `qseqs` through the same dual-width driver, returning one presence line per query record.
 std::vector<std::string> build_and_query(uint64_t k, uint64_t m, const std::string& ref,
                                          const std::vector<std::string>& qseqs,
-                                         const std::string& tag, uint64_t buckets) {
+                                         const std::string& tag, uint64_t buckets,
+                                         const km::SchemeParams& scheme = {}) {
     const std::string dir = ::testing::TempDir();
     const std::string in_path  = dir + "mw_in_"  + tag + ".fa";
     const std::string q_path   = dir + "mw_q_"   + tag + ".fa";
@@ -82,9 +83,10 @@ std::vector<std::string> build_and_query(uint64_t k, uint64_t m, const std::stri
     params.buckets = buckets;
     params.has_output_file = true;
     params.n_threads = 1;
+    params.scheme = scheme;
 
     const uint64_t b = km::sortedlist::quotient_bits_for(params);
-    const uint64_t gen_w   = km::sortedlist::select_generation_width_bytes(k, m);
+    const uint64_t gen_w   = km::sortedlist::select_generation_width_bytes(k, m, scheme);
     const uint64_t store_w = km::sortedlist::select_width_bytes(2 * (2 * k - m) - b);
 
     std::string out;
@@ -124,8 +126,9 @@ const KM kGrid[] = {
 
 // Every k-mer of the indexed sequence must be found, and absent k-mers must not be. This is the
 // property both bugs violated: the work-width truncation produced false positives (and a crash in
-// construct), the store-width one crashed the query.
-TEST(MinimizerWidth, ExactAcrossKMinusMAndLargeM) {
+// construct), the store-width one crashed the query. Run for both minimizer schemes: open-closed
+// needs 2 more rank bits in the generation word, which bumps it at e.g. k=42,m=38 / k=45,m=43.
+static void expect_exact_grid(bool open_closed) {
     const std::string ref = rand_dna(60000, 7);
     // Two bucket counts on purpose. The default 4096 spreads this reference thin (a handful of
     // records per bucket), which leaves the per-bucket minimizer-prefix table BELOW its build
@@ -147,10 +150,12 @@ TEST(MinimizerWidth, ExactAcrossKMinusMAndLargeM) {
 
         std::vector<std::string> q = present;
         q.insert(q.end(), absent.begin(), absent.end());
-        const std::string tag = std::to_string(c.k) + "_" + std::to_string(c.m) + "_" + std::to_string(buckets);
-        const std::vector<std::string> lines = build_and_query(c.k, c.m, ref, q, tag, buckets);
+        const km::SchemeParams scheme {open_closed ? km::SchemeParams::open_closed(c.m) : km::SchemeParams{}};
+        const std::string tag = std::to_string(c.k) + "_" + std::to_string(c.m) + "_" + std::to_string(buckets) +
+                                (open_closed ? "_oc" : "");
+        const std::vector<std::string> lines = build_and_query(c.k, c.m, ref, q, tag, buckets, scheme);
         const std::string ctx = "k=" + std::to_string(c.k) + " m=" + std::to_string(c.m) +
-                                " buckets=" + std::to_string(buckets) + " (" + c.why + ")";
+                                " buckets=" + std::to_string(buckets) + " " + scheme.to_string() + " (" + c.why + ")";
 
         ASSERT_EQ(lines.size(), q.size()) << ctx << ": une ligne par requete attendue";
         for (size_t i = 0; i < present.size(); ++i)
@@ -158,6 +163,14 @@ TEST(MinimizerWidth, ExactAcrossKMinusMAndLargeM) {
         for (size_t i = 0; i < absent.size(); ++i)
             EXPECT_EQ(lines[present.size() + i], "0") << ctx << ": faux positif sur un k-mer absent";
     }
+}
+
+TEST(MinimizerWidth, ExactAcrossKMinusMAndLargeM) {
+    expect_exact_grid(/*open_closed=*/false);
+}
+
+TEST(MinimizerWidth, OpenClosedExactAcrossKMinusMAndLargeM) {
+    expect_exact_grid(/*open_closed=*/true);
 }
 
 // The width selector must satisfy BOTH constraints, and must not widen anything that already

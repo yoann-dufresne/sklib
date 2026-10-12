@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
+#include <optional>
 #include <string>
 
 #include <io/Skmer.hpp>
@@ -37,20 +38,25 @@ struct Args {
     std::string file;
     bool count_only = false; // --count: minimal sink (lower bound); default folds the digest
     int reps = 1;            // best (min) wall over reps is reported (warm-cache micro-bench)
+    std::string minimizer = "random";   // --minimizer random|open-closed (as `sskm construct`)
+    uint64_t oc_s = 0;                  // --oc-s (0 = automatic from m)
 };
 
 [[noreturn]] void usage(const char* prog, int code)
 {
     std::fprintf(stderr,
         "usage: %s -k <k> -m <m> -f <fasta> [--digest|--count] [--reps N]\n"
+        "          [--minimizer random|open-closed] [--oc-s s]\n"
         "  Isolated super-k-mer producer: iterate FileSkmerator over <fasta> and consume each\n"
         "  yielded super-k-mer. No bucketing / sort / compaction.\n"
         "    --digest (default) order-sensitive FNV-1a fingerprint of the skmer stream (bit-exact\n"
         "                       regression check) + throughput.\n"
         "    --count            count only (minimal sink) -> lower bound of producer cost.\n"
         "    --reps N           run N passes; report the fastest (default 1).\n"
+        "    --minimizer S      minimizer scheme, as `sskm construct` (default random).\n"
+        "    --oc-s s           open-closed s-mer length (default automatic; s = m mod 2).\n"
         "  Emits one machine-parseable line on stdout:\n"
-        "    [producer] k=.. m=.. width_bytes=.. skmers=N digest=0x.. wall_s=.. Mskmer_s=..\n",
+        "    [producer] k=.. m=.. width_bytes=.. skmers=N digest=0x.. wall_s=.. Mskmer_s=.. scheme=..\n",
         prog);
     std::exit(code);
 }
@@ -78,6 +84,8 @@ int main(int argc, char** argv)
         else if (a == "--digest")        args.count_only = false;
         else if (a == "--count")         args.count_only = true;
         else if (a == "--reps")          args.reps = static_cast<int>(parse_u64(value_of("--reps")));
+        else if (a == "--minimizer")     args.minimizer = value_of("--minimizer");
+        else if (a == "--oc-s")          args.oc_s = parse_u64(value_of("--oc-s"));
         else if (a == "-h" || a == "--help") usage(argv[0], 0);
         // glued short forms (-k21, -m11, -f path), matching `sskm` ergonomics
         else if (a.rfind("-k", 0) == 0 && a.size() > 2) args.k = parse_u64(a.c_str() + 2);
@@ -92,8 +100,28 @@ int main(int argc, char** argv)
     }
     if (args.reps < 1) args.reps = 1;
 
-    // Same width the build's generation phase uses: the full 2*(2k-m) interleaved bits.
-    const uint64_t gen_w = km::sortedlist::select_width_bytes(2 * (2 * args.k - args.m));
+    km::SchemeParams scheme {};
+    const std::optional<km::MinimizerScheme> parsed {km::SchemeParams::parse(args.minimizer)};
+    if (!parsed) {
+        std::fprintf(stderr, "error: --minimizer must be random or open-closed\n");
+        usage(argv[0], 2);
+    }
+    if (args.oc_s != 0 && *parsed != km::MinimizerScheme::open_closed) {
+        std::fprintf(stderr, "error: --oc-s only applies to --minimizer open-closed\n");
+        usage(argv[0], 2);
+    }
+    if (*parsed == km::MinimizerScheme::open_closed) {
+        scheme = km::SchemeParams::open_closed(args.m, args.oc_s);
+        const std::string err {scheme.validation_error(args.m)};
+        if (!err.empty()) { std::fprintf(stderr, "error: %s\n", err.c_str()); std::exit(2); }
+    }
+
+    // Same width the build's generation phase uses: the full 2*(2k-m) interleaved bits. (Kept as is
+    // for random, whose golden digests are pinned at this width.) Open-closed also needs its 2m+2-bit
+    // rank in one word: take the build's select_generation_width_bytes for it.
+    const uint64_t gen_w = scheme.is_open_closed()
+        ? km::sortedlist::select_generation_width_bytes(args.k, args.m, scheme)
+        : km::sortedlist::select_width_bytes(2 * (2 * args.k - args.m));
 
     double  best_s  = -1.0;
     uint64_t count  = 0;
@@ -105,7 +133,7 @@ int main(int argc, char** argv)
         uint64_t c = 0;
         uint64_t h = km::SKMER_DIGEST_INIT;
         km::sortedlist::dispatch_width_bytes(gen_w, [&]<typename gen>() {
-            km::SkmerManipulator<gen> manip{args.k, args.m};
+            km::SkmerManipulator<gen> manip{args.k, args.m, 0, scheme};
             km::FileSkmerator<gen>    rator{manip, args.file};
             uint64_t cc = 0;
             uint64_t hh = km::SKMER_DIGEST_INIT;
@@ -126,9 +154,10 @@ int main(int argc, char** argv)
 
     const double mskmer_s = (best_s > 0.0) ? (static_cast<double>(count) / best_s / 1e6) : 0.0;
     std::printf("[producer] k=%llu m=%llu width_bytes=%llu skmers=%llu digest=0x%016llx "
-                "wall_s=%.4f Mskmer_s=%.2f\n",
+                "wall_s=%.4f Mskmer_s=%.2f scheme=%s oc_s=%llu\n",
         static_cast<unsigned long long>(args.k), static_cast<unsigned long long>(args.m),
         static_cast<unsigned long long>(gen_w), static_cast<unsigned long long>(count),
-        static_cast<unsigned long long>(digest), best_s, mskmer_s);
+        static_cast<unsigned long long>(digest), best_s, mskmer_s,
+        km::SchemeParams::name(scheme.scheme), static_cast<unsigned long long>(scheme.header_param()));
     return 0;
 }

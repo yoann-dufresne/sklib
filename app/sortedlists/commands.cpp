@@ -85,14 +85,26 @@ int run_construct(const ConstructOptions& opts) {
             std::cerr << "Require k >= 2 and 1 <= m <= k" << std::endl;
             return 1;
         }
+        // Minimizer scheme (validated by the CLI; validated again here for direct callers).
+        if (opts.minimizer == "open-closed") {
+            params.scheme = km::SchemeParams::open_closed(m, static_cast<uint64_t>(std::max(opts.oc_s.value_or(0), 0)));
+            params.scheme.validate(m);
+            // At small m only a few thousand distinct canonical m-mers are open syncmers, and the
+            // bucket id is drawn from the selected minimizers, so the 4096 default buckets fill
+            // unevenly (plan risk table; to be measured in the phase-3 benchmark).
+            if (m <= 9)
+                std::cerr << "warning: --minimizer open-closed with m <= 9 selects among few distinct "
+                             "minimizers; expect uneven bucket sizes" << std::endl;
+        }
         // Generation needs the full 2*(2k-m) bits (the whole minimizer drives selection + bucket);
         // storage needs only 2*(2k-m)-b once the bucket id absorbs the top b φ-minimizer bits.
         // Pick the smallest precompiled integer width for each, then instantiate the build.
         const uint64_t b = km::sortedlist::quotient_bits_for(params);
-        // The generation width must hold the super-k-mer in its PAIR *and* the minimizer in a single
-        // WORD — the second constraint used to be missing, which silently truncated the minimizer
-        // whenever 3m > 2k (see select_generation_width_bytes).
-        const uint64_t gen_w   = km::sortedlist::select_generation_width_bytes(k, m);
+        // The generation width must hold the super-k-mer in its PAIR *and* the minimizer — and the
+        // scheme's selection rank (2m, or 2m+2 for open-closed) — in a single WORD; the minimizer
+        // constraint used to be missing, which silently truncated the minimizer whenever 3m > 2k
+        // (see select_generation_width_bytes).
+        const uint64_t gen_w   = km::sortedlist::select_generation_width_bytes(k, m, params.scheme);
         const uint64_t store_w = km::sortedlist::select_width_bytes(2 * (2 * k - m) - b);
         km::sortedlist::dispatch_width_bytes(gen_w, [&]<typename gen>() {
             km::sortedlist::dispatch_width_bytes(store_w, [&]<typename store>() {
@@ -127,6 +139,13 @@ int run_setop(const SetOpOptions& opts) {
         hb = km::sortedlist::read_list_header(opts.list_b);
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
+        return 1;
+    }
+    if (ha.scheme != hb.scheme) {
+        std::cerr << "set operation: A was built with the " << ha.scheme.to_string()
+                  << " minimizer scheme, B with " << hb.scheme.to_string()
+                  << "; both lists must share the scheme. Rebuild one of them with the other's "
+                     "--minimizer (and --oc-s)" << std::endl;
         return 1;
     }
     if (ha.store_width_bytes != hb.store_width_bytes) {
@@ -237,11 +256,12 @@ int run_query(const QueryOptions& opts) {
     // Generation width from k/m, but never narrower than the record width: queries are generated at
     // `gen` then down-converted to `store`, so we need gen >= store (a legacy 8-byte file with a
     // tiny k whose generation alone would fit 4 bytes is the one case where this max bites).
-    // Same two constraints as construction (super-k-mer in the pair, minimizer in one word), and
-    // never narrower than the record width. Construction and query MUST pick the same generation
-    // width or they would frame and route k-mers differently.
+    // Same two constraints as construction (super-k-mer in the pair, minimizer — and the scheme's
+    // rank — in one word), and never narrower than the record width. Construction and query MUST pick
+    // the same generation width and scheme (the header's) or they would frame and route k-mers
+    // differently.
     const uint64_t gen_w = std::max<uint64_t>(
-        km::sortedlist::select_generation_width_bytes(hdr.k, hdr.m), hdr.store_width_bytes);
+        km::sortedlist::select_generation_width_bytes(hdr.k, hdr.m, hdr.scheme), hdr.store_width_bytes);
     const uint64_t store_w = hdr.store_width_bytes;
 
     try {
@@ -262,7 +282,7 @@ int run_query(const QueryOptions& opts) {
                     // Single-sequence path: parse at gen width, route on the full minimizer, then
                     // down-convert each skmer to the stored width before searching.
                     const uint64_t k = reader.k(), m = reader.m(), b = reader.quotient_bits();
-                    km::SkmerManipulator<gen> manip{k, m};
+                    km::SkmerManipulator<gen> manip{k, m, 0, reader.scheme()};
                     std::string seq = *opts.sequence;
                     km::SeqSkmerator<gen> seq_skmerator{manip, seq};
 

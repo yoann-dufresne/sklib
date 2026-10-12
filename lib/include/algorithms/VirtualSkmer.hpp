@@ -77,6 +77,15 @@ constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V5 = 0x56534B4D45525F35ULL; // "VSK
 // Same header, same directory, same record CONTENT and same order — only the payload byte layout
 // differs, which a V5 reader cannot detect, so V5 files must be rejected outright.
 constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V6 = 0x56534B4D45525F36ULL; // "VSKMER_6" in ASCII
+// Bumped to "VSKMER_7" when the minimizer SCHEME became selectable (`construct --minimizer`): the
+// header gains scheme_id(8) + scheme_param(8) after quotient_bits (0/0 = random, 1/s = open-closed
+// with s-mer length s), which moves the directory from offset 7*8 to 9*8. The scheme changes which
+// records exist (the selected minimizers), never the slot semantics, the record layout or the order
+// within a column, so a V6 file is EXACTLY a random-scheme file: readers accept it as random (no
+// rebuild), and a random V7 file's payload and directory are byte-identical to the V6 ones — only
+// the header differs. Writers always write V7. Old readers reject V7 as an unknown magic, which is
+// required: an open-closed index read as random would frame queries differently (false negatives).
+constexpr uint64_t ENDIANNESS_SANITY_INTEGER_V7 = 0x56534B4D45525F37ULL; // "VSKMER_7" in ASCII
 // Upper bound on the number of k-mer columns in one super-k-mer, used to size the fixed
 // stack arrays in search_kmers_in_span_into. A super-k-mer spans at most 2k-m nucleotides, so it
 // holds at most k-m+1 k-mers. The widest record pair (kuint256, 512 bits) caps 2*(2k-m) <= 512,
@@ -108,14 +117,16 @@ inline uint64_t swap_endian(uint64_t value) {
            ((value & 0xFF00000000000000ULL) >> 56);
 }
 
-// Accept only VSKMER_5 (the current ψ-permuted layout). Legacy V2/V3/V4 files carry a φ-only
-// minimizer slot, so querying them with the ψ router/decoder would silently return wrong results;
-// they must be rebuilt. Distinguishes a byte-swapped V5 (endianness mismatch) from a genuine legacy
-// magic (rebuild required) from garbage. Centralized so open()/load()/read_list_header agree.
-inline void require_v6_or_throw(uint64_t magic, const std::string& filename) {
-    if (magic == ENDIANNESS_SANITY_INTEGER_V6) return;
+// Accept VSKMER_7 (current) and VSKMER_6 (same layout minus the scheme fields, read as the random
+// scheme) and return the format version (7 or 6). Legacy V2/V3/V4 files carry a φ-only minimizer
+// slot and V5 an AoS payload, so reading them would silently return wrong results; they must be
+// rebuilt. Distinguishes a byte-swapped V6/V7 (endianness mismatch) from a genuine legacy magic
+// (rebuild required) from garbage. Centralized so open()/load()/read_list_header agree.
+inline uint64_t format_version_or_throw(uint64_t magic, const std::string& filename) {
+    if (magic == ENDIANNESS_SANITY_INTEGER_V7) return 7;
+    if (magic == ENDIANNESS_SANITY_INTEGER_V6) return 6;
     const uint64_t swapped = swap_endian(magic);
-    if (swapped == ENDIANNESS_SANITY_INTEGER_V6)
+    if (swapped == ENDIANNESS_SANITY_INTEGER_V7 || swapped == ENDIANNESS_SANITY_INTEGER_V6)
         throw std::runtime_error("Endianness mismatch - file was written on a system with different endianness: " + filename);
     auto is_legacy = [](uint64_t v) {
         return v == ENDIANNESS_SANITY_INTEGER || v == ENDIANNESS_SANITY_INTEGER_V3 ||
@@ -125,6 +136,24 @@ inline void require_v6_or_throw(uint64_t magic, const std::string& filename) {
         throw std::runtime_error("Legacy pre-VSKMER_6 index (built before the split payload layout); "
                                  "rebuild it with this version: " + filename);
     throw std::runtime_error("Invalid file format - ENDIANNESS_SANITY_INTEGER mismatch: " + filename);
+}
+
+// Byte offset of the per-bucket directory: right after the fixed header fields — magic, k, m, count,
+// n_buckets, store_width, quotient_bits (V6), plus scheme_id, scheme_param (V7).
+constexpr uint64_t directory_offset(uint64_t version) {
+    return (version >= 7 ? 9 : 7) * sizeof(uint64_t);
+}
+
+// Read the scheme fields that follow quotient_bits. A V6 file has none and IS the random scheme.
+inline km::SchemeParams read_scheme_fields(std::istream& in, uint64_t version, uint64_t m,
+                                           const std::string& filename) {
+    if (version < 7) return km::SchemeParams{};
+    uint64_t id {0}, param {0};
+    in.read(reinterpret_cast<char*>(&id), sizeof(uint64_t));
+    in.read(reinterpret_cast<char*>(&param), sizeof(uint64_t));
+    if (in.fail())
+        throw std::runtime_error("Error reading the minimizer scheme from the header of: " + filename);
+    return km::SchemeParams::from_header(id, param, m, filename);
 }
 
 template<typename T>
@@ -612,7 +641,13 @@ class SortedVirtualSkmerList {
     // virtual-skmer build can re-compact records already truncated to a quotiented storage width
     // (b>0): generate_sorted_list_from_enumeration then drives kmer_compare/get_skmer_of_kmer on the
     // truncated masks. b defaults to 0 (full-width, unchanged behaviour for every existing caller).
-    SortedVirtualSkmerList(uint64_t k, uint64_t m, uint64_t b = 0) : m_manip(k, m, b) {}
+    // `sp` = minimizer scheme the list was (or will be) built with. The column algorithm never
+    // selects minimizers, so it only matters to query(filename) — which frames the queries — and to
+    // the serializer, which records it in the header. Default random (unchanged behaviour).
+    SortedVirtualSkmerList(uint64_t k, uint64_t m, uint64_t b = 0, km::SchemeParams sp = {})
+        : m_manip(k, m, b, sp) {}
+
+    const km::SchemeParams& scheme() const { return m_manip.scheme(); }
 
     void print_list() const{
         km::sortedlist::util::print_vector(m_skmer_list);
@@ -1237,21 +1272,25 @@ public:
             return outFile.close();
         }
 
-        // VSKMER_4 header with a single bucket covering the whole list (lower bound 0). The record
+        // VSKMER_7 header with a single bucket covering the whole list (lower bound 0). The record
         // width (this kuint) is recorded so the query side re-selects it; the in-RAM path never
-        // quotients, so b = 0. Written inline with no seek, so non-seekable targets like
-        // /dev/stdout still work.
+        // quotients, so b = 0. The minimizer scheme comes from the list. Written inline with no
+        // seek, so non-seekable targets like /dev/stdout still work.
         const uint64_t count = list.size();
         const uint64_t n_buckets = 1;
         const uint64_t store_width = sizeof(kuint);
         const uint64_t quotient_bits = 0;
-        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V6), sizeof(uint64_t));
+        const uint64_t scheme_id = list.scheme().header_id();
+        const uint64_t scheme_param = list.scheme().header_param();
+        outFile.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V7), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.k), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&list.m_manip.m), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&store_width), sizeof(uint64_t));
         outFile.write(reinterpret_cast<const char*>(&quotient_bits), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&scheme_id), sizeof(uint64_t));
+        outFile.write(reinterpret_cast<const char*>(&scheme_param), sizeof(uint64_t));
         const BucketDirEntry only{0, count};
         outFile.write(reinterpret_cast<const char*>(&only), sizeof(BucketDirEntry));
 
@@ -1274,35 +1313,43 @@ public:
         return outFile.close();
     }
 
-    // ---- Incremental binary serialization (VSKMER_4, bucketed) ----
+    // ---- Incremental binary serialization (VSKMER_7, bucketed) ----
     // Streams the payload out one minimizer bucket at a time without ever holding the whole
     // list in RAM. Header layout: MAGIC(8) + k(8) + m(8) + count(8) + n_buckets(8) +
-    // store_width(8) + quotient_bits(8), then the per-bucket directory (n_buckets ×
-    // BucketDirEntry), then the raw Skmer<store> payload in bucket-id order. The total count and
-    // the directory are unknown when the header is written, so reserve them and patch at the end.
-    // Requires a seekable (regular) file.
+    // store_width(8) + quotient_bits(8) + scheme_id(8) + scheme_param(8), then the per-bucket
+    // directory (n_buckets × BucketDirEntry), then the split Skmer<store> payload in bucket-id
+    // order. The total count and the directory are unknown when the header is written, so reserve
+    // them and patch at the end. Requires a seekable (regular) file. Always writes V7; the readers
+    // also accept V6 (the same layout without the two scheme words, i.e. a 7*8-byte prefix).
     static constexpr std::streamoff COUNT_OFFSET = 3 * sizeof(uint64_t);     // after magic, k, m
-    // after magic, k, m, count, n_buckets, store_width, quotient_bits
-    static constexpr std::streamoff DIRECTORY_OFFSET = 7 * sizeof(uint64_t);
+    // after magic, k, m, count, n_buckets, store_width, quotient_bits, scheme_id, scheme_param
+    static constexpr std::streamoff DIRECTORY_OFFSET =
+        static_cast<std::streamoff>(km::sortedlist::util::directory_offset(7));
 
-    // Byte size of the header (everything before the skmer payload) for a bucket count.
-    static std::streamoff header_bytes(uint64_t n_buckets) {
-        return DIRECTORY_OFFSET +
+    // Byte size of the header (everything before the skmer payload) for a bucket count, in the
+    // given format version (the writers' V7 by default; V6 when reading a legacy random file).
+    static std::streamoff header_bytes(uint64_t n_buckets, uint64_t version = 7) {
+        return static_cast<std::streamoff>(km::sortedlist::util::directory_offset(version)) +
                static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry));
     }
 
     // store_width = record integer width in bytes (sizeof(kuint)); quotient_bits = b (top-b
-    // φ-minimizer bits dropped from each record, implied by the bucket id).
+    // φ-minimizer bits dropped from each record, implied by the bucket id); scheme = the minimizer
+    // scheme the records were selected with (recorded so query/setop reproduce it).
     static void write_header(std::ofstream& out, uint64_t k, uint64_t m, uint64_t count,
                              uint64_t n_buckets, uint64_t store_width = sizeof(kuint),
-                             uint64_t quotient_bits = 0) {
-        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V6), sizeof(uint64_t));
+                             uint64_t quotient_bits = 0, const km::SchemeParams& scheme = {}) {
+        const uint64_t scheme_id {scheme.header_id()};
+        const uint64_t scheme_param {scheme.header_param()};
+        out.write(reinterpret_cast<const char*>(&km::sortedlist::util::ENDIANNESS_SANITY_INTEGER_V7), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&k), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&m), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&count), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&n_buckets), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&store_width), sizeof(uint64_t));
         out.write(reinterpret_cast<const char*>(&quotient_bits), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&scheme_id), sizeof(uint64_t));
+        out.write(reinterpret_cast<const char*>(&scheme_param), sizeof(uint64_t));
         // Reserve the directory; patch_directory() fills it once per-bucket counts are known.
         const std::vector<BucketDirEntry> placeholder(n_buckets, BucketDirEntry{0, 0});
         if (n_buckets)
@@ -1433,10 +1480,10 @@ public:
             throw std::runtime_error("Error reading magic number from file: " + filename);
         }
 
-        // Only VSKMER_5 is accepted (ψ-permuted layout). load() returns the whole concatenated
-        // list (it ignores the bucket directory); the lazy per-bucket reader lives in
-        // BucketedSkmerListReader. Legacy V2/V3/V4 are rejected (rebuild required).
-        km::sortedlist::util::require_v6_or_throw(read_endianess_int, filename);
+        // VSKMER_7 and VSKMER_6 (read as the random scheme) are accepted. load() returns the whole
+        // concatenated list (it ignores the bucket directory); the lazy per-bucket reader lives in
+        // BucketedSkmerListReader. Legacy V2..V5 are rejected (rebuild required).
+        const uint64_t version {km::sortedlist::util::format_version_or_throw(read_endianess_int, filename)};
 
         uint64_t file_k, file_m;
         inFile.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
@@ -1446,8 +1493,6 @@ public:
             throw std::runtime_error("Error reading k and m values from file: " + filename);
         }
 
-        SortedVirtualSkmerList<kuint> m_virtual_skmer_list(file_k, file_m);
-
         uint64_t count;
         inFile.read(reinterpret_cast<char*>(&count), sizeof(uint64_t));
 
@@ -1455,11 +1500,13 @@ public:
             throw std::runtime_error("Error reading count from file: " + filename);
         }
 
+        uint64_t n_buckets {0};
+        km::SchemeParams scheme {};
         {
-            // Skip n_buckets + width/quotient + the per-bucket directory; we read the full payload
-            // below. load() returns one concatenated globally-sorted list, which only holds for a
-            // non-quotiented file (b==0); a quotiented list must be queried per-bucket.
-            uint64_t n_buckets, store_width, quotient_bits;
+            // Skip n_buckets + width/quotient (+ scheme on V7) + the per-bucket directory; we read
+            // the full payload below. load() returns one concatenated globally-sorted list, which
+            // only holds for a non-quotiented file (b==0); a quotiented list must be queried per-bucket.
+            uint64_t store_width, quotient_bits;
             inFile.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
             inFile.read(reinterpret_cast<char*>(&store_width), sizeof(uint64_t));
             inFile.read(reinterpret_cast<char*>(&quotient_bits), sizeof(uint64_t));
@@ -1471,9 +1518,13 @@ public:
             if (quotient_bits != 0)
                 throw std::runtime_error("load() cannot read a quotiented list (b=" + std::to_string(quotient_bits) +
                                          ") as one global list; query it via BucketedSkmerListReader");
+            scheme = km::sortedlist::util::read_scheme_fields(inFile, version, file_m, filename);
             inFile.seekg(static_cast<std::streamoff>(n_buckets) * static_cast<std::streamoff>(sizeof(BucketDirEntry)),
                          std::ios::cur);
         }
+
+        // The list carries the scheme so query(filename) frames queries the way the records were.
+        SortedVirtualSkmerList<kuint> m_virtual_skmer_list(file_k, file_m, 0, scheme);
 
         // Read the split payload back into AoS records (this legacy whole-list path keeps the
         // in-RAM SortedVirtualSkmerList representation).
@@ -1520,7 +1571,7 @@ public:
         if (in.fail())
             throw std::runtime_error("Error reading magic number from file: " + filename);
 
-        km::sortedlist::util::require_v6_or_throw(magic, filename);
+        const uint64_t version {km::sortedlist::util::format_version_or_throw(magic, filename)};
 
         uint64_t file_k, file_m, count;
         in.read(reinterpret_cast<char*>(&file_k), sizeof(uint64_t));
@@ -1532,6 +1583,7 @@ public:
         std::vector<BucketDirEntry> dir;
         std::streamoff payload_start;
         uint64_t quotient_bits = 0;
+        km::SchemeParams scheme {};
         {
             uint64_t n_buckets, store_width;
             in.read(reinterpret_cast<char*>(&n_buckets), sizeof(uint64_t));
@@ -1542,17 +1594,19 @@ public:
             if (store_width != sizeof(kuint))
                 throw std::runtime_error("Record width mismatch: file stores " + std::to_string(store_width) +
                                          "-byte skmers but the reader was instantiated for " + std::to_string(sizeof(kuint)));
+            scheme = km::sortedlist::util::read_scheme_fields(in, version, file_m, filename);
             dir.resize(n_buckets);
             if (n_buckets)
                 in.read(reinterpret_cast<char*>(dir.data()),
                         static_cast<std::streamsize>(n_buckets * sizeof(BucketDirEntry)));
             if (in.fail())
                 throw std::runtime_error("Error reading bucket directory from file: " + filename);
-            payload_start = VirtualSkmerSerializer<kuint>::header_bytes(n_buckets);
+            payload_start = VirtualSkmerSerializer<kuint>::header_bytes(n_buckets, version);
         }
 
-        BucketedSkmerListReader reader(file_k, file_m, quotient_bits, std::move(in), std::move(dir), payload_start);
+        BucketedSkmerListReader reader(file_k, file_m, quotient_bits, scheme, std::move(in), std::move(dir), payload_start);
         reader.m_path = filename;   // remembered so set-ops can open private per-worker read handles
+        reader.m_version = version;
         return reader;
     }
 
@@ -1560,6 +1614,10 @@ public:
     uint64_t m() const { return m_manip.m; }
     uint64_t n_buckets() const { return m_n_buckets; }
     uint64_t quotient_bits() const { return m_quotient_bits; }
+    // Minimizer scheme the list was built with (V6 files: random). Query drivers build their
+    // generation manipulator with it so the queries are framed exactly as the stored k-mers were.
+    const km::SchemeParams& scheme() const { return m_manip.scheme(); }
+    uint64_t format_version() const { return m_version; }   // 6 or 7
 
     // Set-operation support: a merge walks both lists bucket by bucket, so it needs the same lazy,
     // cached per-bucket span the query path uses (load_bucket wraps the private loader) plus the
@@ -1693,9 +1751,9 @@ public:
     }
 
 private:
-    BucketedSkmerListReader(uint64_t k, uint64_t m, uint64_t quotient_bits, std::ifstream&& in,
-                            std::vector<BucketDirEntry> dir, std::streamoff payload_start)
-        : m_manip(k, m, quotient_bits), m_quotient_bits(quotient_bits), m_in(std::move(in)), m_n_buckets(dir.size())
+    BucketedSkmerListReader(uint64_t k, uint64_t m, uint64_t quotient_bits, const km::SchemeParams& scheme,
+                            std::ifstream&& in, std::vector<BucketDirEntry> dir, std::streamoff payload_start)
+        : m_manip(k, m, quotient_bits, scheme), m_quotient_bits(quotient_bits), m_in(std::move(in)), m_n_buckets(dir.size())
     {
         m_lower.resize(m_n_buckets);
         m_count.resize(m_n_buckets);
@@ -1825,6 +1883,7 @@ private:
     bool m_fixed_prefix {false};             // power-of-two minimizer-prefix bucketing (route by formula)
     uint64_t m_route_shift {0};              // 2m - b: shift to extract the top-b bucket bits
     std::string m_path;                      // file this reader was opened from (for per-worker reads)
+    uint64_t m_version {7};                  // on-disk format version (6 = legacy random, 7)
     std::ifstream m_in;
     uint64_t m_n_buckets {1};
     std::vector<uint64_t> m_lower;        // per-bucket minimizer lower bound (routing table)
@@ -1844,7 +1903,8 @@ private:
 
 // Minimal, width-agnostic view of a list-file header. Lets the CLI/query side read k/m and the
 // record width before instantiating a width-specific reader (the templates can't be chosen until
-// the width is known). V2/V3 files report store_width_bytes = 8 and quotient_bits = 0.
+// the width is known). `scheme` is the minimizer scheme (V6 files: random); the query side needs it
+// before instantiating anything, because it sizes the generation width.
 struct ListHeaderInfo {
     uint64_t k {0};
     uint64_t m {0};
@@ -1852,6 +1912,8 @@ struct ListHeaderInfo {
     uint64_t n_buckets {1};
     uint64_t store_width_bytes {8};
     uint64_t quotient_bits {0};
+    uint64_t version {7};
+    km::SchemeParams scheme {};
 };
 
 inline ListHeaderInfo read_list_header(const std::string& filename) {
@@ -1864,9 +1926,8 @@ inline ListHeaderInfo read_list_header(const std::string& filename) {
     if (in.fail())
         throw std::runtime_error("Error reading magic number from file: " + filename);
 
-    km::sortedlist::util::require_v6_or_throw(magic, filename);
-
     ListHeaderInfo info{};
+    info.version = km::sortedlist::util::format_version_or_throw(magic, filename);
     in.read(reinterpret_cast<char*>(&info.k), sizeof(uint64_t));
     in.read(reinterpret_cast<char*>(&info.m), sizeof(uint64_t));
     in.read(reinterpret_cast<char*>(&info.count), sizeof(uint64_t));
@@ -1875,6 +1936,7 @@ inline ListHeaderInfo read_list_header(const std::string& filename) {
     in.read(reinterpret_cast<char*>(&info.quotient_bits), sizeof(uint64_t));
     if (in.fail())
         throw std::runtime_error("Error reading header from file: " + filename);
+    info.scheme = km::sortedlist::util::read_scheme_fields(in, info.version, info.m, filename);
     return info;
 }
 

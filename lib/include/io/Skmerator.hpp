@@ -3,9 +3,11 @@
 #include <memory>
 #include <algorithm>
 #include <bit>
+#include <stdexcept>
 #include <kseq++/seqio.hpp>
 
 #include <io/Skmer.hpp>
+#include <io/MinimizerScheme.hpp>
 
 
 #ifndef SKMERATOR_H
@@ -126,6 +128,14 @@ public:
         std::vector<int64_t> m_slot_creation;
         int64_t m_yield_pos {-1};
 
+        // Open-closed scheme only: the streaming class of every m-mer of the sequence, fed each real
+        // nucleotide in order. The candidate created at absolute index c has its central m-mer at
+        // c - k + 1 (its frame is the last 2k-m bases, and the m-mer sits after the k-m prefix
+        // slots), so its rank is minimizer_rank(candidate, class_at(c - k + 1)). Inactive (never
+        // touched) for the random scheme: the per-base hot loop only pays one predictable branch.
+        bool m_is_oc {false};
+        OcStream m_oc;
+
     public:
 
         bool consumed() const
@@ -155,6 +165,18 @@ public:
         {
             if constexpr (TrackPos)
                 m_slot_creation.assign(m_buffer_capacity, int64_t{0});
+            if (m_manip.scheme().is_open_closed())
+            {
+                // The rank needs 2m + 2 bits in one word; a narrower kuint would silently wrap the
+                // class into φ and break the per-m-mer injectivity the framing relies on.
+                if (!m_manip.rank_fits_word())
+                    throw std::logic_error("open-closed minimizers need 2m+2 = " + std::to_string(2 * m_manip.m + 2) +
+                                           " bits in the generation word, which has " + std::to_string(sizeof(kuint) * 8) +
+                                           "; size it with select_generation_width_bytes(k, m, scheme)");
+                m_is_oc = true;
+                // Ring of classes: the candidate reads the m-mer that ended k-m bases ago.
+                m_oc.init(m_manip.oc_classifier(), m_manip.k - m_manip.m + 1);
+            }
             if (m_remaining_nucleotides < static_cast<int64_t>(m_manip.k))
             {
                 m_consumed = true;
@@ -195,6 +217,9 @@ public:
             m_split_pending = other.m_split_pending;
             m_split_idx = other.m_split_idx;
 
+            m_is_oc = other.m_is_oc;
+            m_oc = other.m_oc;
+
             return *this;
         }
 
@@ -218,6 +243,14 @@ public:
                 // Nucl encoding. TODO: Move encoding to dedicated classes
                 const kuint nucl {static_cast<kuint>((m_seq[idx] >> 1) & 0b11U)};
                 m_manip.add_nucleotide(nucl);
+            }
+            // Open-closed: restart the class stream and feed it the same k-1 leading bases (kept out
+            // of the loop above so the random path's init is unchanged).
+            if (m_is_oc)
+            {
+                m_oc.reset();
+                for (uint64_t idx{0} ; idx<m_manip.k-1 ; idx++)
+                    m_oc.push(static_cast<uint64_t>((m_seq[idx] >> 1) & 0b11U));
             }
 
             m_current_minimizer = ~static_cast<kuint>(0);
@@ -402,7 +435,10 @@ public:
 
                 // Get the minimizer order key (φ-rank, not the raw value), and cache it so an
                 // out-of-context recompute can reuse it instead of re-running phi over the window.
-                const kuint candidate_minimizer {m_manip.minimizer_rank(candidate)};
+                // Open-closed ranks by (class, φ) out of line (oc_candidate_rank); the random path
+                // pays one predictable branch.
+                const kuint candidate_minimizer {m_is_oc ? oc_candidate_rank(candidate)
+                                                         : m_manip.minimizer_rank(candidate)};
                 m_skmer_minimizer_rank[m_ptr_current & m_buffer_mask] = candidate_minimizer;
 
                 // -- A new minimizer has been discovered (the sequence's first candidate always is)
@@ -481,6 +517,17 @@ public:
                 m_yield_pos = static_cast<int64_t>(m_ptr_current);
             finalize_and_yield();
             return *this;
+        }
+
+        // Open-closed rank of the candidate just created at m_ptr_current: feed the class stream the
+        // base it added (none past the end of the sequence), then rank by (class of the candidate's
+        // central m-mer, which starts at m_ptr_current - k + 1; φ). Out of line so the random
+        // scheme's per-base loop keeps its code: it only pays the m_is_oc test.
+        [[gnu::noinline]] kuint oc_candidate_rank(const Skmer<kuint>& candidate)
+        {
+            if (m_remaining_nucleotides >= 0)
+                m_oc.push(static_cast<uint64_t>((m_seq[m_ptr_current] >> 1) & 0b11U));
+            return m_manip.minimizer_rank(candidate, m_oc.class_at(m_ptr_current - m_manip.k + 1));
         }
 
         void solve_out_of_context()

@@ -3,10 +3,12 @@
 #include <array>
 #include <vector>
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <assert.h>
 #include <io/wide_int.hpp>
+#include <io/MinimizerScheme.hpp>
 
 #ifndef SKMER_H
 #define SKMER_H
@@ -492,6 +494,13 @@ protected:
     kuint m_phi_c1_inv, m_phi_c2_inv;  // their inverses mod 2^bits(kuint)
     kuint m_phi_k;                     // nonzero XOR constant (ensures φ(0)≠0)
 
+    // --- Minimizer scheme (selection order) ---
+    // random: rank = φ(min). open-closed: rank = (class << 2m) | φ(min), class from the canonical
+    // open-closed syncmer test (MinimizerScheme.hpp). The classifier (its s-mer key table) is shared
+    // with the Skmerator's streaming class (OcStream); null for random.
+    SchemeParams m_scheme;
+    std::shared_ptr<const OcClassifier> m_oc;
+
 
     std::vector<kpair > prefix_suffix_mask;
     std::vector<kpair > kmer_masks;
@@ -504,7 +513,10 @@ public:
     // b = quotient bits: the number of high φ-minimizer bits implied by the bucket id and therefore
     // not stored. Default 0 = full-width list (unchanged behaviour). The retained skmer is the low
     // 2*sk_size - b bits, so m_mask is narrowed accordingly and every generator-built mask follows.
-    SkmerManipulator(const uint64_t k, const uint64_t m, const uint64_t b = 0)
+    // sp = minimizer scheme (default random = unchanged behaviour). It only matters to the selection
+    // (minimizer_rank / mmer_canonical_rank, i.e. the Skmerator); search-only and set-op manipulators
+    // never select and may leave it at the default. Invalid open-closed parameters throw.
+    SkmerManipulator(const uint64_t k, const uint64_t m, const uint64_t b = 0, const SchemeParams sp = {})
         : k(checked_k(k, m)), m(m), sk_size(2*k-m), m_suff_size(sk_size / 2), m_pref_size((sk_size+1) / 2)
         , m_current_orientation(forward_c)
         // Central-nucleotide transfer slots (members m_cA_*/m_cB_*). Computed here in the init list
@@ -585,6 +597,14 @@ public:
         m_phi_c2_inv = mul_inverse(m_phi_c2);
         // Golden-ratio odd constant → low bit set → nonzero under any 2m-bit mask.
         m_phi_k = static_cast<kuint>(0x9E3779B97F4A7C15ULL) & m_phi_mask;
+
+        // --- minimizer scheme --- (random stays the default-constructed SchemeParams: s = 0)
+        if (sp.is_open_closed())
+        {
+            sp.validate(m);
+            m_scheme = sp;
+            m_oc = std::make_shared<const OcClassifier>(m, sp.s);
+        }
 
         // A quotiented manipulator (b>0) is search-only: the masks generated above used the
         // narrowed m_mask, which corrupts them (add_nucleotide wraps the suffix buffer at the
@@ -774,6 +794,26 @@ public:
     kuint minimizer_rank(const Skmer<kuint>& skmer) const
     {
         return phi(minimizer(skmer));
+    }
+
+    // Open-closed order key: the class (0 open / 1 closed / 2 other, a function of the m-mer only)
+    // above the 2m-bit φ value. Still injective on canonical m-mers, so equal ranks ⇔ equal
+    // minimizers exactly as for the 1-arg (random) form, which it equals bit for bit when cls == 0.
+    // Needs 2m + 2 bits in one word (rank_fits_word; the generation width guarantees it).
+    kuint minimizer_rank(const Skmer<kuint>& skmer, const uint8_t cls) const
+    {
+        return static_cast<kuint>(static_cast<kuint>(cls) << m_phi_w) | phi(minimizer(skmer));
+    }
+
+    const SchemeParams& scheme() const { return m_scheme; }
+    const OcClassifier* oc_classifier() const { return m_oc.get(); }
+
+    // The selection rank (2m + class bits) fits one kuint word. Always true for random when the
+    // minimizer fits (2m <= bits); open-closed needs 2 more bits. Checked by the Skmerator before it
+    // selects, since only selection uses the rank.
+    bool rank_fits_word() const
+    {
+        return 2 * m + m_scheme.class_bits() <= sizeof(kuint) * 8;
     }
 
     // Multiplicative inverse of an odd constant mod 2^bits(kuint) (Newton iteration: x = a is
@@ -1216,11 +1256,16 @@ public:
      * canonical orientation's minimizer (and thus this rank) is decided by the m-mer alone, independent
      * of any surrounding k-mer window's flanks -- identical to the rank the full-framing path computes
      * (phi(minimizer(canonicalize(framing)))), but a function of the m-mer only, so it memoizes per
-     * position. Uses a flank-less framing (prefix=suffix=0) so only the central m nucleotides matter. **/
+     * position. Uses a flank-less framing (prefix=suffix=0) so only the central m nucleotides matter.
+     * Under open-closed the reference class of the m-mer S[p..p+m) is added above φ, exactly as the
+     * window's minimizer_rank(candidate, cls) does (the class is strand-symmetric, so decoding the
+     * super-k-mer in its canonical orientation does not change it). **/
     kuint mmer_canonical_rank(const std::vector<kuint>& S, uint64_t p) const
     {
         Skmer<kuint> f {build_skmer_from_nucleotides(S, p, p + m - 1, p)};
         canonicalize(f);
+        if (m_oc)
+            return minimizer_rank(f, m_oc->class_of(S.data() + p));
         return phi(minimizer(f));
     }
 

@@ -90,7 +90,8 @@ void parallel_build_phase1(const std::string& input_path,
                            unsigned nw, size_t writer_budget,
                            const std::filesystem::path& tmp_dir,
                            std::vector<std::filesystem::path>& out_shard_dirs,
-                           std::vector<uint64_t>& counts)
+                           std::vector<uint64_t>& counts,
+                           const km::SchemeParams& scheme = {})
 {
     namespace fs = std::filesystem;
     nw = std::max(2u, nw);
@@ -103,7 +104,8 @@ void parallel_build_phase1(const std::string& input_path,
     }
 
     // margin: full context for any super-k-mer with creation index in [a,b). A super-k-mer spans
-    // <= 2k-m and the iterator warm-up is ~2k-m; 4*(2k-m) is comfortably safe and the redundant
+    // <= 2k-m and the iterator warm-up is ~2k-m (the open-closed class is a function of one m-mer, so
+    // its stream adds no context); 4*(2k-m) is comfortably safe and the redundant
     // per-chunk work (a few hundred bases) is negligible vs a ~1 Mbp chunk core.
     const int64_t margin {static_cast<int64_t>(4 * (2 * k - m))};
     const int64_t target_chunk {int64_t{1} << 20};   // ~1 Mbp cores: good load balance, ~0.02% overhead
@@ -126,7 +128,7 @@ void parallel_build_phase1(const std::string& input_path,
 
     auto worker = [&](unsigned tid) {
         try {
-            km::SkmerManipulator<gen> manip{k, m};                 // per-worker mutable encoder state
+            km::SkmerManipulator<gen> manip{k, m, 0, scheme};      // per-worker mutable encoder state
             km::sortedlist::SkmerBucketWriter<gen> writer{out_shard_dirs[tid], n_buckets, per_worker_budget};
             // One SeqSkmerator + iterator per worker, bound to a reused `slice` buffer and re-primed
             // per chunk via reset() — exactly the FileSkmerator pattern. This keeps the iterator's
