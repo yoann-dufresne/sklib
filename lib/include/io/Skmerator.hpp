@@ -78,6 +78,13 @@ public:
         // Manipulator to compute interleaved along the sequence
         SkmerManipulator<kuint>& m_manip;
         kuint m_current_minimizer;
+        // Whether m_current_minimizer holds a real rank yet: false from init_seq() until the
+        // sequence's first candidate is ranked, and that candidate always becomes the minimizer.
+        // m_current_minimizer's initial ~0 cannot mean "none yet" by itself: phi is a bijection on
+        // the 2m-bit minimizer space, so when 2m fills the word (m = 64 at __uint128_t, 128 at
+        // kuint256) one canonical m-mer ranks ~0, and a sequence starting with it took the
+        // equal-minimizer branch against the empty slot before the sequence.
+        bool m_has_minimizer;
 
         // Buffered unmasked skmers
         uint64_t m_buffer_size;
@@ -135,7 +142,7 @@ public:
         Iterator(SeqSkmerator& skmerator, std::string& sequence)
             : m_rator(skmerator), m_seq(sequence), m_remaining_nucleotides(sequence.length())
             , m_consumed(false), m_isend(false)
-            , m_manip(skmerator.m_manip), m_current_minimizer(~static_cast<kuint>(0))
+            , m_manip(skmerator.m_manip), m_current_minimizer(~static_cast<kuint>(0)), m_has_minimizer(false)
             , m_buffer_size(2 * skmerator.m_manip.k - skmerator.m_manip.m)
             , m_buffer_capacity(std::bit_ceil(m_buffer_size))
             , m_buffer_mask(m_buffer_capacity - 1)
@@ -172,6 +179,7 @@ public:
             m_consumed = other.m_consumed;
             m_isend = other.m_isend;
             m_current_minimizer = other.m_current_minimizer;
+            m_has_minimizer = other.m_has_minimizer;
 
             m_buffer_size = other.m_buffer_size;
             m_buffer_capacity = other.m_buffer_capacity;
@@ -213,6 +221,7 @@ public:
             }
 
             m_current_minimizer = ~static_cast<kuint>(0);
+            m_has_minimizer = false;
 
             m_ptr_current = m_rator.m_manip.k - 2;
             m_ptr_min = m_rator.m_manip.k - 2;
@@ -235,6 +244,7 @@ public:
             m_consumed = false;
             m_isend = false;
             m_current_minimizer = ~static_cast<kuint>(0);
+            m_has_minimizer = false;
             m_ptr_current = m_manip.k - m_manip.m;
             m_ptr_min = 0;
             m_ptr_last_round = 0;
@@ -395,8 +405,8 @@ public:
                 const kuint candidate_minimizer {m_manip.minimizer_rank(candidate)};
                 m_skmer_minimizer_rank[m_ptr_current & m_buffer_mask] = candidate_minimizer;
 
-                // -- A new minimizer has been discovered
-                if (candidate_minimizer < m_current_minimizer) {
+                // -- A new minimizer has been discovered (the sequence's first candidate always is)
+                if (!m_has_minimizer || candidate_minimizer < m_current_minimizer) {
                     this->new_minimizer(candidate_minimizer);
                 }
 
@@ -506,6 +516,7 @@ public:
             // 4 - save the new current minimal skmer and minimizer
             m_ptr_min = m_ptr_current;
             m_current_minimizer = minimizer;
+            m_has_minimizer = true;
         }
 
 
